@@ -204,7 +204,7 @@ Compose is a development configuration, not a production deployment recipe.
 
 ## Tests
 
-Code formatting, linting and CI are described in [the code-quality guide](docs/CODE_QUALITY.md).
+Local code formatting, linting and tests are described in [the code-quality guide](docs/CODE_QUALITY.md).
 The latest source review, fixes and pending live checks are documented in
 [the security and reliability review](docs/SECURITY_REVIEW.md).
 Install tooling with `npm --prefix frontend ci`, use `make fmt` to format code,

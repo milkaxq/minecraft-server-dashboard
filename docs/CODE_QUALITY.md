@@ -2,7 +2,7 @@
 
 Install frontend development dependencies once with `npm --prefix frontend ci`.
 Go downloads its pinned tools on first use. Use Go 1.26.3 or newer, Node 24 (as in
-Docker/CI), Bash and make. Node 22.17.1 also works for the current tools.
+Docker), Bash and make. Node 22.17.1 also works for the current tools.
 
 ```sh
 make fmt          # Format Go imports/code and frontend JS, JSX, JSON and CSS
@@ -43,17 +43,16 @@ Go database integration tests skip when `TEST_DATABASE_URL` is absent, so a plai
 `make check` does not prove database behavior. Browser tests require a production
 build and Chromium (`cd frontend && npx playwright install chromium`).
 
-`.github/workflows/quality.yml` runs on pushes and pull requests once this project
-is hosted on GitHub. Separate jobs enforce backend lint/format/build/race tests
-with PostgreSQL, and frontend lint/format/build/browser tests. The workflow uses
-only a disposable database password and needs no Panel, payment or production secrets.
+Automatic GitHub Actions checks are currently removed while account billing is
+unresolved. Run the commands above locally; pushes and pull requests do not run
+this project's quality checks automatically.
 Linting is a repeatable baseline; business invariants still need integration tests
 and code review. Go targets explicitly cover `cmd`, `internal` and `migrations`
 so Go snippets shipped inside frontend dependencies are not linted or formatted.
 
 `make test-compose` uses Python 3 and Docker Compose to check deployment credential
 separation, host mounts and pinned Panel source without starting any containers.
-CI runs it with the backend checks.
+Run it locally alongside the backend checks.
 
 The Next.js 16.4 lint plugins currently declare compatibility with ESLint 9,
 so this setup pins ESLint 9 rather than forcing incompatible ESLint 10 peers.
