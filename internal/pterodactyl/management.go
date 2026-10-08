@@ -75,7 +75,7 @@ func (a *HTTPServerClient) Ready(ctx context.Context, id string) error {
 		return err
 	}
 	v := r.Attributes
-	if !safeIdentifier(v.Identifier) {
+	if !safeIdentifier(v.Identifier) || v.Identifier != id {
 		return ErrInvalid
 	}
 	if (v.Status != nil && *v.Status != "") || v.Suspended || v.Installing || v.Transferring || v.Maintenance {

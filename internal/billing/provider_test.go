@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -56,6 +57,24 @@ func TestCalendarBillingClampsDaysAndLeapYears(t *testing.T) {
 		base, _ := time.Parse(time.RFC3339, tc.start)
 		if got := periodEnd(base, tc.period).Format(time.RFC3339); got != tc.end {
 			t.Errorf("%s -> %s", tc.start, got)
+		}
+	}
+}
+
+func TestMockRejectsFutureAndOverflowingPaymentTimestamps(t *testing.T) {
+	p, err := NewMock("test-only-payment-secret-at-least-32-characters")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	for _, timestamp := range []int64{0, now - 600, now + 60, math.MaxInt64, math.MinInt64, math.MinInt64 + now} {
+		event := PaymentEvent{ID: "timestamp-test", OrderID: uuid.New(), CheckoutReference: "mock_checkout", AmountCents: 975, Currency: "USD", Status: "paid", IssuedAt: timestamp}
+		data, err := json.Marshal(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.VerifyPayment(context.Background(), data, p.sign(data)); !errors.Is(err, ErrSignature) {
+			t.Errorf("accepted signed timestamp %d: %v", timestamp, err)
 		}
 	}
 }

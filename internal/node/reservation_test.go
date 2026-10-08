@@ -38,9 +38,6 @@ func TestConcurrentReservationsAndRelease(t *testing.T) {
 			return err
 		}
 		defer tx.Rollback(ctx)
-		if _, err = tx.Exec(ctx, "SELECT id FROM servers WHERE id=$1 FOR UPDATE", id); err != nil {
-			return err
-		}
 		a, err := Reserve(ctx, tx, id, 2048, 10240, 100)
 		if err != nil {
 			return err
@@ -51,6 +48,11 @@ func TestConcurrentReservationsAndRelease(t *testing.T) {
 		}
 		if a != b {
 			return ErrInvariant
+		}
+		for _, limits := range [][3]int{{4096, 10240, 100}, {2048, 20480, 100}, {2048, 10240, 200}, {0, 10240, 100}} {
+			if _, err := Reserve(ctx, tx, id, limits[0], limits[1], limits[2]); !errors.Is(err, ErrInvariant) {
+				return errors.New("reservation replay accepted different resource limits")
+			}
 		}
 		return tx.Commit(ctx)
 	}

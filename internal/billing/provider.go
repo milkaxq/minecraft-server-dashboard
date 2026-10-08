@@ -85,7 +85,8 @@ func (p *MockProvider) VerifyPayment(_ context.Context, data []byte, signature s
 	if !hmac.Equal(received, expected) {
 		return e, ErrSignature
 	}
-	if err = json.Unmarshal(data, &e); err != nil || e.ID == "" || len(e.ID) > 128 || e.OrderID == uuid.Nil || e.Status != "paid" || e.AmountCents < 0 || time.Now().Unix()-e.IssuedAt > 300 || e.IssuedAt-time.Now().Unix() > 30 {
+	now := time.Now().Unix()
+	if err = json.Unmarshal(data, &e); err != nil || e.ID == "" || len(e.ID) > 128 || e.OrderID == uuid.Nil || e.Status != "paid" || e.AmountCents < 0 || e.IssuedAt < now-300 || e.IssuedAt > now+30 {
 		return e, ErrSignature
 	}
 	return e, nil

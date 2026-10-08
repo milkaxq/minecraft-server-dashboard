@@ -19,22 +19,31 @@ type Reservation struct {
 	Port                           int
 }
 
-// Reserve expects the caller to hold the server row lock. Repeated calls return
-// the same reservation and never increment counters again.
+// Reserve locks the server and validates its purchased resource snapshot before
+// reserving capacity. Repeated calls return the same reservation without charging
+// the node again, but cannot change the resources being reserved.
 func Reserve(ctx context.Context, tx pgx.Tx, id uuid.UUID, ram, disk, cpu int) (Reservation, error) {
 	var r Reservation
-	err := tx.QueryRow(ctx, `SELECT n.id,n.pterodactyl_node_id,a.pterodactyl_allocation_id,a.hostname,a.port FROM node_allocations a JOIN nodes n ON n.id=a.node_id WHERE a.reserved_server_id=$1`, id).Scan(&r.NodeID, &r.PanelNodeID, &r.PanelAllocationID, &r.Hostname, &r.Port)
-	if err == nil {
-		return r, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return r, err
-	}
-	if ram <= 0 || disk <= 0 || cpu <= 0 {
+	if id == uuid.Nil || ram <= 0 || disk <= 0 || cpu <= 0 {
 		return r, ErrInvariant
 	}
 	var existing *uuid.UUID
-	if err = tx.QueryRow(ctx, "SELECT node_id FROM servers WHERE id=$1", id).Scan(&existing); err != nil {
+	var purchasedRAM, purchasedDisk, purchasedCPU int
+	err := tx.QueryRow(ctx, "SELECT node_id,ram_mb,disk_mb,cpu_limit FROM servers WHERE id=$1 FOR UPDATE", id).Scan(&existing, &purchasedRAM, &purchasedDisk, &purchasedCPU)
+	if err != nil {
+		return r, err
+	}
+	if ram != purchasedRAM || disk != purchasedDisk || cpu != purchasedCPU {
+		return r, ErrInvariant
+	}
+	err = tx.QueryRow(ctx, `SELECT n.id,n.pterodactyl_node_id,a.pterodactyl_allocation_id,a.hostname,a.port FROM node_allocations a JOIN nodes n ON n.id=a.node_id WHERE a.reserved_server_id=$1`, id).Scan(&r.NodeID, &r.PanelNodeID, &r.PanelAllocationID, &r.Hostname, &r.Port)
+	if err == nil {
+		if existing == nil || *existing != r.NodeID {
+			return Reservation{}, ErrInvariant
+		}
+		return r, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return r, err
 	}
 	if existing != nil {

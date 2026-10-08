@@ -3,6 +3,7 @@ package pterodactyl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -180,5 +181,22 @@ func TestTransfersDenyRedirectsAndUnlistedOrigins(t *testing.T) {
 	}
 	if err := client.RestoreBackup(ctx, "../bad", "../bad"); err == nil {
 		t.Fatal("unsafe ID accepted")
+	}
+}
+
+func TestReadyRejectsAnotherServersIdentity(t *testing.T) {
+	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/client/servers/abcdef12" {
+			t.Errorf("unexpected request path %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"attributes": map[string]any{"identifier": "fedcba98", "status": nil}})
+	}))
+	defer panel.Close()
+	client, err := NewServerClient(panel.URL, "test-client-key", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Ready(context.Background(), "abcdef12"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("accepted readiness for another server: %v", err)
 	}
 }

@@ -243,11 +243,19 @@ func (s *Service) mutate(ctx context.Context, user, id, key uuid.UUID, p server.
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	result, runErr := run(t)
+	// Membership, entitlement, or lifecycle intent may change while the durable
+	// operation is recorded. Check again before issuing a remote mutation, as the
+	// power/command service does. Revoked access must not use the earlier snapshot.
+	var result any
+	t.Target, err = s.Control.Access(ctx, conn, user, id, p)
+	runErr := err
+	if runErr == nil {
+		result, runErr = run(t)
+	}
 	outcome := "SUCCEEDED"
 	if runErr != nil {
 		outcome = "UNKNOWN"
-		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, control.ErrBusy) || pterodactyl.Rejected(runErr) {
+		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
 			outcome = "REJECTED"
 		}
 	}
@@ -389,9 +397,6 @@ func (s *Service) Upload(ctx context.Context, user, id, key uuid.UUID, dir, name
 			return nil, err
 		}
 		if plugin {
-			if _, err := s.inspect(ctx, t, dir, true); err != nil {
-				return nil, err
-			}
 			v, err := s.inspect(ctx, t, dir, true)
 			if err != nil {
 				return nil, err

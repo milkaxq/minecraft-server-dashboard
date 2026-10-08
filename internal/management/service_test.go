@@ -234,6 +234,42 @@ func TestAuthorizationBeforePanelAndFileSafety(t *testing.T) {
 		t.Fatal("overwrite permitted", err)
 	}
 }
+
+type revokeBeforeMutationPanel struct {
+	*memoryPanel
+	revoke func(context.Context) error
+}
+
+func (p *revokeBeforeMutationPanel) Ready(ctx context.Context, id string) error {
+	if err := p.memoryPanel.Ready(ctx, id); err != nil {
+		return err
+	}
+	return p.revoke(ctx)
+}
+
+func TestRevokedMembershipStopsAnAlreadyAuthorizedFileMutation(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	f.s.Panel = &revokeBeforeMutationPanel{memoryPanel: f.panel, revoke: func(ctx context.Context) error {
+		_, err := f.db.Exec(ctx, "DELETE FROM server_members WHERE server_id=$1 AND user_id=$2", f.id, f.admin)
+		return err
+	}}
+	key := uuid.New()
+	_, err := f.s.ChangeFile(ctx, f.admin, f.id, key, FileMutation{Action: "create", Path: "/revoked.txt", Content: "should not be written"}, "revocation-test")
+	if !errors.Is(err, server.ErrNotFound) {
+		t.Fatalf("revoked member was not rejected: %v", err)
+	}
+	if _, exists := f.panel.files["/revoked.txt"]; exists {
+		t.Fatal("revoked member wrote a file")
+	}
+	var status string
+	if err := f.db.QueryRow(ctx, "SELECT status FROM management_operations WHERE server_id=$1 AND user_id=$2 AND idempotency_key=$3", f.id, f.admin, key).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "REJECTED" {
+		t.Fatalf("unissued mutation must not be ambiguous: %s", status)
+	}
+}
 func TestSettingsPreservePropertiesAndProtectRevisions(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
