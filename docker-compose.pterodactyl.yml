@@ -1,0 +1,108 @@
+# Development overlay: docker compose -f docker-compose.yml -f docker-compose.pterodactyl.yml ...
+# v2 has no released image yet. Build the upstream Dockerfile at this reviewed commit.
+services:
+  panel-database:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: panel
+      MARIADB_USER: pterodactyl
+      MARIADB_PASSWORD: ${PANEL_DATABASE_PASSWORD:?Set PANEL_DATABASE_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${PANEL_DATABASE_ROOT_PASSWORD:?Set PANEL_DATABASE_ROOT_PASSWORD in .env}
+    volumes:
+      - panel_database:/var/lib/mysql
+    networks: [panel-data]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+  panel-cache:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - panel_cache:/data
+    networks: [panel-data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  panel:
+    image: blockyard/pterodactyl-panel:v2-f154449a8075
+    build:
+      context: https://github.com/pterodactyl/panel.git#f154449a8075595d12b8b01fa52cab570d04056d
+    environment:
+      APP_URL: ${PANEL_PUBLIC_URL:-http://localhost:8090}
+      APP_TIMEZONE: UTC
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_ENVIRONMENT_ONLY: "true"
+      APP_SERVICE_AUTHOR: operator@example.com
+      DB_CONNECTION: mysql
+      DB_HOST: panel-database
+      DB_PORT: "3306"
+      DB_DATABASE: panel
+      DB_USERNAME: pterodactyl
+      DB_PASSWORD: ${PANEL_DATABASE_PASSWORD:?Set PANEL_DATABASE_PASSWORD in .env}
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      SESSION_CONNECTION: sessions
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: panel-cache
+      REDIS_QUEUE_RETRY_AFTER: "90"
+      QUEUE_WORKER_ENABLED: "true"
+      SCHEDULER_ENABLED: "true"
+      # Panel mail stays in its private log volume during development.
+      MAIL_MAILER: log
+      MAIL_FROM_ADDRESS: operator@example.com
+    ports:
+      - "127.0.0.1:8090:80"
+    extra_hosts:
+      - "wings.localhost:host-gateway"
+    networks: [default, panel-data]
+    volumes:
+      - panel_keys:/app/var
+      - panel_nginx:/etc/nginx/http.d
+      - panel_certs:/etc/letsencrypt
+      - panel_logs:/app/storage/logs
+      - panel_extensions:/app/extensions
+      - panel_extension_assets:/app/public/assets/extensions
+    depends_on:
+      panel-database:
+        condition: service_healthy
+      panel-cache:
+        condition: service_healthy
+    stop_grace_period: 90s
+    restart: unless-stopped
+  backend:
+    environment:
+      PTERODACTYL_URL: ${PTERODACTYL_URL:-http://panel}
+      PTERODACTYL_WEBSOCKET_ORIGINS: ${PTERODACTYL_WEBSOCKET_ORIGINS:-ws://wings.localhost:8180}
+      PTERODACTYL_TRANSFER_ORIGINS: ${PTERODACTYL_TRANSFER_ORIGINS:-http://wings.localhost:8180}
+    extra_hosts:
+      - "wings.localhost:host-gateway"
+    depends_on:
+      panel:
+        condition: service_healthy
+  worker:
+    environment:
+      PTERODACTYL_URL: ${PTERODACTYL_URL:-http://panel}
+    depends_on:
+      panel:
+        condition: service_healthy
+
+networks:
+  panel-data:
+    internal: true
+volumes:
+  panel_database:
+  panel_cache:
+  panel_keys:
+  panel_nginx:
+  panel_certs:
+  panel_logs:
+  panel_extensions:
+  panel_extension_assets:

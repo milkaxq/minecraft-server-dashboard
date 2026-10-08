@@ -1,0 +1,254 @@
+"use client";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useAuth } from "./auth";
+import { STATE_LABELS } from "../lib/api";
+const icons = {
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="3" y="3" width="18" height="7" rx="2" />
+      <rect x="3" y="14" width="18" height="7" rx="2" />
+      <path d="M7 6.5h.01M7 17.5h.01M15 6.5h3M15 17.5h3" />
+    </>
+  ),
+  wallet: (
+    <>
+      <path d="M20 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h15V8H5a3 3 0 0 1 0-6" />
+      <path d="M20 12h-5v5h5M17 14.5h.01" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-3a8 8 0 0 1 16 0v3" />
+    </>
+  ),
+  plus: <path d="M12 5v14M5 12h14" />,
+  arrow: <path d="m9 5 7 7-7 7" />,
+  logout: (
+    <>
+      <path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4" />
+    </>
+  ),
+  play: <path d="m7 4 14 8-14 8Z" />,
+  stop: <rect x="5" y="5" width="14" height="14" rx="2" />,
+  restart: (
+    <>
+      <path d="M20 6v5h-5M20 11a8 8 0 1 0-2 7" />
+    </>
+  ),
+  terminal: (
+    <>
+      <path d="m4 6 6 6-6 6M13 18h7" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="8" y="8" width="13" height="13" rx="2" />
+      <path d="M16 8V3H3v13h5" />
+    </>
+  ),
+  check: <path d="m4 12 5 5L20 6" />,
+  cpu: (
+    <>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+      <path d="M9 1v5M15 1v5M9 18v5M15 18v5M1 9h5M1 15h5M18 9h5M18 15h5" />
+    </>
+  ),
+  world: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a17 17 0 0 1 0 18 17 17 0 0 1 0-18" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6Z" />
+      <path d="m8 12 3 3 5-6" />
+    </>
+  ),
+};
+export function Icon({ name, size = 20 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {icons[name] || icons.server}
+    </svg>
+  );
+}
+export function Brand() {
+  return (
+    <Link href="/dashboard" className="brand">
+      <span className="brand-mark">
+        <span />
+        <span />
+        <span />
+      </span>
+      blockyard<span className="brand-dot">.</span>
+    </Link>
+  );
+}
+export function Shell({ children }) {
+  const { session, logout } = useAuth();
+  const router = useRouter();
+  const path = usePathname();
+  useEffect(() => {
+    if (!session) router.replace("/login");
+  }, [session, router]);
+  if (!session) return <div className="loading-full">Opening your dashboard…</div>;
+  const nav = [
+    ["dashboard", "/dashboard", "Dashboard"],
+    ["server", "/servers", "Servers"],
+    ["wallet", "/billing", "Billing"],
+    ["user", "/account", "Account"],
+    ...(session.user.is_admin ? [["shield", "/admin", "Admin"]] : []),
+  ];
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <Brand />
+        <div className="workspace">
+          <span className="workspace-avatar">{session.user.name.slice(0, 1).toUpperCase()}</span>
+          <div>
+            <strong>My workspace</strong>
+            <small>Personal hosting</small>
+          </div>
+          <span className="workspace-dot" />
+        </div>
+        <div className="nav-label">WORKSPACE</div>
+        <nav aria-label="Main navigation">
+          {nav.map(([icon, href, label]) => (
+            <Link
+              key={href}
+              href={href}
+              className={`nav-item ${path === href || path.startsWith(`${href}/`) ? "active" : ""}`}
+              aria-current={path === href || path.startsWith(`${href}/`) ? "page" : undefined}
+            >
+              <Icon name={icon} />
+              {label}
+              {label === "Servers" && (
+                <span className="nav-shortcut" aria-hidden="true">
+                  ↗
+                </span>
+              )}
+            </Link>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="sidebar-note">
+            <Icon name="world" />
+            <strong>A world of your own.</strong>
+            <p>
+              More playing.
+              <br />
+              Less managing.
+            </p>
+          </div>
+          <button className="profile-button" onClick={logout}>
+            <span className="profile-avatar">{session.user.name.slice(0, 1).toUpperCase()}</span>
+            <span>
+              <strong>{session.user.name}</strong>
+              <small>Sign out</small>
+            </span>
+            <Icon name="logout" size={17} />
+          </button>
+        </div>
+      </aside>
+      <div className="main-wrap">
+        <header className="topbar">
+          <span>
+            Minecraft hosting <span className="breadcrumb-slash">/</span>{" "}
+            <strong>
+              {path.includes("/console")
+                ? "Console"
+                : path.startsWith("/servers/") && path !== "/servers/new"
+                  ? "Your server"
+                  : nav.find(([, href]) => path === href)?.[2] || "New server"}
+            </strong>
+          </span>
+          <span className="topbar-tag">
+            <span />
+            Your workspace
+          </span>
+        </header>
+        <main className="main-content">{children}</main>
+        <footer className="footer">
+          Built for your next adventure.<span>Blockyard · Minecraft hosting</span>
+        </footer>
+      </div>
+    </div>
+  );
+}
+export function Badge({ state }) {
+  return (
+    <span className={`badge badge-${state?.toLowerCase()}`}>
+      <span />
+      {STATE_LABELS[state] || state || "Unknown"}
+    </span>
+  );
+}
+export function ErrorMessage({ error }) {
+  if (!error) return null;
+  return (
+    <div role="alert" className="error-message">
+      {typeof error === "string" ? error : error.message}
+      {error.requestId && <small>Reference: {error.requestId}</small>}
+    </div>
+  );
+}
+export function Loading({ message = "Loading your workspace…" }) {
+  return (
+    <div className="loading-state">
+      <span className="spinner" />
+      {message}
+    </div>
+  );
+}
+export function Empty({ title, children, action }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon">
+        <Icon name="world" size={30} />
+      </span>
+      <h3>{title}</h3>
+      <p>{children}</p>
+      {action}
+    </div>
+  );
+}
+export function PageHeading({ eyebrow, title, description, action }) {
+  return (
+    <div className="page-heading">
+      <div>
+        {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+        <h1>{title}</h1>
+        {description && <p>{description}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}

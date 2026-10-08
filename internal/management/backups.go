@@ -1,0 +1,121 @@
+package management
+
+import (
+	"context"
+	"io"
+	"strings"
+
+	"github.com/google/uuid"
+
+	"minecraft-hosting/internal/control"
+	"minecraft-hosting/internal/pterodactyl"
+	"minecraft-hosting/internal/server"
+)
+
+func (s *Service) Backups(ctx context.Context, user, id uuid.UUID) ([]pterodactyl.Backup, error) {
+	t, err := s.access(ctx, user, id, server.Backups)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.Panel.ListBackups(ctx, t.Identifier)
+	if err != nil {
+		return nil, control.ErrUnavailable
+	}
+	return list, nil
+}
+func backupIn(list []pterodactyl.Backup, id string) (pterodactyl.Backup, error) {
+	for _, b := range list {
+		if b.UUID == id {
+			return b, nil
+		}
+	}
+	return pterodactyl.Backup{}, server.ErrNotFound
+}
+func (s *Service) NewBackup(ctx context.Context, user, id, key uuid.UUID, name, rid string) (any, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 100 || strings.ContainsAny(name, "\r\n\x00") {
+		return nil, server.ErrInvalid
+	}
+	return s.mutate(ctx, user, id, key, server.Backups, "backup.create", map[string]string{"name": name}, rid, func(t Target) (any, error) {
+		var ambiguous bool
+		if err := t.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM management_operations WHERE server_id=$1 AND action='backup.create' AND status IN ('PENDING','UNKNOWN') AND NOT (user_id=$2 AND idempotency_key=$3))`, id, user, key).Scan(&ambiguous); err != nil {
+			return nil, err
+		}
+		if ambiguous {
+			return nil, control.ErrBusy
+		}
+		list, err := s.Panel.ListBackups(ctx, t.Identifier)
+		if err != nil {
+			return nil, err
+		}
+		if len(list) >= t.BackupLimit {
+			return nil, ErrLimit
+		}
+		b, err := s.Panel.CreateBackup(ctx, t.Identifier, name)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = uuid.Parse(b.UUID); err != nil {
+			return nil, control.ErrUnknown
+		}
+		return b, nil
+	})
+}
+func (s *Service) ChangeBackup(ctx context.Context, user, id, key uuid.UUID, backup, action, confirmation, rid string) (any, error) {
+	if _, err := uuid.Parse(backup); err != nil || (action != "restore" && action != "delete") || confirmation != backup {
+		return nil, server.ErrInvalid
+	}
+	return s.mutate(ctx, user, id, key, server.Backups, "backup."+action, map[string]string{"backup": backup}, rid, func(t Target) (any, error) {
+		list, err := s.Panel.ListBackups(ctx, t.Identifier)
+		if err != nil {
+			return nil, err
+		}
+		b, err := backupIn(list, backup)
+		if err != nil {
+			return nil, err
+		}
+		if action == "restore" {
+			if !b.Successful || b.CompletedAt == nil {
+				return nil, server.ErrInvalid
+			}
+			if err = s.offline(ctx, t); err != nil {
+				return nil, err
+			}
+			err = s.Panel.RestoreBackup(ctx, t.Identifier, backup)
+		} else {
+			if b.CompletedAt == nil {
+				return nil, control.ErrBusy
+			}
+			err = s.Panel.DeleteBackup(ctx, t.Identifier, backup)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"status": "accepted", "action": action}, nil
+	})
+}
+func (s *Service) BackupDownload(ctx context.Context, user, id uuid.UUID, backup string) (io.ReadCloser, int64, error) {
+	if _, err := uuid.Parse(backup); err != nil {
+		return nil, 0, server.ErrInvalid
+	}
+	t, err := s.access(ctx, user, id, server.Backups)
+	if err != nil {
+		return nil, 0, err
+	}
+	list, err := s.Panel.ListBackups(ctx, t.Identifier)
+	if err != nil {
+		return nil, 0, control.ErrUnavailable
+	}
+	b, err := backupIn(list, backup)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !b.Successful || b.CompletedAt == nil {
+		return nil, 0, server.ErrInvalid
+	}
+	r, err := s.Panel.DownloadBackup(ctx, t.Identifier, backup)
+	if err != nil {
+		return nil, 0, control.ErrUnavailable
+	}
+	return r, int64(t.DiskMB) * 1048576 * 2, nil
+}

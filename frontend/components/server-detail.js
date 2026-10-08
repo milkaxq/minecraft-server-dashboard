@@ -1,0 +1,656 @@
+"use client";
+import { FeatureLinks } from "./management";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { useAuth } from "./auth";
+import { useResource } from "./data";
+import { Badge, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
+import { consoleURL, duration, formatBytes } from "../lib/api";
+function ConfirmStop({ onCancel, onConfirm, busy }) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="confirm-dialog"
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
+      aria-labelledby="confirm-title"
+    >
+      <span className="danger-icon">
+        <Icon name="stop" size={25} />
+      </span>
+      <h2 id="confirm-title">Force stop this server?</h2>
+      <p>Unsaved progress may be lost. Use this only when a normal stop is not responding.</p>
+      <div className="dialog-actions">
+        <button className="button secondary" onClick={onCancel} disabled={busy} autoFocus>
+          Keep playing
+        </button>
+        <button className="button danger" onClick={onConfirm} disabled={busy}>
+          {busy ? "Sending…" : "Force stop"}
+        </button>
+      </div>
+    </dialog>
+  );
+}
+function ResourceChart({ samples }) {
+  const width = 600,
+    height = 140;
+  const coordinates = samples.map(
+    (sample, i) =>
+      `${samples.length === 1 ? width / 2 : (i / (samples.length - 1)) * width},${height - (Math.min(100, Math.max(0, sample)) / 100) * height}`,
+  );
+  return (
+    <div className="chart-wrap">
+      <div className="chart-labels">
+        <span>100%</span>
+        <span>50%</span>
+        <span>0%</span>
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="CPU allocation usage from recent live samples"
+      >
+        <defs>
+          <linearGradient id="cpu-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#4c9a5f" stopOpacity=".2" />
+            <stop offset="100%" stopColor="#4c9a5f" stopOpacity=".01" />
+          </linearGradient>
+        </defs>
+        {[0, height / 2, height].map((y) => (
+          <line key={y} x1="0" y1={y} x2={width} y2={y} stroke="#e8ece8" strokeDasharray="3 4" />
+        ))}
+        {samples.length > 1 && (
+          <>
+            <path
+              d={`M0,${height} L${coordinates.join(" L")} L${width},${height} Z`}
+              fill="url(#cpu-fill)"
+            />
+            <polyline
+              points={coordinates.join(" ")}
+              fill="none"
+              stroke="#4c9a5f"
+              strokeWidth="2.5"
+              vectorEffect="non-scaling-stroke"
+            />
+          </>
+        )}
+        {samples.length === 1 && (
+          <circle
+            cx={width / 2}
+            cy={height - (Math.min(100, samples[0]) / 100) * height}
+            r="3"
+            fill="#4c9a5f"
+          />
+        )}
+      </svg>
+      {!samples.length && <span className="chart-empty">Waiting for live samples</span>}
+    </div>
+  );
+}
+function LiveResourceChart({ usage, cpuLimit }) {
+  const [history, setHistory] = useState({ usage: null, samples: [] });
+  // Record each distinct API snapshot once, without an extra effect-driven render.
+  if (usage && cpuLimit > 0 && history.usage !== usage) {
+    setHistory({
+      usage,
+      samples: [...history.samples.slice(-59), (usage.cpu_percent / cpuLimit) * 100],
+    });
+  }
+  return <ResourceChart samples={history.samples} />;
+}
+
+export function ServerDetail({ id, advanced = false }) {
+  const { api } = useAuth();
+  const { data: server, error, loading } = useResource(`/servers/${id}`, 10000);
+  const {
+    data: usage,
+    error: usageError,
+    refresh: refreshUsage,
+  } = useResource(
+    server?.status === "RUNNING" && server.management_available ? `/servers/${id}/usage` : null,
+    5000,
+  );
+  const [busy, setBusy] = useState("");
+  const [actionError, setActionError] = useState(null);
+  const [notice, setNotice] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const ready = server?.status === "RUNNING" && server.management_available;
+  const permissions = server?.permissions || [];
+  const has = (action) => permissions.includes(action);
+  const transitioning = ["starting", "stopping"].includes(usage?.power_state);
+  const address = server?.hostname && server.port ? `${server.hostname}:${server.port}` : null;
+  async function power(action) {
+    if (busy) return;
+    setBusy(action);
+    setActionError(null);
+    setNotice("");
+    try {
+      await api(`/servers/${id}/${action}`, {
+        method: "POST",
+        body: action === "kill" ? { confirmation: id } : {},
+        key: crypto.randomUUID(),
+      });
+      setNotice(
+        `${action === "kill" ? "Force stop" : action[0].toUpperCase() + action.slice(1)} request accepted. Watching for a status update.`,
+      );
+      setConfirm(false);
+      refreshUsage();
+    } catch (err) {
+      setActionError(err);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setNotice("Copy the server address from the connection panel below.");
+    }
+  }
+  return (
+    <Shell>
+      {loading && !server ? (
+        <Loading message="Opening your server…" />
+      ) : error && !server ? (
+        <>
+          <ErrorMessage error={error} />
+          <Link href="/servers" className="button secondary">
+            Back to servers
+          </Link>
+        </>
+      ) : (
+        server && (
+          <>
+            <Link className="back-link" href="/servers">
+              ← All servers
+            </Link>
+            <PageHeading
+              eyebrow={`${server.server_type === "PAPER" ? "PAPER" : "VANILLA"} · MINECRAFT ${server.minecraft_version}`}
+              title={server.name}
+              description="A little less setup. A lot more Minecraft."
+              action={<Badge state={usage?.power_state || server.status} />}
+            />
+            <div className="server-toolbar">
+              <div className="mode-switch">
+                <Link href={`/servers/${id}`} className={!advanced ? "selected" : ""}>
+                  Simple
+                </Link>
+                <Link href={`/servers/${id}/console`} className={advanced ? "selected" : ""}>
+                  <Icon name="terminal" size={14} />
+                  Advanced
+                </Link>
+              </div>
+              <div className="power-controls">
+                {has("start") && (
+                  <button
+                    className="button primary"
+                    onClick={() => power("start")}
+                    disabled={!ready || !!busy || transitioning || usage?.power_state === "running"}
+                  >
+                    <Icon name="play" size={15} />
+                    {busy === "start" ? "Starting…" : "Start"}
+                  </button>
+                )}
+                {has("stop") && (
+                  <button
+                    className="button secondary"
+                    onClick={() => power("stop")}
+                    disabled={!ready || !!busy || transitioning || usage?.power_state === "offline"}
+                  >
+                    <Icon name="stop" size={15} />
+                    {busy === "stop" ? "Stopping…" : "Stop"}
+                  </button>
+                )}
+                {has("restart") && (
+                  <button
+                    className="button secondary"
+                    onClick={() => power("restart")}
+                    disabled={!ready || !!busy || transitioning || usage?.power_state === "offline"}
+                  >
+                    <Icon name="restart" size={16} />
+                    {busy === "restart" ? "Restarting…" : "Restart"}
+                  </button>
+                )}
+              </div>
+            </div>
+            <ErrorMessage error={error || actionError} />
+            {notice && (
+              <p className="notice success" role="status">
+                {notice}
+              </p>
+            )}
+            {server.status !== "RUNNING" && (
+              <div className="notice lifecycle-notice">
+                <strong>
+                  {
+                    {
+                      PENDING_PAYMENT: "Your payment is still pending.",
+                      PAYMENT_CONFIRMED: "Your server is queued for setup.",
+                      PROVISIONING: "Your world is getting ready.",
+                      SUSPENDED: "This server is suspended.",
+                      FAILED: "Your server needs attention.",
+                      CANCELLED: "This server has been cancelled.",
+                    }[server.status]
+                  }
+                </strong>
+                <p>
+                  {
+                    {
+                      PENDING_PAYMENT:
+                        "Visit Billing to finish checkout. Contact support if you cannot find your order.",
+                      PAYMENT_CONFIRMED: "Setup will begin as soon as resources are available.",
+                      PROVISIONING:
+                        "We’ll refresh this page automatically. You can start playing once setup finishes.",
+                      SUSPENDED: "Please contact hosting support to reactivate it.",
+                      FAILED:
+                        "Please contact hosting support. Your request and configuration have been kept.",
+                      CANCELLED: "Your other worlds are still available from the Servers page.",
+                    }[server.status]
+                  }
+                </p>
+              </div>
+            )}
+            {server.status === "RUNNING" && !server.management_available && (
+              <p className="notice">
+                Live controls are temporarily unavailable. Please contact hosting support.
+              </p>
+            )}
+            <FeatureLinks id={id} server={server} advanced={advanced} />
+            {advanced ? (
+              <>
+                <div className="section-heading">
+                  <div>
+                    <h2>Minecraft console</h2>
+                    <span>Live output and server commands</span>
+                  </div>
+                  {has("kill") && (
+                    <button
+                      className="button danger-outline"
+                      disabled={!ready || !!busy || usage?.power_state === "offline"}
+                      onClick={() => setConfirm(true)}
+                    >
+                      Force stop
+                    </button>
+                  )}
+                </div>
+                {has("console") && server.console_available && ready ? (
+                  <LiveConsole id={id} role={server.role} />
+                ) : (
+                  <div className="panel unavailable-panel">
+                    <Icon name="terminal" size={28} />
+                    <h3>Console unavailable</h3>
+                    <p>
+                      {!ready
+                        ? "Your server must be ready before you can connect."
+                        : "The live console connection has not been enabled. Please contact hosting support."}
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <ErrorMessage error={usageError} />
+                <div className="metric-grid">
+                  <Metric
+                    icon="user"
+                    title="Players online"
+                    value={usage?.players_online ?? "—"}
+                    detail={
+                      usage?.players_max != null
+                        ? `of ${usage.players_max} slots`
+                        : usage?.players_available
+                          ? "Ready for friends"
+                          : "No player count available"
+                    }
+                  />
+                  <Metric
+                    icon="cpu"
+                    title="CPU usage"
+                    value={usage ? `${usage.cpu_percent.toFixed(1)}%` : "—"}
+                    detail={`${server.cpu_limit}% allocated`}
+                  />
+                  <Metric
+                    icon="server"
+                    title="Memory usage"
+                    value={formatBytes(usage?.memory_bytes)}
+                    detail={`of ${formatBytes(server.ram_mb * 1048576, 0)} allocated`}
+                  />
+                  <Metric
+                    icon="clock"
+                    title="Uptime"
+                    value={usage ? duration(usage.uptime_ms) : "—"}
+                    detail={
+                      usage?.power_state === "running"
+                        ? "Since the last start"
+                        : "Start your next adventure"
+                    }
+                  />
+                </div>
+                <div className="overview-grid">
+                  <section className="panel performance-panel">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Server performance</h2>
+                        <span>CPU allocation usage</span>
+                      </div>
+                      <span className="live-label">
+                        <span />
+                        Recent live samples
+                      </span>
+                    </div>
+                    <LiveResourceChart key={id} usage={usage} cpuLimit={server.cpu_limit} />
+                    <div className="chart-caption">
+                      <span>Older</span>
+                      <span>Now</span>
+                    </div>
+                    <div className="disk-meter">
+                      <div>
+                        <span>Disk usage</span>
+                        <strong>
+                          {formatBytes(usage?.disk_bytes)}{" "}
+                          <small>/ {formatBytes(server.disk_mb * 1048576, 0)}</small>
+                        </strong>
+                      </div>
+                      <progress
+                        max={server.disk_mb * 1048576}
+                        value={usage?.disk_bytes || 0}
+                        aria-label="Disk usage"
+                      />
+                    </div>
+                  </section>
+                  <section className="panel connection-panel">
+                    <span className="connection-icon">
+                      <Icon name="world" size={24} />
+                    </span>
+                    <h2>Bring your friends.</h2>
+                    <p>
+                      Open Minecraft → Multiplayer → Add Server.
+                      <br />
+                      Use this address to join your world.
+                    </p>
+                    <label className="address-label">SERVER ADDRESS</label>
+                    <div className="address-box">
+                      <code>{address || "Waiting for activation"}</code>
+                      <button onClick={copy} disabled={!address} aria-label="Copy server address">
+                        <Icon name={copied ? "check" : "copy"} size={17} />
+                      </button>
+                    </div>
+                    {address && (
+                      <span className="field-help">
+                        Java Edition · Minecraft {server.minecraft_version}
+                      </span>
+                    )}
+                    <div className="connection-tip">
+                      <Icon name="shield" size={17} />
+                      <span>Only your world. Only your resources.</span>
+                    </div>
+                  </section>
+                </div>
+                <section className="panel details-panel">
+                  <div>
+                    <h2>At a glance</h2>
+                    <p>The essentials for your world.</p>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Server software</dt>
+                      <dd>{server.server_type === "PAPER" ? "Paper" : "Vanilla"}</dd>
+                    </div>
+                    <div>
+                      <dt>Minecraft version</dt>
+                      <dd>{server.minecraft_version}</dd>
+                    </div>
+                    <div>
+                      <dt>Your access</dt>
+                      <dd>
+                        {server.role === "OWNER"
+                          ? "Owner"
+                          : server.role === "ADMIN"
+                            ? "Admin"
+                            : "Moderator"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Backup allowance</dt>
+                      <dd>{server.backup_limit}</dd>
+                    </div>
+                  </dl>
+                </section>
+              </>
+            )}
+            {confirm && (
+              <ConfirmStop
+                onCancel={() => setConfirm(false)}
+                onConfirm={() => power("kill")}
+                busy={!!busy}
+              />
+            )}
+          </>
+        )
+      )}
+    </Shell>
+  );
+}
+function Metric({ icon, title, value, detail }) {
+  return (
+    <div className="metric-card">
+      <div>
+        <span>{title}</span>
+        <Icon name={icon} size={17} />
+      </div>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+function LiveConsole({ id, role }) {
+  const { api } = useAuth();
+  const [lines, setLines] = useState([]);
+  const [connectionState, setState] = useState("connecting");
+  const [error, setError] = useState(null);
+  const [command, setCommand] = useState("");
+  const [sending, setSending] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [paused, setPaused] = useState(false);
+  const state = paused ? "paused" : connectionState;
+  const [generation, setGeneration] = useState(0);
+  const [follow, setFollow] = useState(true);
+  const log = useRef(null);
+  useEffect(() => {
+    if (follow && log.current) log.current.scrollTop = log.current.scrollHeight;
+  }, [lines, follow]);
+  useEffect(() => {
+    if (paused) return;
+    let alive = true,
+      socket,
+      timer,
+      attempts = 0;
+    const controller = new AbortController();
+    async function connect() {
+      if (!alive) return;
+      setState(attempts ? "reconnecting" : "connecting");
+      setError(null);
+      try {
+        const ticket = await api(`/servers/${id}/console-ticket`, {
+          method: "POST",
+          signal: controller.signal,
+        });
+        if (!alive) return;
+        socket = new WebSocket(consoleURL(id), ["hosting.console.v1", `ticket.${ticket.ticket}`]);
+        socket.onmessage = (event) => {
+          if (!alive) return;
+          let message;
+          try {
+            message = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          if (message.event === "connected") {
+            attempts = 0;
+            setState("connected");
+            setLines([]);
+          }
+          if (message.event === "console output" && typeof message.args?.[0] === "string") {
+            // Strip the intentional ANSI escape character from Minecraft output.
+            // eslint-disable-next-line no-control-regex
+            const line = message.args[0].replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+            setLines((old) => [...old.slice(-499), line]);
+          }
+        };
+        socket.onerror = () => {
+          if (alive) setError("Could not connect to the Minecraft console.");
+        };
+        socket.onclose = () => {
+          if (!alive) return;
+          setState("disconnected");
+          if (attempts >= 8) {
+            setError("Connection interrupted. Select reconnect to try again.");
+            return;
+          }
+          attempts++;
+          timer = setTimeout(connect, Math.min(1000 * 2 ** attempts, 30000));
+        };
+      } catch (err) {
+        if (!alive || err.name === "AbortError") return;
+        setError(err);
+        setState("unavailable");
+      }
+    }
+    connect();
+    return () => {
+      alive = false;
+      controller.abort();
+      clearTimeout(timer);
+      socket?.close();
+    };
+  }, [id, api, paused, generation]);
+  async function send(event) {
+    event.preventDefault();
+    if (!command.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    setNotice("");
+    try {
+      await api(`/servers/${id}/commands`, {
+        method: "POST",
+        body: { command: command.trim() },
+        key: crypto.randomUUID(),
+      });
+      setCommand("");
+      setNotice("Command accepted.");
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSending(false);
+    }
+  }
+  return (
+    <>
+      <ErrorMessage error={error} />
+      <div className="console-panel">
+        <div className="console-toolbar">
+          <span className={`console-connection ${state}`}>
+            <span />
+            {
+              {
+                connected: "Connected",
+                connecting: "Connecting",
+                reconnecting: "Reconnecting",
+                disconnected: "Disconnected",
+                paused: "Paused",
+                unavailable: "Unavailable",
+              }[state]
+            }
+          </span>
+          <div>
+            <label className="follow-toggle">
+              <input
+                type="checkbox"
+                checked={follow}
+                onChange={(e) => setFollow(e.target.checked)}
+              />
+              Follow output
+            </label>
+            <button onClick={() => setLines([])}>Clear</button>
+            <button
+              onClick={() => {
+                setPaused(false);
+                setGeneration((v) => v + 1);
+              }}
+            >
+              Reconnect
+            </button>
+            <button onClick={() => setPaused((v) => !v)}>{paused ? "Resume" : "Pause"}</button>
+          </div>
+        </div>
+        <div
+          className="console-log"
+          ref={log}
+          role="log"
+          aria-label="Minecraft console output"
+          aria-live="off"
+        >
+          {lines.length ? (
+            lines.map((line, i) => (
+              <div className="console-line" key={i}>
+                <span>{String(i + 1).padStart(3, "0")}</span>
+                <code>{line}</code>
+              </div>
+            ))
+          ) : (
+            <div className="console-empty">
+              <Icon name="terminal" size={24} />
+              <span>
+                {state === "connected"
+                  ? "Connected. Minecraft output will appear here."
+                  : "Connecting to your Minecraft console…"}
+              </span>
+            </div>
+          )}
+        </div>
+        <form className="console-input" onSubmit={send}>
+          <span aria-hidden="true">❯</span>
+          <input
+            aria-label="Minecraft console command"
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder={
+              role === "MODERATOR" ? "Enter list, say, or help…" : "Enter a Minecraft command…"
+            }
+            maxLength={1024}
+            autoComplete="off"
+            spellCheck="false"
+            disabled={state !== "connected"}
+          />
+          <button
+            className="button primary"
+            disabled={state !== "connected" || sending || !command.trim()}
+          >
+            {sending ? "Sending…" : "Send"}
+            <Icon name="arrow" size={14} />
+          </button>
+        </form>
+      </div>
+      <div className="console-caption">
+        <span>
+          {role === "MODERATOR"
+            ? "Moderator access: list, say and help commands."
+            : "Commands go to your Minecraft server."}{" "}
+          Console output is kept only while this page is open.
+        </span>
+        <span role="status">{notice}</span>
+      </div>
+    </>
+  );
+}

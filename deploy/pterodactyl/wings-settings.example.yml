@@ -1,0 +1,19 @@
+# Merge these settings into the complete configuration copied from Panel.
+# Keep the Panel-generated uuid, token_id and token. This is not a runnable config.
+api:
+  host: 0.0.0.0
+  port: 8180
+  ssl:
+    enabled: false
+system:
+  root_directory: /var/lib/pterodactyl
+  data: /var/lib/pterodactyl/volumes
+  backup_directory: /var/lib/pterodactyl/backups
+  tmp_directory: /tmp/pterodactyl
+  sftp:
+    bind_port: 2022
+# Host networking lets the Linux Wings container reach the published Panel port.
+remote: http://127.0.0.1:8090
+# Our Go console relay identifies its internal Panel origin.
+allowed_origins:
+  - http://panel

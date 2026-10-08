@@ -1,0 +1,40 @@
+# Native Linux Docker only. Wings is a trusted infrastructure agent.
+services:
+  wings:
+    profiles: [wings]
+    image: ghcr.io/pterodactyl/wings:v1.13.3
+    network_mode: host
+    environment:
+      WINGS_UID: "988"
+      WINGS_GID: "988"
+      WINGS_USERNAME: pterodactyl
+    volumes:
+      # Config is writable because Wings persists normalized settings at startup.
+      - type: bind
+        source: ./.local/wings
+        target: /etc/pterodactyl
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+      # Docker resolves mounts on the host: these absolute paths MUST match.
+      - type: bind
+        source: /var/lib/pterodactyl
+        target: /var/lib/pterodactyl
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /tmp/pterodactyl
+        target: /tmp/pterodactyl
+        bind:
+          create_host_path: false
+      - wings_logs:/var/log/pterodactyl
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    restart: unless-stopped
+volumes:
+  wings_logs:

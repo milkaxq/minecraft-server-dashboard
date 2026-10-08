@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: hosting
+      POSTGRES_USER: hosting
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hosting -d hosting"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:8.6.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: .
+    entrypoint: ["migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  backend:
+    build: .
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      MAIL_DIRECTORY: /var/lib/hosting/mail
+      SMTP_ADDRESS: ${SMTP_ADDRESS:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      PTERODACTYL_URL: ${PTERODACTYL_URL:-}
+      PTERODACTYL_CLIENT_API_KEY: ${PTERODACTYL_CLIENT_API_KEY:-}
+      PTERODACTYL_WEBSOCKET_ORIGINS: ${PTERODACTYL_WEBSOCKET_ORIGINS:-}
+      PTERODACTYL_TRANSFER_ORIGINS: ${PTERODACTYL_TRANSFER_ORIGINS:-}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-disabled}
+      MOCK_PAYMENT_SECRET: ${MOCK_PAYMENT_SECRET:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - mail_data:/var/lib/hosting/mail
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    init: true
+    restart: unless-stopped
+  # Opt in once Panel credentials are configured; see the optional v2 overlay.
+  worker:
+    profiles: ["pterodactyl"]
+    build: .
+    entrypoint: ["worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      PTERODACTYL_URL: ${PTERODACTYL_URL:-}
+      PTERODACTYL_APPLICATION_API_KEY: ${PTERODACTYL_APPLICATION_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    init: true
+    restart: unless-stopped
+  # Customer dashboard; the profile keeps backend-only development lightweight.
+  frontend:
+    profiles: ["frontend"]
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    init: true
+volumes:
+  postgres_data:
+  redis_data:
+  mail_data:
