@@ -1,4 +1,5 @@
 "use client";
+import { BetaGettingStarted } from "./first-server";
 import { softwareName } from "../lib/software";
 import Link from "next/link";
 import { useState } from "react";
@@ -62,6 +63,9 @@ export function Dashboard({ serversOnly = false }) {
   const { session } = useAuth();
   const { data: servers, loading, error, refresh } = useResource("/servers", 10000);
   const { data: plans, error: plansError } = useResource("/plans");
+  const { data: registration } = useResource("/auth/config");
+  const { data: billing } = useResource("/billing/config");
+  const beta = registration?.invite_required && billing?.provider === "disabled";
   const [query, setQuery] = useState("");
   const [view, setView] = useState("active");
   const visible = (servers || [])
@@ -86,15 +90,22 @@ export function Dashboard({ serversOnly = false }) {
             : "Your worlds, your friends, your next adventure."
         }
         action={
-          <Link className="button primary" href="/servers/new">
-            <Icon name="plus" size={17} />
-            New server
-          </Link>
+          beta && !session?.user.is_admin ? (
+            <Link className="button secondary" href="/guide#start-and-join">
+              Setup guide
+            </Link>
+          ) : (
+            <Link className="button primary" href="/servers/new">
+              <Icon name="plus" size={17} />
+              New server
+            </Link>
+          )
         }
       />
+      {!serversOnly && beta && servers && <BetaGettingStarted servers={servers} />}
       {!serversOnly && (
         <>
-          {servers?.length === 0 && (
+          {servers?.length === 0 && !beta && (
             <section className="welcome-banner">
               <div>
                 <span className="banner-kicker">MAKE SOMETHING TOGETHER</span>
@@ -212,7 +223,8 @@ export function Dashboard({ serversOnly = false }) {
           <Empty
             title={query ? "No matching servers" : "Your next adventure starts here"}
             action={
-              !query && (
+              !query &&
+              !beta && (
                 <Link href="/servers/new" className="button primary">
                   <Icon name="plus" size={17} />
                   Create a server
@@ -222,11 +234,13 @@ export function Dashboard({ serversOnly = false }) {
           >
             {query
               ? "Try another name or server type."
-              : "Choose a plan and a Minecraft version to request your first world."}
+              : beta
+                ? "Ask your host for access to a beta server. It will appear here when available."
+                : "Choose a plan and a Minecraft version to request your first world."}
           </Empty>
         ))
       )}
-      {!serversOnly && (
+      {!serversOnly && !beta && (
         <section className="plans-section">
           <div className="section-heading">
             <div>

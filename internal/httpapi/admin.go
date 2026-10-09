@@ -12,7 +12,7 @@ import (
 )
 
 func (a *API) adminRoutes(mux *http.ServeMux) {
-	routes := map[string]http.HandlerFunc{"GET /admin/plans": a.adminPlans, "POST /admin/plans": a.adminSavePlan, "PUT /admin/plans/{plan}": a.adminSavePlan, "GET /admin/users": a.adminUsers, "GET /admin/servers": a.adminServers, "GET /admin/orders": a.adminOrders, "GET /admin/nodes": a.adminNodes, "GET /admin/audit": a.adminAudit}
+	routes := map[string]http.HandlerFunc{"GET /admin/invitations": a.adminInvitations, "POST /admin/invitations": a.adminCreateInvitation, "POST /admin/invitations/{invite}/revoke": a.adminRevokeInvitation, "GET /admin/plans": a.adminPlans, "POST /admin/plans": a.adminSavePlan, "PUT /admin/plans/{plan}": a.adminSavePlan, "GET /admin/users": a.adminUsers, "GET /admin/servers": a.adminServers, "GET /admin/orders": a.adminOrders, "GET /admin/nodes": a.adminNodes, "GET /admin/audit": a.adminAudit}
 	for route, handler := range routes {
 		mux.HandleFunc(route, a.protected(a.liveLimit("admin", 240, func(w http.ResponseWriter, r *http.Request) {
 			if a.Admin == nil {

@@ -41,6 +41,7 @@ func TestPrivateRoutesRejectMissingAuthenticationBeforeBusinessLogic(t *testing.
 		"POST /orders/" + id + "/checkout", "POST /orders/" + id + "/cancel", "POST /orders/" + id + "/mock-pay",
 		"GET /subscriptions", "PUT /servers/" + id + "/subscription", "POST /servers/" + id + "/renewals",
 		"GET /admin/plans", "POST /admin/plans", "PUT /admin/plans/" + id,
+		"GET /admin/invitations", "POST /admin/invitations", "POST /admin/invitations/" + id + "/revoke",
 		"GET /admin/users", "GET /admin/servers", "GET /admin/orders", "GET /admin/nodes", "GET /admin/audit",
 		"POST /admin/servers/" + id + "/provision", "POST /admin/servers/" + id + "/retry",
 		"POST /admin/servers/" + id + "/suspend", "POST /admin/servers/" + id + "/unsuspend",

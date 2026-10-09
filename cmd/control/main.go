@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"minecraft-hosting/internal/audit"
+	"minecraft-hosting/internal/auth"
 	"minecraft-hosting/internal/config"
 	"minecraft-hosting/internal/node"
 	"minecraft-hosting/internal/provisioning"
@@ -29,7 +30,7 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("use control admin, software or node")
+		return errors.New("use control bootstrap-invite, admin, software or node")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -44,6 +45,17 @@ func run() error {
 	defer db.Close()
 	f := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
 	switch os.Args[1] {
+	case "bootstrap-invite":
+		email := f.String("email", "", "email for the first account on a fresh database")
+		if err = f.Parse(os.Args[2:]); err != nil {
+			return err
+		}
+		invitation, err := auth.BootstrapInvitation(ctx, db, *email, uuid.NewString())
+		if err != nil {
+			return err
+		}
+		// Explicit one-time credential output for a private operator file, never logs.
+		return json.NewEncoder(os.Stdout).Encode(invitation)
 	case "admin":
 		email := f.String("email", "", "verified account to promote")
 		reason := f.String("reason", "", "audit reason")

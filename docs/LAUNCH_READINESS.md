@@ -52,9 +52,8 @@ Before inviting external players:
 7. **Operations:** add uptime, failed-job, disk-space and backup-age alerts, a
    support contact and a maintenance procedure. Restart the host and prove the
    worker resumes safely without duplicating servers or resource reservations.
-8. **Access:** restrict the beta to invited users. Public registration currently
-   has no invitation gate; use an appropriate access restriction for a private
-   deployment. Do not advertise the demo payment flow as actual payment.
+8. **Access:** restrict the beta to invited users. Use REGISTRATION_MODE=invite_only and the administrator
+   invitation flow described in [PRIVATE_BETA.md](PRIVATE_BETA.md). Do not advertise the demo payment flow as actual payment.
 
 Keep billing disabled for a non-commercial beta. Operator-created servers are
 already supported. The development mock checkout remains a local demonstration,
@@ -78,7 +77,8 @@ live charges. Keep an explicit capacity cap for the first launch.
 
 ## Next customer-experience priorities
 
-- Email verification links, understandable expiry messages and an easy resend.
+- Email verification links and private invitations are implemented; test real
+  SMTP delivery before inviting external users.
 - A first-server checklist: choose software, request hosting, wait for setup,
   accept the EULA, start, copy the address and join with the correct client.
 - Understandable queued/installing/failed states with a support reference; avoid

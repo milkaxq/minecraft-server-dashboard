@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Loading, PageHeading, Shell, Badge } from "./ui";
+import { Invitations } from "./invitations";
 import { formatBytes, price } from "../lib/api";
-const tabs = ["plans", "servers", "users", "orders", "nodes", "audit"];
+const tabs = ["plans", "servers", "users", "orders", "nodes", "audit", "invitations"];
 const numbers = [
   ["price_cents", "Price (cents)", 0, 100000000],
   ["ram_mb", "RAM (MB)", 512, 131072],
@@ -211,295 +212,299 @@ export function Admin() {
               </form>
             </section>
           )}
-          <section className="panel management-panel">
-            {resource.loading ? (
-              <Loading />
-            ) : !rows.length ? (
-              <p className="management-empty">No {tab} to display.</p>
-            ) : (
-              <div className="table-scroll">
-                <table className="management-table">
-                  {tab === "plans" ? (
-                    <>
-                      <thead>
-                        <tr>
-                          <th>Plan</th>
-                          <th>Price</th>
-                          <th>Resources</th>
-                          <th>Enabled</th>
-                          <th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((p) => (
-                          <tr key={p.id}>
-                            <td>
-                              {p.name}
-                              <small>{p.description}</small>
-                            </td>
-                            <td>
-                              {price(p)}
-                              <small>{p.billing_period}</small>
-                            </td>
-                            <td>
-                              {formatBytes(p.ram_mb * 1048576)} RAM ·{" "}
-                              {formatBytes(p.disk_mb * 1048576)} disk · {p.cpu_limit}% CPU
-                            </td>
-                            <td>{p.enabled ? "Yes" : "No"}</td>
-                            <td>
-                              <button
-                                className="button secondary"
-                                onClick={() => setEdit({ ...p })}
-                              >
-                                Edit {p.name}
-                              </button>
-                            </td>
+          {tab === "invitations" ? (
+            <Invitations rows={rows} loading={resource.loading} refresh={resource.refresh} />
+          ) : (
+            <section className="panel management-panel">
+              {resource.loading ? (
+                <Loading />
+              ) : !rows.length ? (
+                <p className="management-empty">No {tab} to display.</p>
+              ) : (
+                <div className="table-scroll">
+                  <table className="management-table">
+                    {tab === "plans" ? (
+                      <>
+                        <thead>
+                          <tr>
+                            <th>Plan</th>
+                            <th>Price</th>
+                            <th>Resources</th>
+                            <th>Enabled</th>
+                            <th />
                           </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  ) : tab === "servers" ? (
-                    <>
-                      <thead>
-                        <tr>
-                          <th>Server</th>
-                          <th>Customer</th>
-                          <th>Status</th>
-                          <th>Latest job</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((s) => {
-                          const pending = ["PENDING", "RUNNING"].includes(s.job_status);
-                          return (
-                            <tr key={s.id}>
+                        </thead>
+                        <tbody>
+                          {rows.map((p) => (
+                            <tr key={p.id}>
                               <td>
-                                <strong>{s.name}</strong>
-                                <small>{s.id}</small>
-                                <small>
-                                  {s.plan_name} · {s.server_type} {s.minecraft_version}
-                                </small>
-                              </td>
-                              <td>{s.owner_email}</td>
-                              <td>
-                                <Badge state={s.status} />
-                                {s.suspension_reason && (
-                                  <small>
-                                    {s.suspension_reason === "BILLING"
-                                      ? "Subscription expiry"
-                                      : "Admin suspension"}
-                                  </small>
-                                )}
+                                {p.name}
+                                <small>{p.description}</small>
                               </td>
                               <td>
-                                {s.job_action ? `${s.job_action} · ${s.job_status}` : "—"}
-                                {s.job_error && <small>{s.job_error}</small>}
+                                {price(p)}
+                                <small>{p.billing_period}</small>
                               </td>
                               <td>
-                                <div className="row-actions">
-                                  {s.status === "FAILED" && (
-                                    <button
-                                      disabled={pending || busy}
-                                      onClick={() =>
-                                        setAction({
-                                          kind: "retry",
-                                          server: s,
-                                          key: crypto.randomUUID(),
-                                        })
-                                      }
-                                    >
-                                      Retry setup
-                                    </button>
-                                  )}
-                                  {s.status === "RUNNING" && (
-                                    <button
-                                      disabled={pending || busy}
-                                      onClick={() =>
-                                        setAction({
-                                          kind: "suspend",
-                                          server: s,
-                                          key: crypto.randomUUID(),
-                                        })
-                                      }
-                                    >
-                                      Suspend
-                                    </button>
-                                  )}
-                                  {s.status === "SUSPENDED" && (
-                                    <button
-                                      disabled={pending || busy}
-                                      onClick={() =>
-                                        setAction({
-                                          kind: "unsuspend",
-                                          server: s,
-                                          key: crypto.randomUUID(),
-                                        })
-                                      }
-                                    >
-                                      Unsuspend
-                                    </button>
-                                  )}
-                                  {!["CANCELLED", "PROVISIONING"].includes(s.status) && (
-                                    <button
-                                      className="text-danger"
-                                      disabled={pending || busy}
-                                      onClick={() =>
-                                        setAction({
-                                          kind: "terminate",
-                                          server: s,
-                                          key: crypto.randomUUID(),
-                                        })
-                                      }
-                                    >
-                                      Terminate
-                                    </button>
-                                  )}
-                                </div>
+                                {formatBytes(p.ram_mb * 1048576)} RAM ·{" "}
+                                {formatBytes(p.disk_mb * 1048576)} disk · {p.cpu_limit}% CPU
+                              </td>
+                              <td>{p.enabled ? "Yes" : "No"}</td>
+                              <td>
+                                <button
+                                  className="button secondary"
+                                  onClick={() => setEdit({ ...p })}
+                                >
+                                  Edit {p.name}
+                                </button>
                               </td>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </>
-                  ) : tab === "users" ? (
-                    <>
-                      <thead>
-                        <tr>
-                          <th>Name</th>
-                          <th>Email</th>
-                          <th>Verified</th>
-                          <th>Admin</th>
-                          <th>Joined</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((u) => (
-                          <tr key={u.id}>
-                            <td>
-                              {u.name}
-                              <small>{u.id}</small>
-                            </td>
-                            <td>{u.email}</td>
-                            <td>{u.verified_at ? "Yes" : "No"}</td>
-                            <td>{u.is_admin ? "Yes" : "No"}</td>
-                            <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                          ))}
+                        </tbody>
+                      </>
+                    ) : tab === "servers" ? (
+                      <>
+                        <thead>
+                          <tr>
+                            <th>Server</th>
+                            <th>Customer</th>
+                            <th>Status</th>
+                            <th>Latest job</th>
+                            <th>Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  ) : tab === "orders" ? (
-                    <>
-                      <thead>
-                        <tr>
-                          <th>Order</th>
-                          <th>Customer</th>
-                          <th>Plan</th>
-                          <th>Amount</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((o) => (
-                          <tr key={o.id}>
-                            <td>
-                              <code>{o.id}</code>
-                              <small>{o.kind}</small>
-                            </td>
-                            <td>
-                              <code>{o.user_id}</code>
-                            </td>
-                            <td>{o.plan_name}</td>
-                            <td>{price(o)}</td>
-                            <td>{o.status}</td>
+                        </thead>
+                        <tbody>
+                          {rows.map((s) => {
+                            const pending = ["PENDING", "RUNNING"].includes(s.job_status);
+                            return (
+                              <tr key={s.id}>
+                                <td>
+                                  <strong>{s.name}</strong>
+                                  <small>{s.id}</small>
+                                  <small>
+                                    {s.plan_name} · {s.server_type} {s.minecraft_version}
+                                  </small>
+                                </td>
+                                <td>{s.owner_email}</td>
+                                <td>
+                                  <Badge state={s.status} />
+                                  {s.suspension_reason && (
+                                    <small>
+                                      {s.suspension_reason === "BILLING"
+                                        ? "Subscription expiry"
+                                        : "Admin suspension"}
+                                    </small>
+                                  )}
+                                </td>
+                                <td>
+                                  {s.job_action ? `${s.job_action} · ${s.job_status}` : "—"}
+                                  {s.job_error && <small>{s.job_error}</small>}
+                                </td>
+                                <td>
+                                  <div className="row-actions">
+                                    {s.status === "FAILED" && (
+                                      <button
+                                        disabled={pending || busy}
+                                        onClick={() =>
+                                          setAction({
+                                            kind: "retry",
+                                            server: s,
+                                            key: crypto.randomUUID(),
+                                          })
+                                        }
+                                      >
+                                        Retry setup
+                                      </button>
+                                    )}
+                                    {s.status === "RUNNING" && (
+                                      <button
+                                        disabled={pending || busy}
+                                        onClick={() =>
+                                          setAction({
+                                            kind: "suspend",
+                                            server: s,
+                                            key: crypto.randomUUID(),
+                                          })
+                                        }
+                                      >
+                                        Suspend
+                                      </button>
+                                    )}
+                                    {s.status === "SUSPENDED" && (
+                                      <button
+                                        disabled={pending || busy}
+                                        onClick={() =>
+                                          setAction({
+                                            kind: "unsuspend",
+                                            server: s,
+                                            key: crypto.randomUUID(),
+                                          })
+                                        }
+                                      >
+                                        Unsuspend
+                                      </button>
+                                    )}
+                                    {!["CANCELLED", "PROVISIONING"].includes(s.status) && (
+                                      <button
+                                        className="text-danger"
+                                        disabled={pending || busy}
+                                        onClick={() =>
+                                          setAction({
+                                            kind: "terminate",
+                                            server: s,
+                                            key: crypto.randomUUID(),
+                                          })
+                                        }
+                                      >
+                                        Terminate
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </>
+                    ) : tab === "users" ? (
+                      <>
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Verified</th>
+                            <th>Admin</th>
+                            <th>Joined</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  ) : tab === "nodes" ? (
-                    <>
-                      <thead>
-                        <tr>
-                          <th>Node</th>
-                          <th>RAM allocated / capacity</th>
-                          <th>Disk allocated / capacity</th>
-                          <th>CPU allocated / capacity</th>
-                          <th>Enabled</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((n) => (
-                          <tr key={n.id}>
-                            <td>{n.name}</td>
-                            <td>
-                              {formatBytes(n.allocated_ram_mb * 1048576)} /{" "}
-                              {formatBytes(n.ram_capacity_mb * 1048576)}
-                            </td>
-                            <td>
-                              {formatBytes(n.allocated_disk_mb * 1048576)} /{" "}
-                              {formatBytes(n.disk_capacity_mb * 1048576)}
-                            </td>
-                            <td>
-                              {n.allocated_cpu}% / {n.cpu_capacity}%
-                            </td>
-                            <td>{n.enabled ? "Yes" : "No"}</td>
+                        </thead>
+                        <tbody>
+                          {rows.map((u) => (
+                            <tr key={u.id}>
+                              <td>
+                                {u.name}
+                                <small>{u.id}</small>
+                              </td>
+                              <td>{u.email}</td>
+                              <td>{u.verified_at ? "Yes" : "No"}</td>
+                              <td>{u.is_admin ? "Yes" : "No"}</td>
+                              <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </>
+                    ) : tab === "orders" ? (
+                      <>
+                        <thead>
+                          <tr>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Plan</th>
+                            <th>Amount</th>
+                            <th>Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  ) : (
-                    <>
-                      <thead>
-                        <tr>
-                          <th>Action</th>
-                          <th>Actor</th>
-                          <th>Server</th>
-                          <th>Request</th>
-                          <th>Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((v) => (
-                          <tr key={v.id}>
-                            <td>{v.action}</td>
-                            <td>
-                              <code>{v.actor_id || "System"}</code>
-                            </td>
-                            <td>
-                              <code>{v.server_id || "—"}</code>
-                            </td>
-                            <td>
-                              <code>{v.request_id}</code>
-                            </td>
-                            <td>{new Date(v.created_at).toLocaleString()}</td>
+                        </thead>
+                        <tbody>
+                          {rows.map((o) => (
+                            <tr key={o.id}>
+                              <td>
+                                <code>{o.id}</code>
+                                <small>{o.kind}</small>
+                              </td>
+                              <td>
+                                <code>{o.user_id}</code>
+                              </td>
+                              <td>{o.plan_name}</td>
+                              <td>{price(o)}</td>
+                              <td>{o.status}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </>
+                    ) : tab === "nodes" ? (
+                      <>
+                        <thead>
+                          <tr>
+                            <th>Node</th>
+                            <th>RAM allocated / capacity</th>
+                            <th>Disk allocated / capacity</th>
+                            <th>CPU allocated / capacity</th>
+                            <th>Enabled</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </>
-                  )}
-                </table>
-              </div>
-            )}
-            {["users", "servers", "orders", "audit"].includes(tab) && (
-              <div className="admin-pagination">
-                <button
-                  className="button secondary"
-                  disabled={offset === 0}
-                  onClick={() => setOffset((v) => Math.max(0, v - 50))}
-                >
-                  Previous
-                </button>
-                <span>Page {offset / 50 + 1}</span>
-                <button
-                  className="button secondary"
-                  disabled={rows.length < 50}
-                  onClick={() => setOffset((v) => v + 50)}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </section>
+                        </thead>
+                        <tbody>
+                          {rows.map((n) => (
+                            <tr key={n.id}>
+                              <td>{n.name}</td>
+                              <td>
+                                {formatBytes(n.allocated_ram_mb * 1048576)} /{" "}
+                                {formatBytes(n.ram_capacity_mb * 1048576)}
+                              </td>
+                              <td>
+                                {formatBytes(n.allocated_disk_mb * 1048576)} /{" "}
+                                {formatBytes(n.disk_capacity_mb * 1048576)}
+                              </td>
+                              <td>
+                                {n.allocated_cpu}% / {n.cpu_capacity}%
+                              </td>
+                              <td>{n.enabled ? "Yes" : "No"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </>
+                    ) : (
+                      <>
+                        <thead>
+                          <tr>
+                            <th>Action</th>
+                            <th>Actor</th>
+                            <th>Server</th>
+                            <th>Request</th>
+                            <th>Time</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((v) => (
+                            <tr key={v.id}>
+                              <td>{v.action}</td>
+                              <td>
+                                <code>{v.actor_id || "System"}</code>
+                              </td>
+                              <td>
+                                <code>{v.server_id || "—"}</code>
+                              </td>
+                              <td>
+                                <code>{v.request_id}</code>
+                              </td>
+                              <td>{new Date(v.created_at).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </>
+                    )}
+                  </table>
+                </div>
+              )}
+              {["users", "servers", "orders", "audit"].includes(tab) && (
+                <div className="admin-pagination">
+                  <button
+                    className="button secondary"
+                    disabled={offset === 0}
+                    onClick={() => setOffset((v) => Math.max(0, v - 50))}
+                  >
+                    Previous
+                  </button>
+                  <span>Page {offset / 50 + 1}</span>
+                  <button
+                    className="button secondary"
+                    disabled={rows.length < 50}
+                    onClick={() => setOffset((v) => v + 50)}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
           {action && (
             <LifecycleDialog
               action={action}

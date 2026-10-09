@@ -24,6 +24,7 @@ type Service struct {
 	DB          *pgxpool.Pool
 	Mailer      Mailer
 	RecoveryKey []byte
+	InviteOnly  bool
 	dummyHash   string
 }
 
@@ -33,9 +34,10 @@ func New(db *pgxpool.Pool, mailer Mailer) (*Service, error) {
 }
 
 type RegisterInput struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	Name            string `json:"name"`
+	InvitationToken string `json:"invitation_token,omitempty"`
 }
 
 func normalizeEmail(email string) (string, error) {
@@ -73,6 +75,19 @@ func (s *Service) Register(ctx context.Context, input RegisterInput, requestID s
 		return user.User{}, err
 	}
 	defer tx.Rollback(context.Background())
+	var invitationID uuid.UUID
+	if s.InviteOnly || input.InvitationToken != "" {
+		if len(input.InvitationToken) != 43 {
+			return user.User{}, ErrInvitation
+		}
+		err = tx.QueryRow(ctx, "SELECT id FROM beta_invitations WHERE token_hash=$1 AND email=$2 AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>now() FOR UPDATE", tokenHash(input.InvitationToken), email).Scan(&invitationID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return user.User{}, ErrInvitation
+		}
+		if err != nil {
+			return user.User{}, err
+		}
+	}
 	u := user.User{ID: uuid.New(), Email: email, Name: name}
 	err = tx.QueryRow(ctx, "INSERT INTO users(id,email,password_hash,name) VALUES($1,$2,$3,$4) RETURNING created_at,is_admin", u.ID, email, hash, name).Scan(&u.CreatedAt, &u.IsAdmin)
 	var pe *pgconn.PgError
@@ -87,6 +102,14 @@ func (s *Service) Register(ctx context.Context, input RegisterInput, requestID s
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_logs(id,actor_id,action,request_id) VALUES($1,$2,'auth.registered',$3)", uuid.New(), u.ID, requestID); err != nil {
 		return user.User{}, err
+	}
+	if invitationID != uuid.Nil {
+		if _, err = tx.Exec(ctx, "UPDATE beta_invitations SET consumed_at=now() WHERE id=$1", invitationID); err != nil {
+			return user.User{}, err
+		}
+		if _, err = tx.Exec(ctx, "INSERT INTO audit_logs(id,actor_id,action,request_id,metadata) VALUES($1,$2,'beta.invitation_used',$3,jsonb_build_object('invitation_id',$4::text))", uuid.New(), u.ID, requestID, invitationID.String()); err != nil {
+			return user.User{}, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return user.User{}, err

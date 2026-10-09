@@ -84,3 +84,22 @@ func TestRecoveryKeyValidation(t *testing.T) {
 		t.Fatal("production recovery enabled without key")
 	}
 }
+
+func TestRegistrationModeDefaultsClosedAndRejectsTypos(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://db/hosting?sslmode=disable")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REGISTRATION_MODE", "")
+	c, err := Load()
+	if err != nil || c.RegistrationMode != "invite_only" {
+		t.Fatal(c.RegistrationMode, err)
+	}
+	t.Setenv("REGISTRATION_MODE", "open")
+	c, err = Load()
+	if err != nil || c.RegistrationMode != "open" {
+		t.Fatal(err)
+	}
+	t.Setenv("REGISTRATION_MODE", "public")
+	if _, err = Load(); err == nil {
+		t.Fatal("unknown mode accepted")
+	}
+}

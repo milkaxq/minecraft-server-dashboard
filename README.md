@@ -141,9 +141,11 @@ Environment files are not automatically loaded by native Go commands.
 ## Try the API
 
 ```sh
+# Registration is invite-only by default. For the first-account invitation,
+# follow docs/PRIVATE_BETA.md, then include its token below.
 curl -s http://localhost:8080/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"email":"player@example.com","name":"Player","password":"a-long-unique-password"}'
+  -d '{"email":"player@example.com","name":"Player","password":"a-long-unique-password","invitation_token":"YOUR_INVITATION_TOKEN"}'
 # Read development delivery files (contains secret verification tokens):
 docker compose exec backend sh -c 'cat /var/lib/hosting/mail/*.txt'
 # Paste the verification token from your email file:
@@ -279,3 +281,5 @@ A live Panel/Wings smoke test remains pending your deployment configuration.
 See [Phase 5](docs/PHASE5.md) for repeatable commands and integration limits.
 
 For the invited-beta and production prerequisites, see [launch readiness](docs/LAUNCH_READINESS.md).
+
+Private beta setup and invitation management: [PRIVATE_BETA.md](docs/PRIVATE_BETA.md).

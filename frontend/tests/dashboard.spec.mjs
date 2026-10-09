@@ -70,6 +70,7 @@ async function mockAPI(
     eulaUnavailable = false,
     serverState = "RUNNING",
     initiallyRunning = false,
+    inviteRequired = false,
   } = {},
 ) {
   let running = initiallyRunning;
@@ -133,6 +134,8 @@ async function mockAPI(
       );
     if (path === "/auth/reset-password" || path === "/account/password")
       return route.fulfill({ status: 204 });
+    if (path === "/auth/config") return reply({ invite_required: inviteRequired });
+    if (path === "/admin/invitations") return reply([]);
     if (path === "/auth/register") return reply(user, 201);
     if (path === "/auth/verify-email" || path === "/auth/logout")
       return route.fulfill({ status: 204 });
@@ -1203,4 +1206,117 @@ test("expired verification links preserve a way to request another email", async
   await page.getByLabel("Need another verification email?").fill("alex@example.com");
   await page.getByRole("button", { name: "Resend verification" }).click();
   await expect(page.getByRole("status")).toContainText(/verification/i);
+});
+
+test("private beta signup reads an email-bound invitation without sending secrets in URLs", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { inviteRequired: true });
+  const token = "i".repeat(43);
+  const urls = [];
+  page.on("request", (r) => urls.push(r.url()));
+  await page.goto(`/register#invite=${token}&email=guest%40example.com`);
+  await expect(page.getByLabel("Invitation code")).toHaveValue(token);
+  await expect(page.getByLabel("Email address")).toHaveValue("guest@example.com");
+  await expect(page).toHaveURL(/\/register$/);
+  await page.getByLabel("Your name").fill("Guest");
+  await page.getByLabel("Password", { exact: true }).fill("guest-long-password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page).toHaveURL(/\/verify$/);
+  expect(calls.find((c) => c.path === "/auth/register").body.invitation_token).toBe(token);
+  expect(urls.some((url) => url.includes(token))).toBe(false);
+});
+
+test("registration fails closed when registration settings are unavailable", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await page.route("http://localhost:8080/auth/config", (r) =>
+    r.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Registration settings unavailable" }),
+    }),
+  );
+  await page.goto("/register");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Registration settings unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create account" })).toBeDisabled();
+  expect(calls.filter((c) => c.path === "/auth/register")).toHaveLength(0);
+});
+
+test("admins create one-time private invitation links and revoke them", async ({ page }) => {
+  await mockAPI(page, { isAdmin: true });
+  let issued = false;
+  let revoked = false;
+  const id = "90000000-0000-4000-8000-000000000001";
+  await page.route("http://localhost:8080/admin/invitations", (r) => {
+    if (r.request().method() === "POST") {
+      issued = true;
+      return r.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id,
+          email: "guest@example.com",
+          link: "http://localhost:3000/register#invite=" + "i".repeat(43),
+          expires_at: "2026-10-16T00:00:00Z",
+        }),
+      });
+    }
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        issued
+          ? [
+              {
+                id,
+                email: "guest@example.com",
+                status: revoked ? "REVOKED" : "ACTIVE",
+                expires_at: "2026-10-16T00:00:00Z",
+              },
+            ]
+          : [],
+      ),
+    });
+  });
+  await page.route(`http://localhost:8080/admin/invitations/${id}/revoke`, (r) => {
+    revoked = true;
+    return r.fulfill({ status: 204 });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Admin", exact: true }).click();
+  await page.getByRole("button", { name: "Invitations", exact: true }).click();
+  await page.getByLabel("Invite email").fill("guest@example.com");
+  await page.getByRole("button", { name: "Create invitation" }).click();
+  await expect(page.getByLabel("Invitation link")).toHaveValue(/register#invite=/);
+  await page.getByRole("button", { name: "Revoke invitation" }).click();
+  await expect(page.getByLabel("Invitation link")).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "REVOKED", exact: true })).toBeVisible();
+});
+
+test("beta onboarding explains manual access instead of checkout", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await mockAPI(page, { inviteRequired: true, paymentDisabled: true, servers: [] });
+  await login(page);
+  await expect(page.getByRole("heading", { name: "Welcome to the private beta" })).toBeVisible();
+  await expect(
+    page.getByText("payments are disabled for this beta", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "New server", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("first-session checklist reflects the EULA and real startup state", async ({ page }) => {
+  await mockAPI(page, { eulaAccepted: false });
+  await openServer(page);
+  const checklist = page.locator(".first-server-checklist");
+  await expect(checklist).toHaveAttribute("open", "");
+  await expect(checklist.locator("summary")).toContainText("1 of 4 steps complete");
+  await expect(checklist).toContainText("Minecraft Java 1.21.1");
+  await page.getByRole("checkbox", { name: /I have read and accept/ }).check();
+  await page.getByRole("button", { name: "Accept agreement", exact: true }).click();
+  await expect(checklist.locator("summary")).toContainText("2 of 4 steps complete");
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(checklist.locator("summary")).toContainText("3 of 4 steps complete");
 });

@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	RegistrationMode                                                                                                    string
 	RecoveryKey                                                                                                         []byte
 	PaymentProvider, MockPaymentSecret                                                                                  string
 	Environment, Address, DatabaseURL, FrontendOrigin, MailDirectory, SMTPAddress, SMTPUsername, SMTPPassword, SMTPFrom string
@@ -19,6 +20,10 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{Environment: env("APP_ENV", "development"), Address: env("HTTP_ADDR", ":8080"), DatabaseURL: os.Getenv("DATABASE_URL"), FrontendOrigin: env("FRONTEND_ORIGIN", "http://localhost:3000"), MailDirectory: env("MAIL_DIRECTORY", ".local/mail"), SMTPAddress: os.Getenv("SMTP_ADDRESS"), SMTPUsername: os.Getenv("SMTP_USERNAME"), SMTPPassword: os.Getenv("SMTP_PASSWORD"), SMTPFrom: os.Getenv("SMTP_FROM")}
+	c.RegistrationMode = env("REGISTRATION_MODE", "invite_only")
+	if c.RegistrationMode != "invite_only" && c.RegistrationMode != "open" {
+		return c, fmt.Errorf("REGISTRATION_MODE must be invite_only or open")
+	}
 	rawKey := os.Getenv("RECOVERY_TOKEN_KEY")
 	if rawKey != "" {
 		var err error

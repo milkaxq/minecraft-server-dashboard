@@ -69,6 +69,9 @@ func (a *API) Handler() http.Handler {
 		}
 		write(w, 200, map[string]string{"status": "ready"})
 	})
+	mux.HandleFunc("GET /auth/config", func(w http.ResponseWriter, r *http.Request) {
+		write(w, 200, map[string]bool{"invite_required": a.Auth.InviteOnly})
+	})
 	mux.HandleFunc("POST /auth/register", a.limited(a.register))
 	mux.HandleFunc("POST /auth/login", a.limited(a.login))
 	mux.HandleFunc("POST /auth/forgot-password", a.limited(a.forgotPassword))
@@ -159,6 +162,10 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, auth.ErrInvitation):
+		status, message = 403, "A valid invitation for this email is required. Ask your host for a new link."
+	case errors.Is(err, auth.ErrInviteAdmin):
+		status, message = 403, "administrator access required"
 	case errors.Is(err, auth.ErrResetToken):
 		status, message = 400, "reset link is invalid or expired; request a new one"
 	case errors.Is(err, auth.ErrCurrentPassword):

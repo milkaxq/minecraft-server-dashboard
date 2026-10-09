@@ -23,6 +23,19 @@ export function AuthScreen({ mode = "login" }) {
   const reset = mode === "reset-password";
   const verify = mode === "verify";
   const [token, setToken] = useState("");
+  const [invitation, setInvitation] = useState("");
+  const [registration, setRegistration] = useState(null);
+  const [configError, setConfigError] = useState(null);
+  useEffect(() => {
+    if (mode !== "register") return;
+    const controller = new AbortController();
+    request("/auth/config", { signal: controller.signal })
+      .then(setRegistration)
+      .catch((err) => {
+        if (err.name !== "AbortError") setConfigError(err);
+      });
+    return () => controller.abort();
+  }, [mode]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
@@ -36,6 +49,10 @@ export function AuthScreen({ mode = "login" }) {
     if (reset || verify) {
       const value = new URLSearchParams(hash.slice(1)).get("token");
       if (value) setToken(value);
+    } else if (mode === "register") {
+      const params = new URLSearchParams(hash.slice(1));
+      if (params.get("invite")) setInvitation(params.get("invite"));
+      if (params.get("email")) setEmail(params.get("email"));
     }
   }
   useEffect(() => {
@@ -71,11 +88,18 @@ export function AuthScreen({ mode = "login" }) {
         setNotice("Password reset. All sessions were signed out. Sign in with your new password.");
       } else if (mode === "login") await login(email.trim(), password);
       else if (mode === "register") {
+        if (!registration || configError)
+          throw new Error("Registration settings are unavailable. Please refresh and try again.");
         if (new TextEncoder().encode(password).length > 72)
           throw new Error("Choose a password no longer than 72 bytes.");
         await request("/auth/register", {
           method: "POST",
-          body: { name: name.trim(), email: email.trim(), password },
+          body: {
+            name: name.trim(),
+            email: email.trim(),
+            password,
+            ...(invitation ? { invitation_token: invitation.trim() } : {}),
+          },
         });
         router.push("/verify");
       } else {
@@ -159,11 +183,17 @@ export function AuthScreen({ mode = "login" }) {
                         ? "Your verification link is ready. Confirm below to finish creating your account."
                         : "Open the link in your email, or paste its verification token below. Links expire after 24 hours."}
           </p>
-          <ErrorMessage error={error} />
+          <ErrorMessage error={error || configError} />
           {(notice || (mode === "login" && authNotice)) && (
             <div className="notice success" role="status">
               {notice || authNotice}
             </div>
+          )}
+          {mode === "register" && registration?.invite_required && (
+            <p className="notice">
+              This is a private beta. Use the invitation from your host with the email address it
+              was issued for.
+            </p>
           )}
           {!((reset || verify) && done) && (
             <form onSubmit={submit}>
@@ -177,6 +207,20 @@ export function AuthScreen({ mode = "login" }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Alex"
+                  />
+                </label>
+              )}
+              {mode === "register" && registration?.invite_required && (
+                <label className="field">
+                  Invitation code
+                  <input
+                    required
+                    autoComplete="off"
+                    spellCheck="false"
+                    maxLength={43}
+                    value={invitation}
+                    onChange={(e) => setInvitation(e.target.value)}
+                    placeholder="Open your invitation link or paste its code"
                   />
                 </label>
               )}
@@ -239,7 +283,10 @@ export function AuthScreen({ mode = "login" }) {
                   />
                 </label>
               )}
-              <button className="button primary wide" disabled={busy}>
+              <button
+                className="button primary wide"
+                disabled={busy || (mode === "register" && (!registration || !!configError))}
+              >
                 {busy
                   ? "Please wait…"
                   : forgot

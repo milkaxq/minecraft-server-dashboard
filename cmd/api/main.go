@@ -63,6 +63,7 @@ func run() error {
 		return err
 	}
 	authentication.RecoveryKey = c.RecoveryKey
+	authentication.InviteOnly = c.RegistrationMode == "invite_only"
 	if len(c.RecoveryKey) == 32 {
 		go authentication.RunRecoveryDelivery(ctx, log)
 	}

@@ -1,5 +1,6 @@
 "use client";
 import { softwareName } from "../lib/software";
+import { FirstServerChecklist } from "./first-server";
 import { FeatureLinks } from "./management";
 import { ContextHelp } from "./context-help";
 import Link from "next/link";
@@ -124,6 +125,7 @@ export function ServerDetail({ id, advanced = false }) {
   const [notice, setNotice] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [addressCopied, setAddressCopied] = useState(false);
   const ready = server?.status === "RUNNING" && server.management_available;
   const eula = useResource(ready ? `/servers/${id}/eula` : null, 10000);
   const [agreementChecked, setAgreementChecked] = useState(false);
@@ -177,6 +179,7 @@ export function ServerDetail({ id, advanced = false }) {
     try {
       await navigator.clipboard.writeText(address);
       setCopied(true);
+      setAddressCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setNotice("Copy the server address from the connection panel below.");
@@ -356,6 +359,17 @@ export function ServerDetail({ id, advanced = false }) {
               </p>
             )}
             <FeatureLinks id={id} server={server} advanced={advanced} />
+            {!advanced && (
+              <FirstServerChecklist
+                server={server}
+                ready={ready}
+                eula={eula.data?.accepted}
+                powerState={usage?.power_state}
+                address={address}
+                addressCopied={addressCopied}
+                onCopy={copy}
+              />
+            )}
             <ContextHelp topic={advanced ? "console" : "overview"} />
             {advanced ? (
               <>
