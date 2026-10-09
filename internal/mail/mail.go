@@ -19,7 +19,7 @@ import (
 type Spool struct{ Directory, FrontendOrigin string }
 
 func (s Spool) SendVerification(ctx context.Context, email, token string) error {
-	return s.write(ctx, email, fmt.Sprintf("Verification token (expires in 24 hours): %s\nPOST /auth/verify-email with {\"token\":\"<token>\"}\n", token))
+	return s.write(ctx, email, verificationBody(s.FrontendOrigin, token))
 }
 func (s Spool) SendPasswordReset(ctx context.Context, email, token string) error {
 	return s.write(ctx, email, resetBody(s.FrontendOrigin, token))
@@ -47,10 +47,13 @@ func (s Spool) write(ctx context.Context, email, body string) error {
 type SMTP struct{ Address, Username, Password, From, FrontendOrigin string }
 
 func (s SMTP) SendVerification(ctx context.Context, email, token string) error {
-	return s.send(ctx, email, "Verify your Minecraft hosting account", fmt.Sprintf("Your verification token (valid for 24 hours): %s\n", token))
+	return s.send(ctx, email, "Verify your Minecraft hosting account", verificationBody(s.FrontendOrigin, token))
 }
 func (s SMTP) SendPasswordReset(ctx context.Context, email, token string) error {
 	return s.send(ctx, email, "Reset your Blockyard password", resetBody(s.FrontendOrigin, token))
+}
+func verificationBody(origin, token string) string {
+	return fmt.Sprintf("Verify your email (expires in 24 hours):\n%s/verify#token=%s\n\nVerification token (expires in 24 hours): %s\n\nIf you did not create this account, ignore this email.\n", strings.TrimRight(origin, "/"), token, token)
 }
 func resetBody(origin, token string) string {
 	return fmt.Sprintf("Reset your password (expires in 30 minutes):\n%s/reset-password#token=%s\n\nReset token: %s\n\nIf you did not request this, ignore this email. Your password has not changed.\n", strings.TrimRight(origin, "/"), token, token)

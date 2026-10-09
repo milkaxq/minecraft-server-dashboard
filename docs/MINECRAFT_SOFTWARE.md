@@ -133,3 +133,21 @@ Official references: [Spigot BuildTools](https://www.spigotmc.org/wiki/buildtool
 [Fabric server](https://wiki.fabricmc.net/player:tutorials:server:windows),
 [Forge downloads](https://files.minecraftforge.net/net/minecraftforge/forge/index_1.21.1.html),
 [NeoForge server](https://docs.neoforged.net/user/docs/server/).
+
+## Live validation status (2026-10-09)
+
+Live checks now cover Vanilla, Paper, Spigot, Purpur, Fabric, Forge and NeoForge
+for the approved Minecraft 1.21.1 configuration. The resumed Spigot build
+completed inside the isolated 2 GiB installer container; its completion receipt,
+Java launcher, EULA gate, plugin upload/list/delete and idempotent upload replay
+passed. Vanilla installation, launcher and EULA refusal also passed. Earlier
+loader checks verified the corresponding mod operations and purchased limits.
+These are installation and management smoke tests, not player-load benchmarks
+or compatibility certification for arbitrary plugins/modpacks.
+
+Disposable validation servers were terminated, reservations released, the test
+plan disabled, and the temporary allocation removed. Cancelled test history was
+archived under the local fixture account; the original Paper world was retained.
+Normal backend/frontend/migrate/worker Docker builds passed without the offline
+packaging workaround. Additional Minecraft releases still require their own
+reviewed templates and live validation before being offered.

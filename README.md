@@ -210,7 +210,9 @@ Local mail is delivered to private files in a volume, never logs or API response
 Production requires implicit TLS SMTP configuration, an HTTPS frontend origin,
 and a PostgreSQL URL with `sslmode=verify-full`. If delivery fails after registration,
 the account remains; `/auth/resend-verification` recovers it. Tokens expire after
-24 hours; resending invalidates the previous token. Metrics must remain private.
+24 hours; verification emails contain a link that fills the token without sending it
+in HTTP URLs. The customer confirms verification before signing in. Resending
+invalidates the previous token. Metrics must remain private.
 Compose is a development configuration, not a production deployment recipe.
 
 ## Account recovery
@@ -275,3 +277,5 @@ Go builds, vet, and PostgreSQL-backed race tests pass. The Next.js production bu
 frontend browser tests and Compose configuration are checked through Phase 5 (17 browser scenarios).
 A live Panel/Wings smoke test remains pending your deployment configuration.
 See [Phase 5](docs/PHASE5.md) for repeatable commands and integration limits.
+
+For the invited-beta and production prerequisites, see [launch readiness](docs/LAUNCH_READINESS.md).

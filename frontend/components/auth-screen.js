@@ -21,6 +21,7 @@ export function AuthScreen({ mode = "login" }) {
   const [done, setDone] = useState(false);
   const forgot = mode === "forgot-password";
   const reset = mode === "reset-password";
+  const verify = mode === "verify";
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -32,7 +33,7 @@ export function AuthScreen({ mode = "login" }) {
   const [consumedHash, setConsumedHash] = useState("");
   if (hash && consumedHash !== hash) {
     setConsumedHash(hash);
-    if (reset) {
+    if (reset || verify) {
       const value = new URLSearchParams(hash.slice(1)).get("token");
       if (value) setToken(value);
     }
@@ -80,6 +81,7 @@ export function AuthScreen({ mode = "login" }) {
       } else {
         await request("/auth/verify-email", { method: "POST", body: { token: token.trim() } });
         setNotice("Email verified. You’re ready to sign in.");
+        setDone(true);
         setToken("");
       }
     } catch (err) {
@@ -138,7 +140,9 @@ export function AuthScreen({ mode = "login" }) {
                   ? "Good to see you again."
                   : mode === "register"
                     ? "Start your next adventure."
-                    : "One last step."}
+                    : done
+                      ? "Your email is verified."
+                      : "Check your inbox."}
           </h2>
           <p>
             {forgot
@@ -149,7 +153,11 @@ export function AuthScreen({ mode = "login" }) {
                   ? "Sign in to get back to your worlds."
                   : mode === "register"
                     ? "Create an account to find a home for your world."
-                    : "Enter the verification token from your email."}
+                    : done
+                      ? "Sign in to choose a plan and create your first world."
+                      : token && consumedHash
+                        ? "Your verification link is ready. Confirm below to finish creating your account."
+                        : "Open the link in your email, or paste its verification token below. Links expire after 24 hours."}
           </p>
           <ErrorMessage error={error} />
           {(notice || (mode === "login" && authNotice)) && (
@@ -157,7 +165,7 @@ export function AuthScreen({ mode = "login" }) {
               {notice || authNotice}
             </div>
           )}
-          {!(reset && done) && (
+          {!((reset || verify) && done) && (
             <form onSubmit={submit}>
               {mode === "register" && (
                 <label className="field">
@@ -218,7 +226,7 @@ export function AuthScreen({ mode = "login" }) {
                   />
                 </label>
               )}
-              {(mode === "verify" || reset) && (
+              {(reset || (verify && !(token && consumedHash))) && (
                 <label className="field">
                   {reset ? "Reset token" : "Verification token"}
                   <input
@@ -247,6 +255,11 @@ export function AuthScreen({ mode = "login" }) {
               </button>
             </form>
           )}
+          {verify && done && (
+            <Link href="/login" className="button primary wide">
+              Continue to sign in <Icon name="arrow" size={16} />
+            </Link>
+          )}
           <div className="auth-links">
             {mode === "login" ? (
               <>
@@ -271,7 +284,7 @@ export function AuthScreen({ mode = "login" }) {
               </Link>
             </p>
           )}
-          {mode === "verify" && (
+          {verify && !done && (
             <form onSubmit={resend} className="resend-form">
               <label className="field">
                 Need another verification email?

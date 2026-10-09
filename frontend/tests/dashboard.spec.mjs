@@ -1164,3 +1164,43 @@ for (const width of [320, 768, 1024, 1366]) {
     await fits();
   });
 }
+
+test("verification email links prepare a confirmation without leaking tokens in URLs", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  const token = "v".repeat(43);
+  const urls = [];
+  page.on("request", (request) => urls.push(request.url()));
+  await page.goto(`/verify#token=${token}`);
+  await expect(page).toHaveURL(/\/verify$/);
+  await expect(page.getByText("Your verification link is ready.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Verification token", { exact: true })).toHaveCount(0);
+  expect(calls.filter((c) => c.path === "/auth/verify-email")).toHaveLength(0);
+  await page.getByRole("button", { name: "Verify email", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Email verified");
+  await expect(page.getByRole("button", { name: "Verify email", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resend verification" })).toHaveCount(0);
+  expect(calls.find((c) => c.path === "/auth/verify-email").body).toEqual({ token });
+  expect(urls.some((url) => url.includes(token))).toBe(false);
+  await page.getByRole("link", { name: "Continue to sign in" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test("expired verification links preserve a way to request another email", async ({ page }) => {
+  await mockAPI(page);
+  await page.route("http://localhost:8080/auth/verify-email", (route) =>
+    route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "verification token is invalid or expired" }),
+    }),
+  );
+  await page.goto(`/verify#token=${"v".repeat(43)}`);
+  await expect(page).toHaveURL(/\/verify$/);
+  await page.getByRole("button", { name: "Verify email", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "invalid or expired" })).toBeVisible();
+  await page.getByLabel("Need another verification email?").fill("alex@example.com");
+  await page.getByRole("button", { name: "Resend verification" }).click();
+  await expect(page.getByRole("status")).toContainText(/verification/i);
+});

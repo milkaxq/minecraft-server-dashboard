@@ -54,3 +54,26 @@ func TestResetSpoolUsesTrustedOriginAndFragment(t *testing.T) {
 		t.Fatal("mail injection accepted")
 	}
 }
+
+func TestVerificationSpoolUsesTrustedOriginAndFragment(t *testing.T) {
+	dir := t.TempDir()
+	if err := (Spool{Directory: dir, FrontendOrigin: "https://hosting.example.com/"}).SendVerification(context.Background(), "player@example.com", "test-token"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"https://hosting.example.com/verify#token=test-token", "Verification token (expires in 24 hours): test-token", "ignore this email"} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("missing verification instructions: %s", want)
+		}
+	}
+	if strings.Contains(string(body), "/verify?token=") {
+		t.Fatal("token exposed in HTTP URL")
+	}
+}
