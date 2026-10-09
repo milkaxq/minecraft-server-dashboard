@@ -21,7 +21,7 @@ func TestPrivateRoutesRejectMissingAuthenticationBeforeBusinessLogic(t *testing.
 	handler := a.Handler()
 	id := "10000000-0000-4000-8000-000000000001"
 	for _, route := range []string{
-		"GET /account", "POST /auth/logout",
+		"GET /account", "PUT /account/password", "POST /auth/logout",
 		"GET /servers", "POST /servers", "GET /servers/" + id,
 		"GET /servers/" + id + "/usage",
 		"GET /servers/" + id + "/members", "POST /servers/" + id + "/members", "PUT /servers/" + id + "/members/" + id, "DELETE /servers/" + id + "/members/" + id,

@@ -18,11 +18,13 @@ import (
 
 type Mailer interface {
 	SendVerification(context.Context, string, string) error
+	SendPasswordReset(context.Context, string, string) error
 }
 type Service struct {
-	DB        *pgxpool.Pool
-	Mailer    Mailer
-	dummyHash string
+	DB          *pgxpool.Pool
+	Mailer      Mailer
+	RecoveryKey []byte
+	dummyHash   string
 }
 
 func New(db *pgxpool.Pool, mailer Mailer) (*Service, error) {
@@ -182,6 +184,16 @@ func (s *Service) Login(ctx context.Context, email, password, requestID string) 
 		return LoginResult{}, err
 	}
 	defer tx.Rollback(context.Background())
+	// Serialize session creation with password changes. A password checked before
+	// a reset must not create a new session after that reset commits.
+	var currentHash string
+	var verified bool
+	if err = tx.QueryRow(ctx, "SELECT password_hash,verified_at IS NOT NULL FROM users WHERE id=$1 FOR SHARE", u.ID).Scan(&currentHash, &verified); err != nil {
+		return LoginResult{}, err
+	}
+	if currentHash != hash || !verified {
+		return LoginResult{}, ErrCredentials
+	}
 	if _, err = tx.Exec(ctx, "DELETE FROM sessions WHERE user_id=$1 AND expires_at<=now()", u.ID); err != nil {
 		return LoginResult{}, err
 	}
@@ -224,6 +236,6 @@ func (s *Service) RateLimit(ctx context.Context, bucket string, limit int) error
 	return nil
 }
 func (s *Service) Cleanup(ctx context.Context) error {
-	_, err := s.DB.Exec(ctx, `DELETE FROM console_tickets WHERE expires_at<=now(); DELETE FROM sessions WHERE expires_at<=now(); DELETE FROM email_verifications WHERE expires_at<=now(); DELETE FROM auth_rate_limits WHERE window_start<now()-interval '1 day';`)
+	_, err := s.DB.Exec(ctx, `DELETE FROM console_tickets WHERE expires_at<=now(); DELETE FROM sessions WHERE expires_at<=now(); DELETE FROM email_verifications WHERE expires_at<=now(); DELETE FROM password_resets WHERE expires_at<=now(); DELETE FROM auth_rate_limits WHERE window_start<now()-interval '1 day';`)
 	return err
 }

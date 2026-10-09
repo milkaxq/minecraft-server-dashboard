@@ -16,9 +16,18 @@ import (
 )
 
 // Spool is local development delivery, not an email provider. Files are private to the process owner.
-type Spool struct{ Directory string }
+type Spool struct{ Directory, FrontendOrigin string }
 
 func (s Spool) SendVerification(ctx context.Context, email, token string) error {
+	return s.write(ctx, email, fmt.Sprintf("Verification token (expires in 24 hours): %s\nPOST /auth/verify-email with {\"token\":\"<token>\"}\n", token))
+}
+func (s Spool) SendPasswordReset(ctx context.Context, email, token string) error {
+	return s.write(ctx, email, resetBody(s.FrontendOrigin, token))
+}
+func (s Spool) write(ctx context.Context, email, body string) error {
+	if strings.ContainsAny(email, "\r\n") {
+		return fmt.Errorf("invalid mail address")
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -30,14 +39,23 @@ func (s Spool) SendVerification(ctx context.Context, email, token string) error 
 		return err
 	}
 	defer f.Close()
-	_, err = fmt.Fprintf(f, "To: %s\nVerification token (expires in 24 hours): %s\nPOST /auth/verify-email with {\"token\":\"<token>\"}\n", email, token)
+	_, err = fmt.Fprintf(f, "To: %s\n%s", email, body)
 	return err
 }
 
 // SMTP requires implicit TLS (usually port 465); plaintext/opportunistic TLS is not allowed.
-type SMTP struct{ Address, Username, Password, From string }
+type SMTP struct{ Address, Username, Password, From, FrontendOrigin string }
 
 func (s SMTP) SendVerification(ctx context.Context, email, token string) error {
+	return s.send(ctx, email, "Verify your Minecraft hosting account", fmt.Sprintf("Your verification token (valid for 24 hours): %s\n", token))
+}
+func (s SMTP) SendPasswordReset(ctx context.Context, email, token string) error {
+	return s.send(ctx, email, "Reset your Blockyard password", resetBody(s.FrontendOrigin, token))
+}
+func resetBody(origin, token string) string {
+	return fmt.Sprintf("Reset your password (expires in 30 minutes):\n%s/reset-password#token=%s\n\nReset token: %s\n\nIf you did not request this, ignore this email. Your password has not changed.\n", strings.TrimRight(origin, "/"), token, token)
+}
+func (s SMTP) send(ctx context.Context, email, subject, body string) error {
 	if strings.ContainsAny(s.From+email, "\r\n") {
 		return fmt.Errorf("invalid mail address")
 	}
@@ -78,7 +96,7 @@ func (s SMTP) SendVerification(ctx context.Context, email, token string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(writer, "From: %s\r\nTo: %s\r\nSubject: Verify your Minecraft hosting account\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nYour verification token (valid for 24 hours): %s\r\n", s.From, email, token)
+	_, err = fmt.Fprintf(writer, "From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s", s.From, email, subject, strings.ReplaceAll(body, "\n", "\r\n"))
 	if err != nil {
 		return err
 	}

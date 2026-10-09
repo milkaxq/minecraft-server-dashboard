@@ -176,6 +176,9 @@ REST routes:
 | POST | /auth/verify-email | Public, single-use token, rate limited |
 | POST | /auth/resend-verification | Public, rate limited |
 | POST | /auth/login | Public, verified accounts, rate limited |
+| POST | /auth/forgot-password | Public, generic response, queues recovery email |
+| POST | /auth/reset-password | Public, single-use 30-minute token |
+| PUT | /account/password | Authenticated; current password required, revokes all sessions |
 | POST | /auth/logout | Authenticated; revokes current session |
 | GET | /account | Authenticated |
 | GET | /plans | Public, enabled plans only |
@@ -209,6 +212,31 @@ and a PostgreSQL URL with `sslmode=verify-full`. If delivery fails after registr
 the account remains; `/auth/resend-verification` recovers it. Tokens expire after
 24 hours; resending invalidates the previous token. Metrics must remain private.
 Compose is a development configuration, not a production deployment recipe.
+
+## Account recovery
+
+Use **Forgot your password?** on the login page, or change your password in
+**Account**. Reset links expire after 30 minutes and work once. Both operations
+revoke every login session, console ticket and outstanding reset link. Password
+reset requires an already verified account and does not sign you in automatically.
+
+Generate a backend-only encryption key with `openssl rand -base64 32` and set
+`RECOVERY_TOKEN_KEY` in your private `.env` or production secret store. Keep the
+same key across API instances and restarts so queued emails remain decryptable.
+Production requires this key; development without it returns HTTP 503 for reset
+requests. Never put it in frontend configuration.
+
+Recovery emails use a durable PostgreSQL outbox with bounded delivery retries.
+The token is hashed for verification and encrypted in the mail outbox. Links use
+the trusted `FRONTEND_ORIGIN` and carry tokens in URL fragments; the reset page
+removes the fragment from browser history. Requests return the same response for
+unknown, unverified and throttled accounts.
+
+Local development writes emails to private files under
+`/var/lib/hosting/mail` in the backend container; they do not arrive in Gmail.
+Read the latest file privately with `docker compose exec backend sh` and follow
+its reset link. Production sends emails using the configured TLS SMTP provider.
+Apply migrations before starting the updated backend: `docker compose run --rm migrate`.
 
 ## Tests
 

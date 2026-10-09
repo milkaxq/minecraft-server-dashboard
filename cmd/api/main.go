@@ -54,13 +54,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	var mailer auth.Mailer = mail.Spool{Directory: c.MailDirectory}
+	var mailer auth.Mailer = mail.Spool{Directory: c.MailDirectory, FrontendOrigin: c.FrontendOrigin}
 	if c.SMTPAddress != "" {
-		mailer = mail.SMTP{Address: c.SMTPAddress, Username: c.SMTPUsername, Password: c.SMTPPassword, From: c.SMTPFrom}
+		mailer = mail.SMTP{Address: c.SMTPAddress, Username: c.SMTPUsername, Password: c.SMTPPassword, From: c.SMTPFrom, FrontendOrigin: c.FrontendOrigin}
 	}
 	authentication, err := auth.New(pool, mailer)
 	if err != nil {
 		return err
+	}
+	authentication.RecoveryKey = c.RecoveryKey
+	if len(c.RecoveryKey) == 32 {
+		go authentication.RunRecoveryDelivery(ctx, log)
 	}
 	var panel pterodactyl.ServerClient
 	var consoleSource pterodactyl.ConsoleClient

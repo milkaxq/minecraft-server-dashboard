@@ -123,6 +123,16 @@ async function mockAPI(
         expires_at: new Date(Date.now() + 86400000).toISOString(),
         user: authUser,
       });
+    if (path === "/auth/forgot-password")
+      return reply(
+        {
+          message:
+            "If a verified account exists for that email, a password reset link will be sent. Check your inbox and spam folder.",
+        },
+        202,
+      );
+    if (path === "/auth/reset-password" || path === "/account/password")
+      return route.fulfill({ status: 204 });
     if (path === "/auth/register") return reply(user, 201);
     if (path === "/auth/verify-email" || path === "/auth/logout")
       return route.fulfill({ status: 204 });
@@ -891,6 +901,7 @@ test("guide and software comparison fit a mobile viewport", async ({ page }) => 
   await page.setViewportSize({ width: 390, height: 844 });
   await mockAPI(page);
   await login(page);
+  await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("link", { name: "Guide", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your first server, step by step." }),
@@ -941,3 +952,215 @@ test("console help deep link opens startup troubleshooting", async ({ page }) =>
   await expect(page.locator("#server-errors")).toHaveAttribute("open", "");
   await expect(page.getByText(/find the first error/)).toBeVisible();
 });
+
+test("forgot password requests mail without exposing account existence", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Forgot your password?" }).click();
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await page.getByLabel("Email address").fill("unknown@example.com");
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Send reset link" }).click();
+  await expect(page.getByRole("status")).toContainText("If a verified account exists");
+  expect(calls.find((c) => c.path === "/auth/forgot-password").body).toEqual({
+    email: "unknown@example.com",
+  });
+});
+test("reset reads and removes the fragment token and never sends it in URLs", async ({ page }) => {
+  const calls = await mockAPI(page);
+  const token = "r".repeat(43);
+  const urls = [];
+  page.on("request", (r) => urls.push(r.url()));
+  await page.goto(`/reset-password#token=${token}`);
+  await expect(page.getByLabel("Reset token")).toHaveValue(token);
+  await expect(page).toHaveURL(/\/reset-password$/);
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("replacement-password");
+  await page.getByRole("button", { name: "Reset password", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Password reset. All sessions were signed out",
+  );
+  expect(calls.find((c) => c.path === "/auth/reset-password").body).toEqual({
+    token,
+    password: "replacement-password",
+  });
+  expect(urls.some((url) => url.includes(token))).toBe(false);
+  await expect(page.getByRole("button", { name: "Reset password", exact: true })).toHaveCount(0);
+});
+test("reset password mismatch prevents the API request", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await page.goto("/reset-password");
+  await page.getByLabel("Reset token").fill("r".repeat(43));
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("different-password");
+  await page.getByRole("button", { name: "Reset password", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Passwords do not match" })).toContainText(
+    "Passwords do not match",
+  );
+  expect(calls.filter((c) => c.path === "/auth/reset-password")).toHaveLength(0);
+});
+test("expired reset links offer a new request", async ({ page }) => {
+  await mockAPI(page);
+  await page.route("http://localhost:8080/auth/reset-password", (route) =>
+    route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "reset link is invalid or expired; request a new one" }),
+    }),
+  );
+  await page.goto("/reset-password");
+  await page.getByLabel("Reset token").fill("r".repeat(43));
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("replacement-password");
+  await page.getByRole("button", { name: "Reset password", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "invalid or expired" })).toContainText(
+    "invalid or expired",
+  );
+  await page.getByRole("link", { name: "Request a new reset link" }).click();
+  await expect(page).toHaveURL(/\/forgot-password$/);
+});
+test("account password change signs out without reusing the revoked session", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await page.getByLabel("Current password").fill("original-password");
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("replacement-password");
+  await page.getByRole("button", { name: "Change password and sign out" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByRole("status")).toContainText("All sessions were signed out");
+  expect(calls.find((c) => c.path === "/account/password").body).toEqual({
+    current_password: "original-password",
+    new_password: "replacement-password",
+  });
+  expect(calls.filter((c) => c.path === "/auth/logout")).toHaveLength(0);
+});
+test("wrong current password keeps the account form available", async ({ page }) => {
+  await mockAPI(page);
+  await page.route("http://localhost:8080/account/password", (route) =>
+    route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "current password is incorrect" }),
+    }),
+  );
+  await login(page);
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await page.getByLabel("Current password").fill("wrong-password");
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("replacement-password");
+  await page.getByRole("button", { name: "Change password and sign out" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "current password is incorrect" }),
+  ).toContainText("current password is incorrect");
+  await expect(page).toHaveURL(/\/account$/);
+  await expect(page.getByRole("button", { name: "Change password and sign out" })).toBeEnabled();
+});
+
+test("mobile navigation exposes every destination and sign-out with keyboard dismissal", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page, { isAdmin: true });
+  await login(page);
+  const trigger = page.getByRole("button", { name: "Open navigation" });
+  await trigger.click();
+  const menu = page.getByRole("dialog", { name: "Your workspace" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Close navigation" })).toBeFocused();
+  for (const label of ["Dashboard", "Servers", "Billing", "Account", "Guide", "Admin"])
+    await expect(menu.getByRole("link", { name: label, exact: true })).toBeInViewport();
+  await expect(menu.getByRole("button", { name: "Sign out", exact: true })).toBeInViewport();
+  await page.keyboard.press("Tab");
+  await expect(menu.getByRole("link", { name: "Dashboard", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(menu.getByRole("link", { name: "Servers", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await menu.getByRole("link", { name: "Account", exact: true }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await expect(menu).not.toBeVisible();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test("current servers come first and cancelled hosting stays available in history", async ({
+  page,
+}) => {
+  await mockAPI(page, {
+    servers: [
+      {
+        ...baseServer,
+        id: "30000000-0000-4000-8000-000000000002",
+        name: "Old world",
+        status: "CANCELLED",
+      },
+      {
+        ...baseServer,
+        id: "30000000-0000-4000-8000-000000000003",
+        name: "New world",
+        status: "PROVISIONING",
+      },
+      baseServer,
+    ],
+  });
+  await login(page);
+  await expect(page.locator(".server-card")).toHaveCount(2);
+  await expect(page.locator(".server-card").first()).toContainText(baseServer.name);
+  await expect(page.getByRole("heading", { name: "Old world", exact: true })).toHaveCount(0);
+  await page.getByLabel("Server view").selectOption("all");
+  await expect(page.locator(".server-card")).toHaveCount(3);
+  await page.getByLabel("Search servers").fill("Old world");
+  await expect(page.locator(".server-card")).toHaveCount(1);
+  await expect(page.locator(".server-card")).toContainText("Old world");
+});
+
+for (const width of [320, 768, 1024, 1366]) {
+  test(`workspace pages fit ${width}px with readable controls`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockAPI(page);
+    await login(page);
+    const navigate = async (label) => {
+      if (width <= 900) await page.getByRole("button", { name: "Open navigation" }).click();
+      await page
+        .getByRole("navigation", { name: "Main navigation" })
+        .getByRole("link", { name: label, exact: true })
+        .click();
+    };
+    const fits = async () =>
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    await fits();
+    await page.getByRole("link", { name: "New server", exact: true }).click();
+    await expect(page.getByLabel("Server name", { exact: true })).toBeVisible();
+    await fits();
+    await navigate("Billing");
+    await expect(page.getByRole("heading", { name: "Keep your adventures going." })).toBeVisible();
+    await fits();
+    await navigate("Account");
+    await expect(page.getByLabel("Current password")).toBeVisible();
+    await fits();
+    if (width <= 600) {
+      expect(
+        await page
+          .getByLabel("Current password")
+          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+      ).toBeGreaterThanOrEqual(16);
+      expect(
+        (await page.getByRole("button", { name: "Change password and sign out" }).boundingBox())
+          .height,
+      ).toBeGreaterThanOrEqual(44);
+    }
+    await navigate("Servers");
+    await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+    await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+    await fits();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Difficulty" })).toBeVisible();
+    await fits();
+  });
+}

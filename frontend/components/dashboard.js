@@ -63,10 +63,13 @@ export function Dashboard({ serversOnly = false }) {
   const { data: servers, loading, error, refresh } = useResource("/servers", 10000);
   const { data: plans, error: plansError } = useResource("/plans");
   const [query, setQuery] = useState("");
-  const visible =
-    servers?.filter((server) =>
+  const [view, setView] = useState("active");
+  const visible = (servers || [])
+    .filter((server) => view === "all" || server.status !== "CANCELLED")
+    .filter((server) =>
       `${server.name} ${server.server_type}`.toLowerCase().includes(query.toLowerCase()),
-    ) || [];
+    )
+    .sort((a, b) => Number(b.status === "RUNNING") - Number(a.status === "RUNNING"));
   const ready = servers?.filter((s) => s.status === "RUNNING").length || 0;
   return (
     <Shell>
@@ -91,31 +94,33 @@ export function Dashboard({ serversOnly = false }) {
       />
       {!serversOnly && (
         <>
-          <section className="welcome-banner">
-            <div>
-              <span className="banner-kicker">MAKE SOMETHING TOGETHER</span>
-              <h2>
-                A little space.
-                <br />
-                Endless possibilities.
-              </h2>
-              <p>
-                Build a base, explore the unknown, or just hang out.
-                <br />
-                We’ll help you keep your world ready.
-              </p>
-              <Link href="/servers/new" className="button banner-button">
-                Create your next world <Icon name="arrow" size={16} />
-              </Link>
-            </div>
-            <div className="hero-blocks" aria-hidden="true">
-              <span className="block block-a" />
-              <span className="block block-b" />
-              <span className="block block-c" />
-              <span className="block block-d" />
-              <span className="hero-star">✦</span>
-            </div>
-          </section>
+          {servers?.length === 0 && (
+            <section className="welcome-banner">
+              <div>
+                <span className="banner-kicker">MAKE SOMETHING TOGETHER</span>
+                <h2>
+                  A little space.
+                  <br />
+                  Endless possibilities.
+                </h2>
+                <p>
+                  Build a base, explore the unknown, or just hang out.
+                  <br />
+                  We’ll help you keep your world ready.
+                </p>
+                <Link href="/servers/new" className="button banner-button">
+                  Create your next world <Icon name="arrow" size={16} />
+                </Link>
+              </div>
+              <div className="hero-blocks" aria-hidden="true">
+                <span className="block block-a" />
+                <span className="block block-b" />
+                <span className="block block-c" />
+                <span className="block block-d" />
+                <span className="hero-star">✦</span>
+              </div>
+            </section>
+          )}
           <div className="summary-grid">
             <div className="summary-card">
               <span className="summary-icon">
@@ -134,7 +139,7 @@ export function Dashboard({ serversOnly = false }) {
                 <Icon name="play" />
               </span>
               <div>
-                <span>Ready to play</span>
+                <span>Active hosting</span>
                 <strong>
                   {servers ? ready : "—"}
                   <small>activated servers</small>
@@ -166,17 +171,26 @@ export function Dashboard({ serversOnly = false }) {
       <div className="section-heading">
         <div>
           <h2>{serversOnly ? "All servers" : "Your servers"}</h2>
-          <span>{servers?.length || 0} servers</span>
+          <span>
+            {visible.length} shown
+            {view === "active" ? " · current hosting" : " · including cancelled"}
+          </span>
         </div>
-        <label className="search-box">
-          <span aria-hidden="true">⌕</span>
-          <input
-            aria-label="Search servers"
-            placeholder="Search your servers…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
+        <div className="server-list-tools">
+          <select aria-label="Server view" value={view} onChange={(e) => setView(e.target.value)}>
+            <option value="active">Active servers</option>
+            <option value="all">All servers</option>
+          </select>
+          <label className="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input
+              aria-label="Search servers"
+              placeholder="Search your servers…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+        </div>
       </div>
       <ErrorMessage error={error} />
       {error && (

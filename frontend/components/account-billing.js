@@ -1,5 +1,6 @@
 "use client";
 import { useAuth } from "./auth";
+import { useState } from "react";
 import { useResource } from "./data";
 import { ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 export function Account() {
@@ -54,11 +55,92 @@ export function Account() {
                 <Icon name="logout" size={16} />
                 Sign out of this session
               </button>
+              <ChangePassword />
             </section>
           </div>
         )
       )}
     </Shell>
+  );
+}
+function ChangePassword() {
+  const { api, passwordChanged } = useAuth();
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    setError(null);
+    if (password !== confirmation) {
+      setError(new Error("Passwords do not match."));
+      return;
+    }
+    if (new TextEncoder().encode(password).length > 72) {
+      setError(new Error("Choose a password no longer than 72 bytes."));
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/account/password", {
+        method: "PUT",
+        body: { current_password: current, new_password: password },
+      });
+      setCurrent("");
+      setPassword("");
+      setConfirmation("");
+      passwordChanged();
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={submit} className="password-change-form">
+      <h3>Change password</h3>
+      <p>Use at least 12 characters. Changing your password signs you out on every device.</p>
+      <ErrorMessage error={error} />
+      <label className="field">
+        Current password
+        <input
+          type="password"
+          autoComplete="current-password"
+          required
+          maxLength={72}
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+        />
+      </label>
+      <label className="field">
+        New password
+        <input
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={12}
+          maxLength={72}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </label>
+      <label className="field">
+        Confirm new password
+        <input
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={12}
+          maxLength={72}
+          value={confirmation}
+          onChange={(e) => setConfirmation(e.target.value)}
+        />
+      </label>
+      <button className="button primary" disabled={busy}>
+        {busy ? "Changing…" : "Change password and sign out"}
+      </button>
+    </form>
   );
 }
 export { Billing } from "./billing";

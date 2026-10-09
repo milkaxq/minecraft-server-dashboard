@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "./auth";
 import { STATE_LABELS } from "../lib/api";
 const icons = {
+  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  close: <path d="m6 6 12 12M18 6 6 18" />,
   dashboard: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -116,6 +118,15 @@ export function Shell({ children }) {
   const { session, logout } = useAuth();
   const router = useRouter();
   const path = usePathname();
+  const menu = useRef(null);
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width: 901px)");
+    const closeOnResize = () => {
+      if (wide.matches) menu.current?.close();
+    };
+    wide.addEventListener("change", closeOnResize);
+    return () => wide.removeEventListener("change", closeOnResize);
+  }, []);
   useEffect(() => {
     if (!session) router.replace("/login");
   }, [session, router]);
@@ -128,8 +139,74 @@ export function Shell({ children }) {
     ["world", "/guide", "Guide"],
     ...(session.user.is_admin ? [["shield", "/admin", "Admin"]] : []),
   ];
+  const navigation = (
+    <>
+      {nav.map(([icon, href, label]) => (
+        <Link
+          onClick={() => menu.current?.close()}
+          key={href}
+          href={href}
+          className={`nav-item ${path === href || path.startsWith(`${href}/`) ? "active" : ""}`}
+          aria-current={path === href || path.startsWith(`${href}/`) ? "page" : undefined}
+        >
+          <Icon name={icon} />
+          {label}
+          {label === "Servers" && (
+            <span className="nav-shortcut" aria-hidden="true">
+              ↗
+            </span>
+          )}
+        </Link>
+      ))}
+    </>
+  );
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <header className="mobile-header">
+        <Brand />
+        <button
+          className="mobile-menu-button"
+          onClick={() => menu.current?.showModal()}
+          aria-label="Open navigation"
+          aria-haspopup="dialog"
+          aria-controls="mobile-navigation"
+        >
+          <Icon name="menu" /> <span>Menu</span>
+        </button>
+      </header>
+      <dialog
+        ref={menu}
+        id="mobile-navigation"
+        className="mobile-navigation"
+        aria-labelledby="mobile-menu-title"
+      >
+        <div className="mobile-menu-heading">
+          <h2 id="mobile-menu-title">Your workspace</h2>
+          <button
+            className="mobile-menu-button"
+            onClick={() => menu.current?.close()}
+            aria-label="Close navigation"
+            autoFocus
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        <p className="mobile-menu-user">{session.user.name}</p>
+        <nav aria-label="Main navigation">{navigation}</nav>
+        <button
+          className="button mobile-signout"
+          onClick={() => {
+            menu.current?.close();
+            logout();
+          }}
+        >
+          <Icon name="logout" size={18} />
+          Sign out
+        </button>
+      </dialog>
       <aside className="sidebar">
         <Brand />
         <div className="workspace">
@@ -141,24 +218,7 @@ export function Shell({ children }) {
           <span className="workspace-dot" />
         </div>
         <div className="nav-label">WORKSPACE</div>
-        <nav aria-label="Main navigation">
-          {nav.map(([icon, href, label]) => (
-            <Link
-              key={href}
-              href={href}
-              className={`nav-item ${path === href || path.startsWith(`${href}/`) ? "active" : ""}`}
-              aria-current={path === href || path.startsWith(`${href}/`) ? "page" : undefined}
-            >
-              <Icon name={icon} />
-              {label}
-              {label === "Servers" && (
-                <span className="nav-shortcut" aria-hidden="true">
-                  ↗
-                </span>
-              )}
-            </Link>
-          ))}
-        </nav>
+        <nav aria-label="Main navigation">{navigation}</nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note">
             <Icon name="world" />
@@ -196,7 +256,9 @@ export function Shell({ children }) {
             Your workspace
           </span>
         </header>
-        <main className="main-content">{children}</main>
+        <main id="main-content" tabIndex={-1} className="main-content">
+          {children}
+        </main>
         <footer className="footer">
           Built for your next adventure.<span>Blockyard · Minecraft hosting</span>
         </footer>

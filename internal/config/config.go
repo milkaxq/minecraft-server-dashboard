@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"os"
@@ -8,6 +9,7 @@ import (
 )
 
 type Config struct {
+	RecoveryKey                                                                                                         []byte
 	PaymentProvider, MockPaymentSecret                                                                                  string
 	Environment, Address, DatabaseURL, FrontendOrigin, MailDirectory, SMTPAddress, SMTPUsername, SMTPPassword, SMTPFrom string
 	PanelURL, ClientAPIKey                                                                                              string
@@ -17,6 +19,16 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{Environment: env("APP_ENV", "development"), Address: env("HTTP_ADDR", ":8080"), DatabaseURL: os.Getenv("DATABASE_URL"), FrontendOrigin: env("FRONTEND_ORIGIN", "http://localhost:3000"), MailDirectory: env("MAIL_DIRECTORY", ".local/mail"), SMTPAddress: os.Getenv("SMTP_ADDRESS"), SMTPUsername: os.Getenv("SMTP_USERNAME"), SMTPPassword: os.Getenv("SMTP_PASSWORD"), SMTPFrom: os.Getenv("SMTP_FROM")}
+	rawKey := os.Getenv("RECOVERY_TOKEN_KEY")
+	if rawKey != "" {
+		var err error
+		c.RecoveryKey, err = base64.StdEncoding.DecodeString(rawKey)
+		if err != nil || len(c.RecoveryKey) != 32 {
+			return c, fmt.Errorf("RECOVERY_TOKEN_KEY must be base64 encoding of 32 random bytes")
+		}
+	} else if c.Environment == "production" {
+		return c, fmt.Errorf("RECOVERY_TOKEN_KEY is required in production")
+	}
 	c.PanelURL = os.Getenv("PTERODACTYL_URL")
 	c.ClientAPIKey = os.Getenv("PTERODACTYL_CLIENT_API_KEY")
 	if c.ClientAPIKey != "" && (c.PanelURL == "" || strings.HasPrefix(c.ClientAPIKey, "ptla_")) {

@@ -42,6 +42,7 @@ services:
       HTTP_ADDR: ":8080"
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      RECOVERY_TOKEN_KEY: ${RECOVERY_TOKEN_KEY:-}
       MAIL_DIRECTORY: /var/lib/hosting/mail
       SMTP_ADDRESS: ${SMTP_ADDRESS:-}
       SMTP_USERNAME: ${SMTP_USERNAME:-}

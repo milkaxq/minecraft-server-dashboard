@@ -35,6 +35,11 @@ func TestStrictJSON(t *testing.T) {
 
 type capturedMail struct{ token string }
 
+func (m *capturedMail) SendPasswordReset(_ context.Context, _ string, token string) error {
+	m.token = token
+	return nil
+}
+
 func (m *capturedMail) SendVerification(_ context.Context, _ string, token string) error {
 	m.token = token
 	return nil

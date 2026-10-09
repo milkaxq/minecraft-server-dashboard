@@ -1,16 +1,26 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Icon } from "./ui";
 import { request } from "../lib/api";
+const subscribeHash = (notify) => {
+  window.addEventListener("hashchange", notify);
+  return () => window.removeEventListener("hashchange", notify);
+};
+const readHash = () => window.location.hash;
+const emptyHash = () => "";
 export function AuthScreen({ mode = "login" }) {
-  const { login, session } = useAuth();
+  const { login, session, authNotice } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [done, setDone] = useState(false);
+  const forgot = mode === "forgot-password";
+  const reset = mode === "reset-password";
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -18,13 +28,47 @@ export function AuthScreen({ mode = "login" }) {
   useEffect(() => {
     if (session) router.replace("/dashboard");
   }, [session, router]);
+  const hash = useSyncExternalStore(subscribeHash, readHash, emptyHash);
+  const [consumedHash, setConsumedHash] = useState("");
+  if (hash && consumedHash !== hash) {
+    setConsumedHash(hash);
+    if (reset) {
+      const value = new URLSearchParams(hash.slice(1)).get("token");
+      if (value) setToken(value);
+    }
+  }
+  useEffect(() => {
+    // Fragments keep tokens out of HTTP logs; clear them from browser history too.
+    if (consumedHash)
+      window.history.replaceState(window.history.state, "", window.location.pathname);
+  }, [consumedHash]);
   async function submit(event) {
     event.preventDefault();
+    if (busy) return;
     setError(null);
     setNotice("");
     setBusy(true);
     try {
-      if (mode === "login") await login(email.trim(), password);
+      if (forgot) {
+        const result = await request("/auth/forgot-password", {
+          method: "POST",
+          body: { email: email.trim() },
+        });
+        setNotice(result.message);
+      } else if (reset) {
+        if (password !== confirmation) throw new Error("Passwords do not match.");
+        if (new TextEncoder().encode(password).length > 72)
+          throw new Error("Choose a password no longer than 72 bytes.");
+        await request("/auth/reset-password", {
+          method: "POST",
+          body: { token: token.trim(), password },
+        });
+        setPassword("");
+        setConfirmation("");
+        setToken("");
+        setDone(true);
+        setNotice("Password reset. All sessions were signed out. Sign in with your new password.");
+      } else if (mode === "login") await login(email.trim(), password);
       else if (mode === "register") {
         if (new TextEncoder().encode(password).length > 72)
           throw new Error("Choose a password no longer than 72 bytes.");
@@ -86,41 +130,49 @@ export function AuthScreen({ mode = "login" }) {
         <div className="auth-form">
           <span className="eyebrow">WELCOME TO BLOCKYARD</span>
           <h2>
-            {mode === "login"
-              ? "Good to see you again."
-              : mode === "register"
-                ? "Start your next adventure."
-                : "One last step."}
+            {forgot
+              ? "Let’s get you back in."
+              : reset
+                ? "Choose a new password."
+                : mode === "login"
+                  ? "Good to see you again."
+                  : mode === "register"
+                    ? "Start your next adventure."
+                    : "One last step."}
           </h2>
           <p>
-            {mode === "login"
-              ? "Sign in to get back to your worlds."
-              : mode === "register"
-                ? "Create an account to find a home for your world."
-                : "Enter the verification token from your email."}
+            {forgot
+              ? "Enter your account email to request a password reset link."
+              : reset
+                ? "Use the token from your email. Links expire after 30 minutes and work once."
+                : mode === "login"
+                  ? "Sign in to get back to your worlds."
+                  : mode === "register"
+                    ? "Create an account to find a home for your world."
+                    : "Enter the verification token from your email."}
           </p>
           <ErrorMessage error={error} />
-          {notice && (
+          {(notice || (mode === "login" && authNotice)) && (
             <div className="notice success" role="status">
-              {notice}
+              {notice || authNotice}
             </div>
           )}
-          <form onSubmit={submit}>
-            {mode === "register" && (
-              <label className="field">
-                Your name
-                <input
-                  autoComplete="name"
-                  required
-                  maxLength={80}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Alex"
-                />
-              </label>
-            )}
-            {mode !== "verify" ? (
-              <>
+          {!(reset && done) && (
+            <form onSubmit={submit}>
+              {mode === "register" && (
+                <label className="field">
+                  Your name
+                  <input
+                    autoComplete="name"
+                    required
+                    maxLength={80}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Alex"
+                  />
+                </label>
+              )}
+              {(mode === "login" || mode === "register" || forgot) && (
                 <label className="field">
                   Email address
                   <input
@@ -132,44 +184,69 @@ export function AuthScreen({ mode = "login" }) {
                     placeholder="you@example.com"
                   />
                 </label>
+              )}
+              {(mode === "login" || mode === "register" || reset) && (
+                <>
+                  <label className="field">
+                    {reset ? "New password" : "Password"}
+                    <input
+                      type="password"
+                      autoComplete={
+                        mode === "register" || reset ? "new-password" : "current-password"
+                      }
+                      required
+                      minLength={mode === "register" || reset ? 12 : undefined}
+                      maxLength={72}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={mode === "register" ? "At least 12 characters" : "Your password"}
+                    />
+                  </label>
+                </>
+              )}
+              {reset && (
                 <label className="field">
-                  Password
+                  Confirm new password
                   <input
                     type="password"
-                    autoComplete={mode === "register" ? "new-password" : "current-password"}
+                    autoComplete="new-password"
                     required
-                    minLength={mode === "register" ? 12 : undefined}
+                    minLength={12}
                     maxLength={72}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={mode === "register" ? "At least 12 characters" : "Your password"}
+                    value={confirmation}
+                    onChange={(e) => setConfirmation(e.target.value)}
                   />
                 </label>
-              </>
-            ) : (
-              <label className="field">
-                Verification token
-                <input
-                  autoComplete="off"
-                  spellCheck="false"
-                  required
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="Paste the token from your email"
-                />
-              </label>
-            )}
-            <button className="button primary wide" disabled={busy}>
-              {busy
-                ? "Please wait…"
-                : mode === "login"
-                  ? "Sign in"
-                  : mode === "register"
-                    ? "Create account"
-                    : "Verify email"}
-              <Icon name="arrow" size={16} />
-            </button>
-          </form>
+              )}
+              {(mode === "verify" || reset) && (
+                <label className="field">
+                  {reset ? "Reset token" : "Verification token"}
+                  <input
+                    autoComplete="off"
+                    spellCheck="false"
+                    required
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    placeholder="Paste the token from your email"
+                  />
+                </label>
+              )}
+              <button className="button primary wide" disabled={busy}>
+                {busy
+                  ? "Please wait…"
+                  : forgot
+                    ? "Send reset link"
+                    : reset
+                      ? "Reset password"
+                      : mode === "login"
+                        ? "Sign in"
+                        : mode === "register"
+                          ? "Create account"
+                          : "Verify email"}
+                <Icon name="arrow" size={16} />
+              </button>
+            </form>
+          )}
           <div className="auth-links">
             {mode === "login" ? (
               <>
@@ -177,6 +254,9 @@ export function AuthScreen({ mode = "login" }) {
                   New around here? <Link href="/register">Create an account</Link>
                 </p>
                 <Link href="/verify">Verify your email</Link>
+                <p>
+                  <Link href="/forgot-password">Forgot your password?</Link>
+                </p>
               </>
             ) : (
               <p>
@@ -184,6 +264,13 @@ export function AuthScreen({ mode = "login" }) {
               </p>
             )}
           </div>
+          {(reset || forgot) && (
+            <p>
+              <Link href={reset ? "/forgot-password" : "/reset-password"}>
+                {reset ? "Request a new reset link" : "Already have a reset token?"}
+              </Link>
+            </p>
+          )}
           {mode === "verify" && (
             <form onSubmit={resend} className="resend-form">
               <label className="field">

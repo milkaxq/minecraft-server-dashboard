@@ -16,6 +16,7 @@ class ComposeTests(unittest.TestCase):
         environment = dict(os.environ)
         environment.update({
             "APP_ENV": "development",
+            "RECOVERY_TOKEN_KEY": "compose-recovery-test-only",
             "POSTGRES_PASSWORD": "compose-test-only",
             "DATABASE_URL": "postgres://hosting:compose-test-only@postgres:5432/hosting?sslmode=disable",
             "PANEL_DATABASE_PASSWORD": "compose-panel-test-only",
@@ -66,6 +67,12 @@ class ComposeTests(unittest.TestCase):
         self.assertFalse(any("KEY" in key or "SECRET" in key for key in frontend))
         build_args = self.services["frontend"]["build"].get("args", {})
         self.assertEqual(set(build_args), {"NEXT_PUBLIC_API_URL"})
+
+    def test_recovery_key_is_backend_only(self):
+        self.assertEqual(self.services["backend"]["environment"]["RECOVERY_TOKEN_KEY"], "compose-recovery-test-only")
+        for name, service in self.services.items():
+            if name != "backend":
+                self.assertNotIn("RECOVERY_TOKEN_KEY", service.get("environment", {}), name)
 
     def test_internal_wings_origin_avoids_localhost_resolution(self):
         # cURL treats .localhost names as loopback even when /etc/hosts maps them.

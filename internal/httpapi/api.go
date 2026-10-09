@@ -71,6 +71,9 @@ func (a *API) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /auth/register", a.limited(a.register))
 	mux.HandleFunc("POST /auth/login", a.limited(a.login))
+	mux.HandleFunc("POST /auth/forgot-password", a.limited(a.forgotPassword))
+	mux.HandleFunc("POST /auth/reset-password", a.limited(a.resetPassword))
+	mux.HandleFunc("PUT /account/password", a.protected(a.changePassword))
 	mux.HandleFunc("POST /auth/verify-email", a.limited(a.verify))
 	mux.HandleFunc("POST /auth/resend-verification", a.limited(a.resend))
 	mux.HandleFunc("POST /auth/logout", a.protected(a.logout))
@@ -156,6 +159,12 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, auth.ErrResetToken):
+		status, message = 400, "reset link is invalid or expired; request a new one"
+	case errors.Is(err, auth.ErrCurrentPassword):
+		status, message = 400, "current password is incorrect"
+	case errors.Is(err, auth.ErrRecoveryUnavailable):
+		status, message = 503, "account recovery is temporarily unavailable"
 	case errors.Is(err, server.ErrMemberConflict):
 		status, message = 409, "member already exists, the 20-member limit is reached, or another operation is in progress"
 	case errors.Is(err, server.ErrMemberUnavailable):

@@ -215,6 +215,8 @@ func TestTicketAndLiveConsoleIsolation(t *testing.T) {
 
 type unusedMail struct{}
 
+func (unusedMail) SendPasswordReset(context.Context, string, string) error { return nil }
+
 func (unusedMail) SendVerification(context.Context, string, string) error { return nil }
 func TestSocketEgressValidation(t *testing.T) {
 	s := &console.Service{AllowedOrigins: []string{"wss://wings.example.com:8080"}}
