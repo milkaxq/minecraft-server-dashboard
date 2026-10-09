@@ -5,6 +5,12 @@ authorized server records, durable provisioning jobs, safe resource reservations
 and a real Pterodactyl integration. The application never executes Minecraft
 processes. The dashboard includes power controls, live console, metrics, files, settings, backups
 and Paper plugins, demo checkout, manually renewed subscriptions and administration.
+The [first-start flow](docs/FIRST_START.md) adds owner EULA acceptance, installation
+guidance, and backend start/restart enforcement.
+See [server members](docs/MEMBERS.md) and [plugins/custom gameplay](docs/CUSTOM_GAMEPLAY.md).
+
+See [world management](docs/WORLDS.md) for safety backups, ZIP uploads/downloads, and confirmed resets.
+
 See [Phase 5 architecture and runbook](docs/PHASE5.md) for billing configuration,
 new routes, file changes and deployment limits.
 

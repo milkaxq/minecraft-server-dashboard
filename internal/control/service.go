@@ -25,6 +25,11 @@ var ErrNotConfigured = errors.New("live management not configured")
 var ErrBusy = errors.New("another operation is in progress")
 var ErrUnknown = errors.New("operation outcome could not be confirmed")
 var ErrCommand = errors.New("command not allowed for this role")
+var ErrEULA = errors.New("minecraft EULA acceptance required")
+
+type EULAChecker interface {
+	Accepted(context.Context, string) (bool, error)
+}
 
 type PlayerProbe interface {
 	Players(context.Context, string, int) (minecraft.Players, error)
@@ -33,6 +38,7 @@ type Service struct {
 	DB      *pgxpool.Pool
 	Panel   pterodactyl.ServerClient
 	Players PlayerProbe
+	EULA    EULAChecker
 }
 type Target struct {
 	ID         uuid.UUID
@@ -230,6 +236,25 @@ func (s Service) perform(ctx context.Context, user, id, key uuid.UUID, permissio
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
+	}
+	if action == "start" || action == "restart" {
+		var worldUncertain bool
+		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM management_operations WHERE server_id=$1 AND action IN ('world.reset','world.upload') AND status IN ('PENDING','UNKNOWN'))`, id).Scan(&worldUncertain); err != nil {
+			return err
+		}
+		if worldUncertain {
+			return ErrUnknown
+		}
+		if s.EULA == nil {
+			return ErrNotConfigured
+		}
+		accepted, e := s.EULA.Accepted(ctx, target.Identifier)
+		if e != nil {
+			return ErrUnavailable
+		}
+		if !accepted {
+			return ErrEULA
+		}
 	}
 	tx, err := conn.Begin(ctx)
 	if err != nil {

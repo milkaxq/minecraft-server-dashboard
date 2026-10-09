@@ -50,28 +50,30 @@ const (
 type Permission string
 
 const (
-	View     Permission = "view"
-	Console  Permission = "console"
-	Start    Permission = "start"
-	Restart  Permission = "restart"
-	Stop     Permission = "stop"
-	Kill     Permission = "kill"
-	Files    Permission = "files"
-	Settings Permission = "settings"
-	Plugins  Permission = "plugins"
-	Backups  Permission = "backups"
-	Billing  Permission = "billing"
-	Members  Permission = "members"
-	Delete   Permission = "delete"
+	View       Permission = "view"
+	Console    Permission = "console"
+	Start      Permission = "start"
+	Restart    Permission = "restart"
+	Stop       Permission = "stop"
+	Kill       Permission = "kill"
+	Files      Permission = "files"
+	Settings   Permission = "settings"
+	Plugins    Permission = "plugins"
+	Worlds     Permission = "worlds"
+	Backups    Permission = "backups"
+	Billing    Permission = "billing"
+	Members    Permission = "members"
+	Delete     Permission = "delete"
+	AcceptEULA Permission = "accept_eula"
 )
 
 func Allowed(role Role, permission Permission) bool {
 	switch permission {
 	case View, Console, Start, Restart:
 		return role == Owner || role == Admin || role == Moderator
-	case Stop, Kill, Files, Settings, Plugins, Backups:
+	case Stop, Kill, Files, Settings, Plugins, Worlds, Backups:
 		return role == Owner || role == Admin
-	case Billing, Members, Delete:
+	case Billing, Members, Delete, AcceptEULA:
 		return role == Owner
 	default:
 		return false

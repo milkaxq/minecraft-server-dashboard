@@ -2121,6 +2121,8 @@ progress::-moz-progress-bar {
     display: none;
   }
   .sidebar > nav {
+    max-width: 100%;
+    overflow-x: auto;
     display: flex;
     gap: 5px;
     margin-top: 18px;
@@ -2465,7 +2467,7 @@ progress::-moz-progress-bar {
   overflow-wrap: anywhere;
 }
 .file-path button,
-.row-actions button {
+.row-actions button:not(.button) {
   border: 0;
   background: none;
   color: #478052;
@@ -2719,6 +2721,29 @@ progress::-moz-progress-bar {
   list-style: none;
   padding: 0;
 }
+.eula-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0;
+  line-height: 1.6;
+}
+.eula-checkbox input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 2px 0 0;
+  flex: 0 0 18px;
+  accent-color: var(--green);
+}
+.eula-checkbox > span {
+  min-width: 0;
+}
+.eula-checkbox a {
+  color: var(--green-dark);
+  text-decoration: underline;
+}
 .subscription-list > li {
   display: flex;
   justify-content: space-between;
@@ -2810,4 +2835,18 @@ progress::-moz-progress-bar {
   .checkout-details code {
     font-size: 11px;
   }
+}
+
+.world-panel h3 {
+  margin: 24px 0 8px;
+}
+.world-panel .file-actions {
+  margin: 16px 0;
+}
+.world-panel > [role="status"] {
+  margin-top: 12px;
+}
+.world-panel .field-help,
+.world-panel .section-heading span {
+  overflow-wrap: anywhere;
 }

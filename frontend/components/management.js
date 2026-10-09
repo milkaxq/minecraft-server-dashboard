@@ -15,12 +15,14 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
       ]
     : [
         ["view", "Overview", `/servers/${id}`],
+        ["worlds", "World", `/servers/${id}/worlds`],
         ["settings", "Settings", `/servers/${id}/settings`],
         ["backups", "Backups", `/servers/${id}/backups`],
         ...(server.server_type === "PAPER"
           ? [["plugins", "Plugins", `/servers/${id}/plugins`]]
           : []),
       ];
+  if (permissions.includes("members")) items.push(["members", "Members", `/servers/${id}/members`]);
   return (
     <nav className="feature-tabs" aria-label="Server pages">
       {items
@@ -144,6 +146,8 @@ export function ManagementPage({ id, section }) {
               )}
               {section === "files" ? (
                 <Files id={id} offline={offline} />
+              ) : section === "worlds" ? (
+                <Worlds id={id} offline={offline} limit={server.backup_limit} />
               ) : section === "settings" ? (
                 <Settings id={id} offline={offline} />
               ) : section === "plugins" ? (
@@ -162,7 +166,15 @@ export function ManagementPage({ id, section }) {
     </Shell>
   );
 }
-function Confirm({ title, children, label = "Confirm", busy, onCancel, onConfirm }) {
+export function Confirm({
+  title,
+  children,
+  label = "Confirm",
+  busy,
+  confirmDisabled = false,
+  onCancel,
+  onConfirm,
+}) {
   const ref = useRef(null);
   useEffect(() => {
     const el = ref.current;
@@ -188,7 +200,7 @@ function Confirm({ title, children, label = "Confirm", busy, onCancel, onConfirm
         <button className="button secondary" disabled={busy} onClick={onCancel}>
           Cancel
         </button>
-        <button className="button danger" disabled={busy} onClick={onConfirm}>
+        <button className="button danger" disabled={busy || confirmDisabled} onClick={onConfirm}>
           {busy ? "Working…" : label}
         </button>
       </div>
@@ -952,6 +964,198 @@ function Backups({ id, offline, limit }) {
               ? `Restoring “${target.backup.name}” replaces all current server files, including your world, settings and plugins. Changes made after this backup will be lost.`
               : `“${target.backup.name}” will be permanently deleted.`}
           </p>
+          <ErrorMessage error={action.error} />
+        </Confirm>
+      )}
+    </>
+  );
+}
+
+function Worlds({ id, offline, limit }) {
+  const { api } = useAuth();
+  const resource = useResource(`/servers/${id}/world`, 10000);
+  const backups = useResource(`/servers/${id}/backups`, 10000);
+  const action = useAction(() => {
+    resource.refresh();
+    backups.refresh();
+  });
+  const input = useRef(null);
+  const [target, setTarget] = useState(null);
+  const [confirmation, setConfirmation] = useState("");
+  const world = resource.data;
+  const safety = backups.data?.find((b) => b.uuid === world?.safety_backup);
+  const ready = safety?.is_successful && safety.completed_at;
+  function confirm(value) {
+    setConfirmation("");
+    setTarget(value);
+  }
+  async function change() {
+    const values = { backup: safety.uuid, revision: world.revision, confirmation };
+    const upload = target instanceof File;
+    const endpoint = upload
+      ? `/servers/${id}/world/upload?${new URLSearchParams(values)}`
+      : `/servers/${id}/world/reset`;
+    if (
+      await action.run(
+        () =>
+          api(endpoint, {
+            method: "POST",
+            key: crypto.randomUUID(),
+            ...(upload ? { raw: true, body: target } : { body: values }),
+          }),
+        upload
+          ? "World uploaded. Start your server to explore it."
+          : "World reset. Start your server to generate a new world.",
+      )
+    )
+      setTarget(null);
+  }
+  return (
+    <>
+      <Feedback action={action} />
+      <ErrorMessage error={resource.error || backups.error} />
+      <section className="panel management-panel world-panel">
+        <div className="section-heading">
+          <div>
+            <h2>Your world</h2>
+            <span>{world?.name || "Loading…"}</span>
+          </div>
+          <button className="button secondary" onClick={resource.refresh}>
+            Refresh world
+          </button>
+        </div>
+        {resource.loading ? (
+          <Loading />
+        ) : (
+          world && (
+            <>
+              <p className="field-help">
+                {world.generated
+                  ? `Your world includes ${world.directories.join(", ")}. Downloads include every dimension.`
+                  : "Your world will be generated when you start the server."}
+              </p>
+              <div className="file-actions">
+                <button
+                  className="button secondary"
+                  disabled={!offline || !world.generated || action.busy}
+                  onClick={() =>
+                    action.run(
+                      () => download(api, `/servers/${id}/world/download`, `${world.name}.zip`),
+                      "World download ready.",
+                    )
+                  }
+                >
+                  Download world
+                </button>
+              </div>
+              <h3>Before changing your world</h3>
+              <p className="field-help">
+                Stop the server, then create a safety backup. Wait for it to finish before uploading
+                or resetting. Starting the server or editing files means you need a new backup.
+              </p>
+              <button
+                className="button secondary"
+                disabled={
+                  !offline ||
+                  action.busy ||
+                  !backups.data ||
+                  backups.data.length >= limit ||
+                  (safety && !safety.completed_at)
+                }
+                onClick={() =>
+                  action.run(
+                    () =>
+                      api(`/servers/${id}/world/backup`, {
+                        method: "POST",
+                        key: crypto.randomUUID(),
+                        body: {},
+                      }),
+                    "Safety backup started. Wait for it to finish.",
+                  )
+                }
+              >
+                Create safety backup
+              </button>
+              <p role="status">
+                {safety && !safety.completed_at
+                  ? "Creating safety backup…"
+                  : ready
+                    ? "Safety backup ready."
+                    : safety
+                      ? "Safety backup failed. Create a new backup."
+                      : "A fresh safety backup is required."}
+              </p>
+              {backups.data?.length >= limit && (
+                <p className="notice">
+                  All {limit} backup slots are used.{" "}
+                  <Link href={`/servers/${id}/backups`}>Manage backups</Link> to free a slot if you
+                  need a new safety backup.
+                </p>
+              )}
+              <h3>Upload or reset</h3>
+              <p className="field-help">
+                Upload a .zip up to 64 MB, containing level.dat at the root, or a “{world.name}”
+                folder with level.dat inside. Paper archives may also include “{world.name}_nether”
+                and “{world.name}_the_end”. Limit: 128 MB unpacked, 32 MB per file, and 2,000
+                entries. Replacing a world removes dimensions absent from the upload.
+              </p>
+              <div className="file-actions">
+                <button
+                  className="button primary"
+                  disabled={!offline || !ready || action.busy}
+                  onClick={() => input.current.click()}
+                >
+                  Upload world .zip
+                </button>
+                <button
+                  className="button danger-outline"
+                  disabled={!offline || !ready || !world.generated || action.busy}
+                  onClick={() => confirm("reset")}
+                >
+                  Reset world
+                </button>
+              </div>
+              <input
+                hidden
+                ref={input}
+                type="file"
+                accept=".zip"
+                onChange={(e) => {
+                  if (e.target.files[0]) confirm(e.target.files[0]);
+                  e.target.value = "";
+                }}
+              />
+              <p className="field-help">
+                Settings and plugins stay in place. You can recover your previous world by restoring
+                its safety backup from Backups.
+              </p>
+            </>
+          )
+        )}
+      </section>
+      {target && (
+        <Confirm
+          title={target === "reset" ? "Reset your world?" : "Replace your world?"}
+          label={target === "reset" ? "Reset world" : "Replace world"}
+          busy={action.busy}
+          confirmDisabled={confirmation !== world?.name || !offline || !ready}
+          onCancel={() => setTarget(null)}
+          onConfirm={change}
+        >
+          <p>
+            {target === "reset"
+              ? "All world dimensions will be reset. Minecraft generates a new world on the next start."
+              : `“${target.name}” will replace your world and its dimensions.`}{" "}
+            Your completed safety backup preserves the old files.
+          </p>
+          <label className="field">
+            Type {world?.name} to confirm
+            <input
+              autoFocus
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+            />
+          </label>
           <ErrorMessage error={action.error} />
         </Confirm>
       )}

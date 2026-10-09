@@ -37,6 +37,13 @@ func (p *countedPanel) Resources(ctx context.Context, id string) (pterodactyl.Us
 	return p.Mock.Resources(ctx, id)
 }
 
+type eulaCheck struct {
+	accepted bool
+	err      error
+}
+
+func (e *eulaCheck) Accepted(context.Context, string) (bool, error) { return e.accepted, e.err }
+
 type probe struct{ calls atomic.Int32 }
 
 func (p *probe) Players(context.Context, string, int) (minecraft.Players, error) {
@@ -72,7 +79,8 @@ func TestLiveAuthorizationAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	players := &probe{}
-	s := Service{DB: db, Panel: panel, Players: players}
+	agreement := &eulaCheck{}
+	s := Service{DB: db, Panel: panel, Players: players, EULA: agreement}
 	if err = s.Power(ctx, other, id, uuid.New(), pterodactyl.PowerStart, "", "test"); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal("cross-customer power allowed", err)
 	}
@@ -87,6 +95,25 @@ func TestLiveAuthorizationAndIdempotency(t *testing.T) {
 			t.Fatal("moderator stop/kill allowed", err)
 		}
 	}
+	for _, signal := range []pterodactyl.PowerSignal{pterodactyl.PowerStart, pterodactyl.PowerRestart} {
+		if e := s.Power(ctx, mod, id, uuid.New(), signal, "", "eula-denied"); !errors.Is(e, ErrEULA) {
+			t.Fatal("power did not require EULA", e)
+		}
+	}
+	agreement.err = errors.New("remote read unavailable")
+	if e := s.Power(ctx, owner, id, uuid.New(), pterodactyl.PowerStart, "", "unavailable"); !errors.Is(e, ErrUnavailable) {
+		t.Fatal("EULA read failure did not fail closed", e)
+	}
+	agreement.err = nil
+	s.EULA = nil
+	if e := s.Power(ctx, owner, id, uuid.New(), pterodactyl.PowerStart, "", "unconfigured"); !errors.Is(e, ErrNotConfigured) {
+		t.Fatal("missing EULA checker did not fail closed", e)
+	}
+	s.EULA = agreement
+	if panel.power.Load() != 0 {
+		t.Fatal("unaccepted EULA reached power API")
+	}
+	agreement.accepted = true
 	key := uuid.New()
 	if err = s.Power(ctx, mod, id, key, pterodactyl.PowerStart, "", "request"); err != nil {
 		t.Fatal(err)

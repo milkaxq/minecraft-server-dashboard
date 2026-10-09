@@ -38,7 +38,7 @@ func (s *Service) NewBackup(ctx context.Context, user, id, key uuid.UUID, name, 
 	}
 	return s.mutate(ctx, user, id, key, server.Backups, "backup.create", map[string]string{"name": name}, rid, func(t Target) (any, error) {
 		var ambiguous bool
-		if err := t.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM management_operations WHERE server_id=$1 AND action='backup.create' AND status IN ('PENDING','UNKNOWN') AND NOT (user_id=$2 AND idempotency_key=$3))`, id, user, key).Scan(&ambiguous); err != nil {
+		if err := t.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM management_operations WHERE server_id=$1 AND action IN ('backup.create','world.backup') AND status IN ('PENDING','UNKNOWN') AND NOT (user_id=$2 AND idempotency_key=$3))`, id, user, key).Scan(&ambiguous); err != nil {
 			return nil, err
 		}
 		if ambiguous {

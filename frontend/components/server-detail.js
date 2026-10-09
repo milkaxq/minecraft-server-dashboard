@@ -123,10 +123,32 @@ export function ServerDetail({ id, advanced = false }) {
   const [confirm, setConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
   const ready = server?.status === "RUNNING" && server.management_available;
+  const eula = useResource(ready ? `/servers/${id}/eula` : null, 10000);
+  const [agreementChecked, setAgreementChecked] = useState(false);
+  const canStart = ready && eula.data?.accepted === true && !eula.error;
   const permissions = server?.permissions || [];
   const has = (action) => permissions.includes(action);
   const transitioning = ["starting", "stopping"].includes(usage?.power_state);
   const address = server?.hostname && server.port ? `${server.hostname}:${server.port}` : null;
+  async function acceptAgreement() {
+    if (!agreementChecked || busy) return;
+    setBusy("eula");
+    setActionError(null);
+    try {
+      await api(`/servers/${id}/eula`, {
+        method: "POST",
+        body: { accepted: true },
+        key: crypto.randomUUID(),
+      });
+      setAgreementChecked(false);
+      setNotice("Agreement accepted. Your server is ready to start.");
+      eula.refresh();
+    } catch (err) {
+      setActionError(err);
+    } finally {
+      setBusy("");
+    }
+  }
   async function power(action) {
     if (busy) return;
     setBusy(action);
@@ -179,7 +201,15 @@ export function ServerDetail({ id, advanced = false }) {
               eyebrow={`${server.server_type === "PAPER" ? "PAPER" : "VANILLA"} · MINECRAFT ${server.minecraft_version}`}
               title={server.name}
               description="A little less setup. A lot more Minecraft."
-              action={<Badge state={usage?.power_state || server.status} />}
+              action={
+                <Badge
+                  state={
+                    ready && eula.data?.accepted === false
+                      ? "ACCEPTANCE_REQUIRED"
+                      : usage?.power_state || server.status
+                  }
+                />
+              }
             />
             <div className="server-toolbar">
               <div className="mode-switch">
@@ -196,7 +226,9 @@ export function ServerDetail({ id, advanced = false }) {
                   <button
                     className="button primary"
                     onClick={() => power("start")}
-                    disabled={!ready || !!busy || transitioning || usage?.power_state === "running"}
+                    disabled={
+                      !canStart || !!busy || transitioning || usage?.power_state !== "offline"
+                    }
                   >
                     <Icon name="play" size={15} />
                     {busy === "start" ? "Starting…" : "Start"}
@@ -206,7 +238,7 @@ export function ServerDetail({ id, advanced = false }) {
                   <button
                     className="button secondary"
                     onClick={() => power("stop")}
-                    disabled={!ready || !!busy || transitioning || usage?.power_state === "offline"}
+                    disabled={!ready || !!busy || transitioning || usage?.power_state !== "running"}
                   >
                     <Icon name="stop" size={15} />
                     {busy === "stop" ? "Stopping…" : "Stop"}
@@ -216,7 +248,9 @@ export function ServerDetail({ id, advanced = false }) {
                   <button
                     className="button secondary"
                     onClick={() => power("restart")}
-                    disabled={!ready || !!busy || transitioning || usage?.power_state === "offline"}
+                    disabled={
+                      !canStart || !!busy || transitioning || usage?.power_state !== "running"
+                    }
                   >
                     <Icon name="restart" size={16} />
                     {busy === "restart" ? "Restarting…" : "Restart"}
@@ -225,6 +259,59 @@ export function ServerDetail({ id, advanced = false }) {
               </div>
             </div>
             <ErrorMessage error={error || actionError} />
+            {ready && <ErrorMessage error={eula.error} />}
+            {ready && eula.loading && !eula.data && (
+              <p className="notice" role="status">
+                Checking your server’s Minecraft agreement…
+              </p>
+            )}
+            {ready && eula.data?.accepted === false && (
+              <section
+                className="notice lifecycle-notice eula-notice"
+                aria-label="Minecraft agreement"
+              >
+                <strong>One step before your first start.</strong>
+                {eula.data.can_accept ? (
+                  <>
+                    <p>
+                      Minecraft requires the server owner to accept its agreement before the server
+                      can run.
+                    </p>
+                    <label className="eula-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={agreementChecked}
+                        onChange={(event) => setAgreementChecked(event.target.checked)}
+                        disabled={!!busy}
+                      />
+                      <span>
+                        I have read and accept the{" "}
+                        <a
+                          href="https://www.minecraft.net/en-us/eula"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Minecraft EULA
+                        </a>
+                        .
+                      </span>
+                    </label>
+                    <button
+                      className="button primary"
+                      disabled={!agreementChecked || !!busy || usage?.power_state !== "offline"}
+                      onClick={acceptAgreement}
+                    >
+                      {busy === "eula" ? "Saving…" : "Accept agreement"}
+                    </button>
+                  </>
+                ) : (
+                  <p>
+                    Ask the server owner to accept the Minecraft EULA. You can start the server once
+                    they have accepted.
+                  </p>
+                )}
+              </section>
+            )}
             {notice && (
               <p className="notice success" role="status">
                 {notice}
@@ -237,9 +324,9 @@ export function ServerDetail({ id, advanced = false }) {
                     {
                       PENDING_PAYMENT: "Your payment is still pending.",
                       PAYMENT_CONFIRMED: "Your server is queued for setup.",
-                      PROVISIONING: "Your world is getting ready.",
+                      PROVISIONING: "Minecraft is installing.",
                       SUSPENDED: "This server is suspended.",
-                      FAILED: "Your server needs attention.",
+                      FAILED: "Setup didn’t finish.",
                       CANCELLED: "This server has been cancelled.",
                     }[server.status]
                   }
@@ -251,7 +338,7 @@ export function ServerDetail({ id, advanced = false }) {
                         "Visit Billing to finish checkout. Contact support if you cannot find your order.",
                       PAYMENT_CONFIRMED: "Setup will begin as soon as resources are available.",
                       PROVISIONING:
-                        "We’ll refresh this page automatically. You can start playing once setup finishes.",
+                        "We’ll refresh this page automatically. When installation finishes, review the Minecraft agreement and click Start.",
                       SUSPENDED: "Please contact hosting support to reactivate it.",
                       FAILED:
                         "Please contact hosting support. Your request and configuration have been kept.",

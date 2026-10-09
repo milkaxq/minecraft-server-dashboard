@@ -20,6 +20,13 @@ import (
 
 func (a *API) managementRoutes(mux *http.ServeMux) {
 	routes := map[string]http.HandlerFunc{
+		"GET /servers/{id}/world":                     a.world,
+		"GET /servers/{id}/world/download":            a.worldDownload,
+		"POST /servers/{id}/world/backup":             a.worldBackup,
+		"POST /servers/{id}/world/reset":              a.worldChange(false),
+		"POST /servers/{id}/world/upload":             a.worldChange(true),
+		"GET /servers/{id}/eula":                      a.eula,
+		"POST /servers/{id}/eula":                     a.acceptEULA,
 		"GET /servers/{id}/files":                     a.files,
 		"GET /servers/{id}/files/text":                a.fileText,
 		"POST /servers/{id}/files":                    a.changeFile,

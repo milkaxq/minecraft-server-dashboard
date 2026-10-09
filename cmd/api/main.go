@@ -81,6 +81,7 @@ func run() error {
 	controls := &control.Service{DB: pool, Panel: panel, Players: minecraft.Probe{}}
 	liveConsole := &console.Service{DB: pool, Control: controls, Source: consoleSource, FrontendOrigin: c.FrontendOrigin, PanelOrigin: panelOrigin, AllowedOrigins: c.WebsocketOrigins, AllowPlaintext: c.Environment == "development", Lifetime: ctx}
 	managementService := &management.Service{DB: pool, Control: controls, Panel: manager}
+	controls.EULA = managementService
 	var payment billing.PaymentProvider
 	if c.PaymentProvider == "mock" {
 		payment, err = billing.NewMock(c.MockPaymentSecret)

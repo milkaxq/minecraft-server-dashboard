@@ -39,7 +39,7 @@ case "${1:-}" in
       echo 'The Wings stack requires a native rootful Linux Docker Engine.' >&2
       exit 1
     fi
-    if [[ ! -f .local/wings/config.yml || ! -S /var/run/docker.sock || ! -d /var/lib/pterodactyl || ! -d /tmp/pterodactyl ]]; then
+    if [[ ! -f .local/wings/config.yml || ! -S /var/run/docker.sock || ! -d /var/lib/pterodactyl || ! -d /tmp/pterodactyl || ! -d /run/wings ]]; then
       echo 'Configure .local/wings/config.yml and the Linux node paths; see docs/PTERODACTYL_V2.md.' >&2
       exit 1
     fi

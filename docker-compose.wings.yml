@@ -31,6 +31,12 @@ services:
         target: /tmp/pterodactyl
         bind:
           create_host_path: false
+      # Wings creates per-server machine IDs that sibling containers bind-mount.
+      - type: bind
+        source: /run/wings
+        target: /run/wings
+        bind:
+          create_host_path: false
       - wings_logs:/var/log/pterodactyl
     security_opt:
       - no-new-privileges:true

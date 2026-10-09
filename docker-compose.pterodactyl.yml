@@ -61,7 +61,7 @@ services:
     ports:
       - "127.0.0.1:8090:80"
     extra_hosts:
-      - "wings.localhost:host-gateway"
+      - "wings.internal:host-gateway"
     networks: [default, panel-data]
     volumes:
       - panel_keys:/app/var
@@ -80,10 +80,10 @@ services:
   backend:
     environment:
       PTERODACTYL_URL: ${PTERODACTYL_URL:-http://panel}
-      PTERODACTYL_WEBSOCKET_ORIGINS: ${PTERODACTYL_WEBSOCKET_ORIGINS:-ws://wings.localhost:8180}
-      PTERODACTYL_TRANSFER_ORIGINS: ${PTERODACTYL_TRANSFER_ORIGINS:-http://wings.localhost:8180}
+      PTERODACTYL_WEBSOCKET_ORIGINS: ${PTERODACTYL_WEBSOCKET_ORIGINS:-ws://wings.internal:8180}
+      PTERODACTYL_TRANSFER_ORIGINS: ${PTERODACTYL_TRANSFER_ORIGINS:-http://wings.internal:8180}
     extra_hosts:
-      - "wings.localhost:host-gateway"
+      - "wings.internal:host-gateway"
     depends_on:
       panel:
         condition: service_healthy

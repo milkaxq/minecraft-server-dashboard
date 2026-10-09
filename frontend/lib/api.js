@@ -66,13 +66,14 @@ export function price(plan) {
 export const STATE_LABELS = {
   PENDING_PAYMENT: "Awaiting activation",
   PAYMENT_CONFIRMED: "Queued",
-  PROVISIONING: "Getting ready",
+  PROVISIONING: "Installing",
   RUNNING: "Ready",
   SUSPENDED: "Suspended",
   FAILED: "Needs attention",
   CANCELLED: "Cancelled",
   running: "Online",
-  offline: "Offline",
+  offline: "Ready to start",
+  ACCEPTANCE_REQUIRED: "Review agreement",
   starting: "Starting",
   stopping: "Stopping",
 };

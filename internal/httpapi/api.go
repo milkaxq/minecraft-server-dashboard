@@ -87,6 +87,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /servers/{id}/commands", a.protected(a.liveLimit("commands", 300, a.command)))
 	mux.HandleFunc("POST /servers/{id}/console-ticket", a.protected(a.liveLimit("tickets", 60, a.ticket)))
 	mux.HandleFunc("GET /servers/{id}/console", a.consoleStream)
+	a.memberRoutes(mux)
 	a.managementRoutes(mux)
 	a.billingRoutes(mux)
 	a.adminRoutes(mux)
@@ -155,6 +156,10 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, server.ErrMemberConflict):
+		status, message = 409, "member already exists, the 20-member limit is reached, or another operation is in progress"
+	case errors.Is(err, server.ErrMemberUnavailable):
+		status, message = 400, "ask this person to register and verify their email first, then check the email address"
 	case errors.Is(err, admin.ErrConflict):
 		status, message = 409, "another plan already uses this name"
 	case errors.Is(err, billing.ErrSignature):
@@ -179,6 +184,8 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 		status, message = 400, "Paper requires a valid plugin .jar with plugin.yml or paper-plugin.yml"
 	case errors.Is(err, control.ErrState):
 		status, message = 409, "server is not available for live management"
+	case errors.Is(err, control.ErrEULA):
+		status, message = 409, "the server owner must accept the Minecraft EULA before starting"
 	case errors.Is(err, control.ErrBusy):
 		status, message = 409, "another operation is in progress"
 	case errors.Is(err, control.ErrCommand):

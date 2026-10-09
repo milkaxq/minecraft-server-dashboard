@@ -7,7 +7,7 @@ import (
 )
 
 func TestRBAC(t *testing.T) {
-	permissions := []Permission{View, Console, Start, Restart, Stop, Kill, Files, Settings, Plugins, Backups, Billing, Members, Delete, "unknown"}
+	permissions := []Permission{View, Console, Start, Restart, Stop, Kill, Files, Settings, Plugins, Worlds, Backups, Billing, Members, Delete, AcceptEULA, "unknown"}
 	for _, role := range []Role{Owner, Admin, Moderator, "", "ROOT"} {
 		for _, p := range permissions {
 			expected := false
@@ -16,7 +16,7 @@ func TestRBAC(t *testing.T) {
 				case Owner:
 					expected = true
 				case Admin:
-					expected = p != Billing && p != Members && p != Delete
+					expected = p != Billing && p != Members && p != Delete && p != AcceptEULA
 				case Moderator:
 					expected = p == View || p == Console || p == Start || p == Restart
 				}

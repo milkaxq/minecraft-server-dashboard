@@ -23,8 +23,8 @@ class ComposeTests(unittest.TestCase):
             "PTERODACTYL_URL": "http://panel",
             "PTERODACTYL_CLIENT_API_KEY": "ptlc_compose-test-only",
             "PTERODACTYL_APPLICATION_API_KEY": "ptla_compose-test-only",
-            "PTERODACTYL_WEBSOCKET_ORIGINS": "ws://wings.localhost:8180",
-            "PTERODACTYL_TRANSFER_ORIGINS": "http://wings.localhost:8180",
+            "PTERODACTYL_WEBSOCKET_ORIGINS": "ws://wings.internal:8180",
+            "PTERODACTYL_TRANSFER_ORIGINS": "http://wings.internal:8180",
         })
         command = [
             "docker", "compose", "--env-file", ".env.example",
@@ -42,13 +42,14 @@ class ComposeTests(unittest.TestCase):
             if name != "wings":
                 self.assertNotIn("/var/run/docker.sock", targets, name)
                 self.assertNotIn("/var/lib/pterodactyl", targets, name)
+                self.assertNotIn("/run/wings", targets, name)
                 self.assertNotEqual(service.get("network_mode"), "host", name)
             self.assertFalse(service.get("privileged", False), name)
         self.assertIn("wings", self.services["wings"]["profiles"])
 
     def test_host_container_paths_match_for_docker_mounts(self):
         mounts = {mount["target"]: mount for mount in self.services["wings"]["volumes"]}
-        for path in ["/var/lib/pterodactyl", "/tmp/pterodactyl", "/var/run/docker.sock"]:
+        for path in ["/var/lib/pterodactyl", "/tmp/pterodactyl", "/run/wings", "/var/run/docker.sock"]:
             self.assertEqual(mounts[path]["source"], path)
             # Compose omits false-valued bind options in its normalized output.
             self.assertFalse(mounts[path]["bind"].get("create_host_path", False))
@@ -62,6 +63,17 @@ class ComposeTests(unittest.TestCase):
         self.assertFalse(any("KEY" in key or "SECRET" in key for key in frontend))
         build_args = self.services["frontend"]["build"].get("args", {})
         self.assertEqual(set(build_args), {"NEXT_PUBLIC_API_URL"})
+
+    def test_internal_wings_origin_avoids_localhost_resolution(self):
+        # cURL treats .localhost names as loopback even when /etc/hosts maps them.
+        for name in ["panel", "backend"]:
+            hosts = json.dumps(self.services[name]["extra_hosts"])
+            self.assertIn("wings.internal", hosts)
+            self.assertIn("host-gateway", hosts)
+            self.assertNotIn("wings.localhost", hosts)
+        backend = self.services["backend"]["environment"]
+        self.assertEqual(backend["PTERODACTYL_WEBSOCKET_ORIGINS"], "ws://wings.internal:8180")
+        self.assertEqual(backend["PTERODACTYL_TRANSFER_ORIGINS"], "http://wings.internal:8180")
 
     def test_panel_revision_and_persistent_keys(self):
         panel = self.services["panel"]

@@ -121,7 +121,7 @@ func (s Service) Role(ctx context.Context, userID, id uuid.UUID) (Role, error) {
 }
 func Permissions(role Role) []Permission {
 	result := []Permission{}
-	for _, p := range []Permission{View, Console, Start, Restart, Stop, Kill, Files, Settings, Plugins, Backups, Billing, Members, Delete} {
+	for _, p := range []Permission{View, Console, Start, Restart, Stop, Kill, Files, Settings, Plugins, Worlds, Backups, Billing, Members, Delete, AcceptEULA} {
 		if Allowed(role, p) {
 			result = append(result, p)
 		}

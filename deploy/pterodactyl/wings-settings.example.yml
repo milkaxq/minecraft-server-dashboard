@@ -17,3 +17,21 @@ remote: http://127.0.0.1:8090
 # Our Go console relay identifies its internal Panel origin.
 allowed_origins:
   - http://panel
+# Select a subnet unused by existing Docker networks.
+docker:
+  network:
+    interface: 172.30.0.1
+    name: pterodactyl_nw
+    network_mode: pterodactyl_nw
+    enable_icc: false
+    interfaces:
+      v4:
+        subnet: 172.30.0.0/24
+        gateway: 172.30.0.1
+  cpu_burst:
+    enabled: false
+  # Accounted capacity and hard container RAM limits match purchased plans.
+  overhead:
+    override: true
+    default_multiplier: 1.0
+    multipliers: {}

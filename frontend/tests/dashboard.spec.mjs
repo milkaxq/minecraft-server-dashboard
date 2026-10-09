@@ -50,6 +50,8 @@ const baseServer = {
     "files",
     "settings",
     "plugins",
+    "worlds",
+    "members",
     "backups",
   ],
   management_available: true,
@@ -64,9 +66,16 @@ async function mockAPI(
     isAdmin = false,
     paymentDisabled = false,
     failedServer = false,
+    eulaAccepted = true,
+    eulaUnavailable = false,
+    serverState = "RUNNING",
+    initiallyRunning = false,
   } = {},
 ) {
-  let running = false;
+  let running = initiallyRunning;
+  let safetyBackup = false;
+  let worldGenerated = true;
+  let sharedMembers = [{ user_id: user.id, name: user.name, email: user.email, role: "OWNER" }];
   let paid = false;
   let ending = false;
   const calls = [];
@@ -86,6 +95,7 @@ async function mockAPI(
   };
   const server = {
     ...baseServer,
+    status: serverState,
     role,
     permissions:
       role === "MODERATOR" ? ["view", "console", "start", "restart"] : baseServer.permissions,
@@ -214,6 +224,15 @@ async function mockAPI(
     if (path === "/servers" && request.method() === "POST")
       return reply({ ...server, ...body, status: "PENDING_PAYMENT" }, 201);
     if (path === `/servers/${serverID}`) return reply(server);
+    if (path === `/servers/${serverID}/eula`) {
+      if (eulaUnavailable) return reply({ error: "Cannot check agreement" }, 502);
+      if (request.method() === "POST") eulaAccepted = body.accepted === true;
+      return reply({
+        accepted: eulaAccepted,
+        can_accept: role === "OWNER",
+        url: "https://www.minecraft.net/en-us/eula",
+      });
+    }
     if (path === `/servers/${serverID}/usage`)
       return reply({
         power_state: running ? "running" : "offline",
@@ -259,6 +278,54 @@ async function mockAPI(
       return reply([{ name: "Essentials.jar", is_file: true, size: 1048576 }]);
     if (path === `/servers/${serverID}/plugins` || path.endsWith("/plugins/upload"))
       return reply({ status: "saved", restart_required: true });
+    if (path === `/servers/${serverID}/members` && request.method() === "GET")
+      return reply(sharedMembers);
+    if (path === `/servers/${serverID}/members`) {
+      const member = {
+        user_id: "60000000-0000-4000-8000-000000000001",
+        name: "Sam",
+        email: body.email,
+        role: body.role,
+      };
+      sharedMembers.push(member);
+      return reply(member, 201);
+    }
+    if (path.startsWith(`/servers/${serverID}/members/`)) {
+      const id = path.split("/").at(-1);
+      if (request.method() === "DELETE")
+        sharedMembers = sharedMembers.filter((m) => m.user_id !== id);
+      else
+        sharedMembers = sharedMembers.map((m) =>
+          m.user_id === id ? { ...m, role: body.role } : m,
+        );
+      return reply({ status: "saved" });
+    }
+    if (path === `/servers/${serverID}/world`)
+      return reply({
+        name: "world",
+        directories: ["world", "world_nether", "world_the_end"],
+        generated: worldGenerated,
+        revision: "a".repeat(64),
+        safety_backup: safetyBackup ? "40000000-0000-4000-8000-000000000001" : "",
+      });
+    if (path === `/servers/${serverID}/world/backup`) {
+      safetyBackup = true;
+      return reply({ uuid: "40000000-0000-4000-8000-000000000001" }, 202);
+    }
+    if (path === `/servers/${serverID}/world/download`)
+      return route.fulfill({
+        status: 200,
+        contentType: "application/zip",
+        body: Buffer.from("world-archive"),
+      });
+    if (
+      path === `/servers/${serverID}/world/reset` ||
+      path === `/servers/${serverID}/world/upload`
+    ) {
+      worldGenerated = path.endsWith("upload");
+      safetyBackup = false;
+      return reply({ status: "saved", restart_required: true });
+    }
     if (path === `/servers/${serverID}/backups` && request.method() === "GET")
       return reply([
         {
@@ -599,4 +666,161 @@ test("disabled payment configuration prevents creating an order", async ({ page 
   await page.getByLabel("Server name", { exact: true }).fill("Our adventure");
   await expect(page.getByRole("button", { name: "Continue to checkout" })).toBeDisabled();
   expect(calls.filter((c) => c.path === "/orders" && c.method === "POST")).toHaveLength(0);
+});
+
+test("first start requires an explicit owner agreement", async ({ page }) => {
+  const calls = await mockAPI(page, { eulaAccepted: false });
+  await login(page);
+  await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+  const accept = page.getByRole("button", { name: "Accept agreement", exact: true });
+  await expect(accept).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const checkbox = await page
+      .getByRole("checkbox", { name: /I have read and accept/ })
+      .boundingBox();
+    const label = await page.locator(".eula-checkbox").boundingBox();
+    expect(checkbox.width).toBeLessThanOrEqual(20);
+    expect(checkbox.height).toBeLessThanOrEqual(20);
+    expect(label.x + label.width).toBeLessThanOrEqual(width);
+  }
+  expect(calls.some((c) => c.path.endsWith("/eula") && c.method === "POST")).toBe(false);
+  await page.getByRole("checkbox", { name: /I have read and accept/ }).check();
+  await accept.click();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+  const call = calls.find((c) => c.path.endsWith("/eula") && c.method === "POST");
+  expect(call.body).toEqual({ accepted: true });
+  expect(call.headers["idempotency-key"]).toMatch(/^[0-9a-f-]{36}$/);
+  await expect(page.getByText("Agreement accepted. Your server is ready to start.")).toBeVisible();
+});
+
+test("moderators wait for the owner to accept the agreement", async ({ page }) => {
+  await mockAPI(page, { role: "MODERATOR", eulaAccepted: false });
+  await login(page);
+  await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+  await expect(page.getByText(/Ask the server owner to accept/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Accept agreement" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+});
+
+test("agreement read failure blocks restart but keeps stop available", async ({ page }) => {
+  await mockAPI(page, { eulaUnavailable: true, initiallyRunning: true });
+  await login(page);
+  await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+  await expect(page.getByText("Cannot check agreement")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restart", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+});
+
+for (const [serverState, message] of [
+  ["PROVISIONING", "Minecraft is installing."],
+  ["FAILED", "Setup didn’t finish."],
+]) {
+  test(`setup guidance for ${serverState}`, async ({ page }) => {
+    const calls = await mockAPI(page, { serverState });
+    await login(page);
+    await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+    await expect(page.getByText(message, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+    expect(calls.some((c) => c.path.endsWith("/eula"))).toBe(false);
+  });
+}
+
+test("world reset requires a completed safety backup and typed confirmation", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "World", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your world", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reset world", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Create safety backup" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Safety backup ready." })).toBeVisible();
+  await page.getByRole("button", { name: "Reset world", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Reset world", exact: true })).toBeDisabled();
+  await dialog.getByRole("textbox").fill("world");
+  await dialog.getByRole("button", { name: "Reset world", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(calls.find((c) => c.path.endsWith("/world/reset")).body).toEqual({
+    backup: "40000000-0000-4000-8000-000000000001",
+    revision: "a".repeat(64),
+    confirmation: "world",
+  });
+  await expect(
+    page.getByText("Your world will be generated when you start the server."),
+  ).toBeVisible();
+});
+test("world upload confirms replacement and sends archive bytes", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "World", exact: true }).click();
+  await page.getByRole("button", { name: "Create safety backup" }).click();
+  await expect(page.getByRole("button", { name: "Upload world .zip" })).toBeEnabled();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "world.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("zip-fixture"),
+  });
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Replace world" })).toBeDisabled();
+  await dialog.getByRole("textbox").fill("world");
+  await dialog.getByRole("button", { name: "Replace world" }).click();
+  await expect(dialog).not.toBeVisible();
+  const call = calls.find((c) => c.path.endsWith("/world/upload"));
+  expect(call.bytes).toBe(11);
+  expect(new URLSearchParams(call.query).get("confirmation")).toBe("world");
+  expect(call.headers["idempotency-key"]).toBeTruthy();
+});
+test("online worlds block changes and moderators do not see world management", async ({ page }) => {
+  await mockAPI(page, { initiallyRunning: true });
+  await openServer(page);
+  await page.getByRole("link", { name: "World", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Create safety backup" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Download world" })).toBeDisabled();
+  await page.unrouteAll();
+  await mockAPI(page, { role: "MODERATOR" });
+  await openServer(page);
+  await expect(page.getByRole("link", { name: "World", exact: true })).toHaveCount(0);
+});
+
+test("world management and admin navigation fit a mobile screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page, { isAdmin: true });
+  await openServer(page);
+  await page.getByRole("link", { name: "World", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your world", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+});
+
+test("owner adds members, updates their role, and confirms removal", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await page.getByLabel("Member email").fill("sam@example.com");
+  await page.getByLabel("Server role", { exact: true }).selectOption("MODERATOR");
+  await page.getByRole("button", { name: "Add member" }).click();
+  await expect(page.getByText("sam@example.com", { exact: true })).toBeVisible();
+  expect(calls.find((c) => c.path.endsWith("/members") && c.method === "POST").body).toEqual({
+    email: "sam@example.com",
+    role: "MODERATOR",
+  });
+  await page.getByLabel("Role for Sam").selectOption("ADMIN");
+  await expect(page.getByRole("status")).toContainText("Member role updated");
+  await page.getByRole("button", { name: "Remove member", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("sam@example.com");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Remove member", exact: true })
+    .click();
+  await expect(page.getByText("sam@example.com", { exact: true })).toHaveCount(0);
+  expect(
+    calls.find((c) => c.method === "DELETE" && c.path.includes("/members/")).body.confirmation,
+  ).toBe("60000000-0000-4000-8000-000000000001");
+});
+test("moderator cannot manage members", async ({ page }) => {
+  await mockAPI(page, { role: "MODERATOR" });
+  await openServer(page);
+  await expect(page.getByRole("link", { name: "Members", exact: true })).toHaveCount(0);
 });
