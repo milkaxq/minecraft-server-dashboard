@@ -133,7 +133,8 @@ func (s Service) ChangeMember(ctx context.Context, actor, id, key, target uuid.U
 		return nil, err
 	}
 	var result any
-	if action == "add" {
+	switch action {
+	case "add":
 		var m Member
 		err = tx.QueryRow(ctx, "SELECT id,name,email FROM users WHERE email=$1 AND verified_at IS NOT NULL FOR SHARE", in.Email).Scan(&m.UserID, &m.Name, &m.Email)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -159,7 +160,7 @@ func (s Service) ChangeMember(ctx context.Context, actor, id, key, target uuid.U
 		m.Role = in.Role
 		target = m.UserID
 		result = m
-	} else if action == "update" {
+	case "update":
 		var m Member
 		err = tx.QueryRow(ctx, "UPDATE server_members m SET role=$3 FROM users u WHERE m.server_id=$1 AND m.user_id=$2 AND u.id=m.user_id RETURNING u.id,u.name,u.email,m.role", id, target, in.Role).Scan(&m.UserID, &m.Name, &m.Email, &m.Role)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -169,7 +170,7 @@ func (s Service) ChangeMember(ctx context.Context, actor, id, key, target uuid.U
 			return nil, err
 		}
 		result = m
-	} else {
+	default:
 		tag, e := tx.Exec(ctx, "DELETE FROM server_members WHERE server_id=$1 AND user_id=$2", id, target)
 		if e != nil {
 			return nil, e

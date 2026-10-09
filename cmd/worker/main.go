@@ -45,7 +45,15 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var verifier provisioning.InstallationVerifier
+	if c.InstallationKey != "" {
+		client, e := pterodactyl.NewServerClient(c.PanelURL, c.InstallationKey, c.Environment == "development")
+		if e != nil {
+			return e
+		}
+		verifier = provisioning.ReceiptVerifier{Files: client}
+	}
 	go (&billing.Service{DB: db}).RunReconciler(ctx, log)
 	log.Info("provisioning worker started")
-	return (&provisioning.Worker{DB: db, Panel: panel, Log: log}).Run(ctx)
+	return (&provisioning.Worker{DB: db, Panel: panel, Log: log, Verifier: verifier}).Run(ctx)
 }

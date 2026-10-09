@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "name": "Blockyard Forge",
+  "author": "operator@blockyard.local",
+  "description": "Reviewed Minecraft 1.21.1 installer. EULA acceptance is required separately. Loader variables are operator-managed.",
+  "features": [
+    "eula"
+  ],
+  "docker_images": {
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
+  },
+  "file_denylist": [],
+  "startup": "java -Xms128M -XX:MaxRAMPercentage=75.0 -Dterminal.jline=false -Dterminal.ansi=true @unix_args.txt nogui",
+  "config": {
+    "files": "{\"server.properties\": {\"parser\": \"properties\", \"find\": {\"server-port\": \"{{server.build.default.port}}\", \"server-ip\": \"0.0.0.0\"}}}",
+    "startup": "{\"done\": \")! For help, type\"}",
+    "logs": "{}",
+    "stop": "stop"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\nrm -f .blockyard-install.json\n[[ \"$FORGE_VERSION\" == \"$MC_VERSION-\"* ]] || { echo 'Forge release does not match Minecraft'; exit 1; }\ncurl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --fail --location --retry 3 \"https://maven.minecraftforge.net/net/minecraftforge/forge/${FORGE_VERSION}/forge-${FORGE_VERSION}-installer.jar\" -o installer.jar\n# Verify Mojang's release artifact before invoking installers with short network timeouts.\nvanilla=\"libraries/net/minecraft/server/${MC_VERSION}/server-${MC_VERSION}-bundled.jar\"\nmkdir -p \"$(dirname \"$vanilla\")\"\nif [[ ! -f \"$vanilla\" ]] || ! printf '%s  %s\\n' \"$MOJANG_SERVER_SHA1\" \"$vanilla\" | sha1sum --check --status; then\n curl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --retry 3 --retry-all-errors --fail --location \"https://piston-data.mojang.com/v1/objects/${MOJANG_SERVER_SHA1}/server.jar\" -o \"$vanilla.part\"\n printf '%s  %s\\n' \"$MOJANG_SERVER_SHA1\" \"$vanilla.part\" | sha1sum --check -\n mv \"$vanilla.part\" \"$vanilla\"\nfi\ninstalled=false\nfor attempt in 1 2 3; do\n if java -XX:MaxRAMPercentage=75.0 -jar installer.jar --installServer; then installed=true; break; fi\n sleep 5\ndone\n[[ \"$installed\" == true ]] || exit 1\ncp \"libraries/net/minecraftforge/forge/${FORGE_VERSION}/unix_args.txt\" unix_args.txt\nrm installer.jar\nprintf '{\"software\":\"FORGE\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"${MC_VERSION}\" \"${FORGE_VERSION}\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n",
+      "container": "blockyard/minecraft-installer:java21",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "MC_VERSION",
+      "description": "Operator-managed approved release.",
+      "env_variable": "MC_VERSION",
+      "default_value": "1.21.1",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|max:64|regex:/^[0-9]+([.][0-9]+)*(-[0-9]+([.][0-9]+)*)?$/",
+      "field_type": "text"
+    },
+    {
+      "name": "FORGE_VERSION",
+      "description": "Operator-managed approved release.",
+      "env_variable": "FORGE_VERSION",
+      "default_value": "1.21.1-52.1.0",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|max:64|regex:/^[0-9]+([.][0-9]+)*(-[0-9]+([.][0-9]+)*)?$/",
+      "field_type": "text"
+    },
+    {
+      "name": "MOJANG_SERVER_SHA1",
+      "description": "Operator-approved Minecraft server artifact checksum.",
+      "env_variable": "MOJANG_SERVER_SHA1",
+      "default_value": "59353fb40c36d304f2035d51e7d6e6baa98dc05c",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "required|string|size:40|regex:/^[a-f0-9]{40}$/",
+      "field_type": "text"
+    }
+  ]
+}

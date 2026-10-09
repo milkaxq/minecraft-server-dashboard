@@ -1,5 +1,7 @@
 "use client";
+import { softwareName } from "../lib/software";
 import { FeatureLinks } from "./management";
+import { ContextHelp } from "./context-help";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
@@ -198,7 +200,7 @@ export function ServerDetail({ id, advanced = false }) {
               ← All servers
             </Link>
             <PageHeading
-              eyebrow={`${server.server_type === "PAPER" ? "PAPER" : "VANILLA"} · MINECRAFT ${server.minecraft_version}`}
+              eyebrow={`${softwareName(server.server_type).toUpperCase()} · MINECRAFT ${server.minecraft_version}`}
               title={server.name}
               description="A little less setup. A lot more Minecraft."
               action={
@@ -354,6 +356,7 @@ export function ServerDetail({ id, advanced = false }) {
               </p>
             )}
             <FeatureLinks id={id} server={server} advanced={advanced} />
+            <ContextHelp topic={advanced ? "console" : "overview"} />
             {advanced ? (
               <>
                 <div className="section-heading">
@@ -487,17 +490,24 @@ export function ServerDetail({ id, advanced = false }) {
                 <section className="panel details-panel">
                   <div>
                     <h2>At a glance</h2>
+                    <Link href="/guide">Setup and installation guide →</Link>
                     <p>The essentials for your world.</p>
                   </div>
                   <dl>
                     <div>
                       <dt>Server software</dt>
-                      <dd>{server.server_type === "PAPER" ? "Paper" : "Vanilla"}</dd>
+                      <dd>{softwareName(server.server_type)}</dd>
                     </div>
                     <div>
                       <dt>Minecraft version</dt>
                       <dd>{server.minecraft_version}</dd>
                     </div>
+                    {server.loader_version && (
+                      <div>
+                        <dt>Loader version</dt>
+                        <dd>{server.loader_version}</dd>
+                      </div>
+                    )}
                     <div>
                       <dt>Your access</dt>
                       <dd>

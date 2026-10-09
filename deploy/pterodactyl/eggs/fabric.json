@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "name": "Blockyard Fabric",
+  "author": "operator@blockyard.local",
+  "description": "Reviewed Minecraft 1.21.1 installer. EULA acceptance is required separately. Loader variables are operator-managed.",
+  "features": [
+    "eula"
+  ],
+  "docker_images": {
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
+  },
+  "file_denylist": [],
+  "startup": "java -Xms128M -XX:MaxRAMPercentage=75.0 -Dterminal.jline=false -Dterminal.ansi=true -jar server.jar nogui",
+  "config": {
+    "files": "{\"server.properties\": {\"parser\": \"properties\", \"find\": {\"server-port\": \"{{server.build.default.port}}\", \"server-ip\": \"0.0.0.0\"}}}",
+    "startup": "{\"done\": \")! For help, type\"}",
+    "logs": "{}",
+    "stop": "stop"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\nrm -f .blockyard-install.json\ncurl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --fail --location --retry 3 \"https://maven.fabricmc.net/net/fabricmc/fabric-installer/${FABRIC_VERSION}/fabric-installer-${FABRIC_VERSION}.jar\" -o installer.jar\njava -XX:MaxRAMPercentage=75.0 -jar installer.jar server -mcversion \"$MC_VERSION\" -loader \"$LOADER_VERSION\" -downloadMinecraft\nmv server.jar minecraft-server.jar\nmv fabric-server-launch.jar server.jar\nprintf 'serverJar=minecraft-server.jar\\n' > fabric-server-launcher.properties\nrm installer.jar\njar tf server.jar > /dev/null\nprintf '{\"software\":\"FABRIC\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"${MC_VERSION}\" \"${LOADER_VERSION}\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n",
+      "container": "blockyard/minecraft-installer:java21",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "MC_VERSION",
+      "description": "Operator-managed approved release.",
+      "env_variable": "MC_VERSION",
+      "default_value": "1.21.1",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|max:64|regex:/^[0-9]+([.][0-9]+)*(-[0-9]+([.][0-9]+)*)?$/",
+      "field_type": "text"
+    },
+    {
+      "name": "LOADER_VERSION",
+      "description": "Operator-managed approved release.",
+      "env_variable": "LOADER_VERSION",
+      "default_value": "0.19.5",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|max:64|regex:/^[0-9]+([.][0-9]+)*(-[0-9]+([.][0-9]+)*)?$/",
+      "field_type": "text"
+    },
+    {
+      "name": "FABRIC_VERSION",
+      "description": "Operator-managed approved release.",
+      "env_variable": "FABRIC_VERSION",
+      "default_value": "1.1.2",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|max:64|regex:/^[0-9]+([.][0-9]+)*(-[0-9]+([.][0-9]+)*)?$/",
+      "field_type": "text"
+    }
+  ]
+}

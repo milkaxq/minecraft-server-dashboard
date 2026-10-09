@@ -50,3 +50,7 @@ pterodactyl-down:
 	./scripts/pterodactyl.sh down
 test-compose:
 	python3 scripts/test-compose.py
+
+.PHONY: minecraft-installer
+minecraft-installer:
+	docker compose -f docker-compose.yml -f docker-compose.pterodactyl.yml --profile installers build minecraft-installer

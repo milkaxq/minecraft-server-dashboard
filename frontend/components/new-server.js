@@ -1,4 +1,7 @@
 "use client";
+import { SOFTWARE, softwareName, supportsMods } from "../lib/software";
+import Link from "next/link";
+import { ContextHelp } from "./context-help";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
@@ -28,6 +31,9 @@ export function NewServer({ initialPlan = "" }) {
       .map((o) => o.minecraft_version)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) || [];
   const version = versions.includes(chosenVersion) ? chosenVersion : versions.at(-1) || "";
+  const loader = options?.find(
+    (o) => o.server_type === type && o.minecraft_version === version,
+  )?.loader_version;
   const selected = plans?.find((p) => p.id === planID);
   const software = [...new Set(options?.map((o) => o.server_type) || [])];
   async function submit(event) {
@@ -136,7 +142,7 @@ export function NewServer({ initialPlan = "" }) {
                   >
                     {software.map((v) => (
                       <option key={v} value={v}>
-                        {v === "PAPER" ? "Paper — supports plugins" : "Vanilla — classic Minecraft"}
+                        {`${softwareName(v)} — ${SOFTWARE[v]?.category === "mods" ? "supports mods" : SOFTWARE[v]?.category === "plugins" ? "supports plugins" : "classic Minecraft"}`}
                       </option>
                     ))}
                   </select>
@@ -162,15 +168,21 @@ export function NewServer({ initialPlan = "" }) {
                 </p>
               )}
               <p className="field-help">
-                Paper is a good choice for plugins. Vanilla keeps the original Minecraft experience.
+                {SOFTWARE[type]?.description} {loader && `Loader version: ${loader}.`}{" "}
+                {supportsMods(type) &&
+                  "Players usually need matching mods and the same loader. Upload server mods on the Mods page after stopping the server."}
               </p>
+              <Link href="/guide" className="button secondary">
+                Help me choose · Setup guide
+              </Link>
+              <ContextHelp topic="software" />
             </section>
           </div>
           <aside className="panel order-summary">
             <span className="eyebrow">YOUR NEW SERVER</span>
             <h2>{name.trim() || "Your next world"}</h2>
             <p>
-              {type === "PAPER" ? "Paper" : "Vanilla"} {version && `· Minecraft ${version}`}
+              {softwareName(type)} {version && `· Minecraft ${version}`}
             </p>
             {selected && (
               <>

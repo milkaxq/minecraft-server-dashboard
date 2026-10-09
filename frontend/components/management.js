@@ -1,5 +1,7 @@
 "use client";
+import { supportsPlugins, supportsMods } from "../lib/software";
 import Link from "next/link";
+import { ContextHelp } from "./context-help";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -18,7 +20,8 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
         ["worlds", "World", `/servers/${id}/worlds`],
         ["settings", "Settings", `/servers/${id}/settings`],
         ["backups", "Backups", `/servers/${id}/backups`],
-        ...(server.server_type === "PAPER"
+        ...(supportsMods(server.server_type) ? [["files", "Mods", `/servers/${id}/mods`]] : []),
+        ...(supportsPlugins(server.server_type)
           ? [["plugins", "Plugins", `/servers/${id}/plugins`]]
           : []),
       ];
@@ -32,7 +35,9 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
             href={href}
             key={key}
             aria-current={
-              active === key || (!active && (advanced ? key === "console" : key === "view"))
+              active === key ||
+              (label === "Mods" && active === "mods") ||
+              (!active && (advanced ? key === "console" : key === "view"))
                 ? "page"
                 : undefined
             }
@@ -129,8 +134,9 @@ export function ManagementPage({ id, section }) {
             </div>
           </div>
           <FeatureLinks id={id} server={server} advanced={section === "files"} active={section} />
+          <ContextHelp topic={section} />
           <ErrorMessage error={info.error || error} />
-          {!server.permissions?.includes(section) ? (
+          {!server.permissions?.includes(section === "mods" ? "files" : section) ? (
             <div className="notice">Your server role does not allow this page.</div>
           ) : !ready ? (
             <div className="notice">
@@ -150,11 +156,19 @@ export function ManagementPage({ id, section }) {
                 <Worlds id={id} offline={offline} limit={server.backup_limit} />
               ) : section === "settings" ? (
                 <Settings id={id} offline={offline} />
+              ) : section === "mods" ? (
+                supportsMods(server.server_type) ? (
+                  <Plugins id={id} offline={offline} mods />
+                ) : (
+                  <p className="notice">Mods require Fabric, Forge, or NeoForge.</p>
+                )
               ) : section === "plugins" ? (
-                server.server_type === "PAPER" ? (
+                supportsPlugins(server.server_type) ? (
                   <Plugins id={id} offline={offline} />
                 ) : (
-                  <p className="notice">Plugins are available for Paper servers.</p>
+                  <p className="notice">
+                    Plugins are available for Paper, Spigot, and Purpur servers.
+                  </p>
                 )
               ) : (
                 <Backups id={id} offline={offline} limit={server.backup_limit} />
@@ -696,9 +710,11 @@ function Settings({ id, offline }) {
     </>
   );
 }
-function Plugins({ id, offline }) {
+function Plugins({ id, offline, mods = false }) {
+  const collection = mods ? "mods" : "plugins";
+  const label = mods ? "mod" : "plugin";
   const { api } = useAuth();
-  const resource = useResource(`/servers/${id}/plugins`);
+  const resource = useResource(`/servers/${id}/${collection}`);
   const action = useAction(resource.refresh);
   const input = useRef(null);
   const [remove, setRemove] = useState(null);
@@ -706,25 +722,25 @@ function Plugins({ id, offline }) {
     if (!file) return;
     await action.run(
       () =>
-        api(`/servers/${id}/plugins/upload?name=${query(file.name)}`, {
+        api(`/servers/${id}/${collection}/upload?name=${query(file.name)}`, {
           method: "POST",
           raw: true,
           body: file,
           key: crypto.randomUUID(),
         }),
-      "Plugin uploaded. Start your server to load it.",
+      `${mods ? "Mod" : "Plugin"} uploaded. Start your server to load it.`,
     );
   }
   async function erase() {
     if (
       await action.run(
         () =>
-          api(`/servers/${id}/plugins`, {
+          api(`/servers/${id}/${collection}`, {
             method: "DELETE",
             key: crypto.randomUUID(),
             body: { name: remove, confirmation: remove },
           }),
-        "Plugin deleted. Start your server to apply the change.",
+        `${mods ? "Mod" : "Plugin"} deleted. Start your server to apply the change.`,
       )
     )
       setRemove(null);
@@ -736,15 +752,19 @@ function Plugins({ id, offline }) {
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
-            <h2>Your plugins</h2>
-            <span>Paper plugins installed in your server folder</span>
+            <h2>Your {collection}</h2>
+            <span>
+              {mods
+                ? "Server mods for your chosen loader"
+                : "Compatible plugins installed in your server folder"}
+            </span>
           </div>
           <button
             className="button primary"
             disabled={!offline || action.busy}
             onClick={() => input.current.click()}
           >
-            Upload plugin .jar
+            Upload {label} .jar
           </button>
           <input
             hidden
@@ -758,13 +778,16 @@ function Plugins({ id, offline }) {
           />
         </div>
         <p className="field-help">
-          Upload a trusted Paper plugin .jar, up to 64 MB. Stop your server to add or remove
-          plugins, then start it to load the changes.
+          Upload a trusted {label} .jar, up to 64 MB. Stop your server before adding or removing{" "}
+          {collection}, then start it to load the changes.{" "}
+          {mods &&
+            "Match your Minecraft version and loader. Install required dependencies too; client-only mods belong on your computer."}{" "}
+          <Link href="/guide">Read the setup guide</Link>.
         </p>
         {resource.loading ? (
           <Loading />
         ) : !resource.data?.length ? (
-          <p className="management-empty">No plugins installed yet.</p>
+          <p className="management-empty">No {collection} installed yet.</p>
         ) : (
           <ul className="plugin-list">
             {resource.data.map((v) => (
@@ -778,7 +801,7 @@ function Plugins({ id, offline }) {
                   disabled={!offline || action.busy}
                   onClick={() => setRemove(v.name)}
                 >
-                  Delete plugin
+                  Delete {label}
                 </button>
               </li>
             ))}
@@ -787,8 +810,8 @@ function Plugins({ id, offline }) {
       </section>
       {remove && (
         <Confirm
-          title="Delete this plugin?"
-          label="Delete plugin"
+          title={`Delete this ${label}?`}
+          label={`Delete ${label}`}
           busy={action.busy}
           onCancel={() => setRemove(null)}
           onConfirm={erase}

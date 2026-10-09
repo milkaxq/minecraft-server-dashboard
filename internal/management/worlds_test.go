@@ -385,3 +385,17 @@ func TestWorldZIPChecksCRCAndVanillaDimensions(t *testing.T) {
 		t.Fatal("Vanilla dimension rejected", err)
 	}
 }
+
+func TestPluginSoftwareWorldLayout(t *testing.T) {
+	data := worldArchive(t, map[string]string{"world/level.dat": "world", "world_nether/DIM-1/region/a.mca": "nether"})
+	for _, kind := range []string{"PAPER", "SPIGOT", "PURPUR"} {
+		if _, _, err := validateWorldZIP(data, "world", kind); err != nil {
+			t.Fatalf("%s split dimensions: %v", kind, err)
+		}
+	}
+	for _, kind := range []string{"VANILLA", "FABRIC", "FORGE", "NEOFORGE"} {
+		if _, _, err := validateWorldZIP(data, "world", kind); !errors.Is(err, server.ErrInvalid) {
+			t.Fatalf("%s accepted plugin-style archive: %v", kind, err)
+		}
+	}
+}

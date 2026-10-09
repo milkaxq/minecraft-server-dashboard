@@ -4,10 +4,12 @@ A Go REST API backed by PostgreSQL, with authentication, configurable plans,
 authorized server records, durable provisioning jobs, safe resource reservations,
 and a real Pterodactyl integration. The application never executes Minecraft
 processes. The dashboard includes power controls, live console, metrics, files, settings, backups
-and Paper plugins, demo checkout, manually renewed subscriptions and administration.
+plugins and mods, demo checkout, manually renewed subscriptions and administration.
 The [first-start flow](docs/FIRST_START.md) adds owner EULA acceptance, installation
 guidance, and backend start/restart enforcement.
-See [server members](docs/MEMBERS.md) and [plugins/custom gameplay](docs/CUSTOM_GAMEPLAY.md).
+See [server members](docs/MEMBERS.md), [plugins/custom gameplay](docs/CUSTOM_GAMEPLAY.md),
+and [Minecraft software setup](docs/MINECRAFT_SOFTWARE.md). The website includes
+a beginner Guide and supports Vanilla, Paper, Spigot, Purpur, Fabric, Forge and NeoForge.
 
 See [world management](docs/WORLDS.md) for safety backups, ZIP uploads/downloads, and confirmed resets.
 
@@ -77,7 +79,7 @@ internal/user/                  public user model
 internal/billing/               checkout, settlement, renewals and expiry
 internal/admin/                 plan administration and operator views
 migrations/                    schema and configurable sample plans
-internal/management/           files, settings, Paper plugins and backups
+internal/management/           files, settings, plugins, mods and backups
 internal/control/              authorized power, commands and usage
 internal/console/              single-use tickets and filtered WebSocket relay
 internal/minecraft/             bounded Java status ping for player counts

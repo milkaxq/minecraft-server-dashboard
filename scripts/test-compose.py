@@ -22,6 +22,7 @@ class ComposeTests(unittest.TestCase):
             "PANEL_DATABASE_ROOT_PASSWORD": "compose-root-test-only",
             "PTERODACTYL_URL": "http://panel",
             "PTERODACTYL_CLIENT_API_KEY": "ptlc_compose-test-only",
+            "PTERODACTYL_INSTALLATION_API_KEY": "ptlc_installation-test-only",
             "PTERODACTYL_APPLICATION_API_KEY": "ptla_compose-test-only",
             "PTERODACTYL_WEBSOCKET_ORIGINS": "ws://wings.internal:8180",
             "PTERODACTYL_TRANSFER_ORIGINS": "http://wings.internal:8180",
@@ -59,6 +60,8 @@ class ComposeTests(unittest.TestCase):
         worker = self.services["worker"]["environment"]
         self.assertNotIn("PTERODACTYL_APPLICATION_API_KEY", backend)
         self.assertNotIn("PTERODACTYL_CLIENT_API_KEY", worker)
+        self.assertNotIn("PTERODACTYL_INSTALLATION_API_KEY", backend)
+        self.assertEqual(worker["PTERODACTYL_INSTALLATION_API_KEY"], "ptlc_installation-test-only")
         frontend = self.services["frontend"].get("environment", {})
         self.assertFalse(any("KEY" in key or "SECRET" in key for key in frontend))
         build_args = self.services["frontend"]["build"].get("args", {})

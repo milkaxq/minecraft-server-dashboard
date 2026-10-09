@@ -1,4 +1,5 @@
 "use client";
+import { softwareName } from "../lib/software";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "./auth";
@@ -22,9 +23,7 @@ export function ServerCard({ server }) {
         <span className="pixel-tree tree-two" />
         <span className="pixel-terrain" />
         <div className="art-overlay">
-          <span className="software-tag">
-            {server.server_type === "PAPER" ? "Paper" : "Vanilla"}
-          </span>
+          <span className="software-tag">{softwareName(server.server_type)}</span>
           <Badge state={usage?.power_state || server.status} />
         </div>
       </div>

@@ -27,9 +27,10 @@ var ErrSoftware = errors.New("software_configuration_unavailable")
 var errUserBusy = errors.New("panel_user_operation_busy")
 
 type Worker struct {
-	DB    *pgxpool.Pool
-	Panel pterodactyl.ApplicationClient
-	Log   *slog.Logger
+	DB       *pgxpool.Pool
+	Panel    pterodactyl.ApplicationClient
+	Log      *slog.Logger
+	Verifier InstallationVerifier
 }
 
 func (w *Worker) Run(ctx context.Context) error {
@@ -144,6 +145,9 @@ func (w *Worker) request(ctx context.Context, l *jobs.Lease) (pterodactyl.Server
 	if err != nil {
 		return pterodactyl.ServerRequest{}, owner, err
 	}
+	if requiresReceipt(kind) && w.Verifier == nil {
+		return pterodactyl.ServerRequest{}, owner, ErrSoftware
+	}
 	if state == server.PaymentConfirmed {
 		if _, err = tx.Exec(ctx, "UPDATE servers SET status='PROVISIONING',updated_at=now() WHERE id=$1", l.Job.ServerID); err != nil {
 			return pterodactyl.ServerRequest{}, owner, err
@@ -166,7 +170,7 @@ func (w *Worker) request(ctx context.Context, l *jobs.Lease) (pterodactyl.Server
 		var variable string
 		var environment []byte
 		req = pterodactyl.ServerRequest{ExternalID: l.Job.ServerID, Name: name, Limits: limits}
-		err = tx.QueryRow(ctx, `SELECT t.egg_id,t.docker_image,t.startup,t.version_variable,t.environment FROM software_templates t JOIN minecraft_versions v ON v.server_type=t.server_type WHERE t.server_type=$1 AND t.enabled AND v.enabled AND v.version=$2 FOR SHARE OF t,v`, kind, version).Scan(&req.EggID, &req.Image, &req.Startup, &variable, &environment)
+		err = tx.QueryRow(ctx, `SELECT t.egg_id,t.docker_image,t.startup,t.version_variable,(t.environment || v.environment) FROM software_templates t JOIN minecraft_versions v ON v.server_type=t.server_type WHERE t.server_type=$1 AND t.enabled AND v.enabled AND v.version=$2 FOR SHARE OF t,v`, kind, version).Scan(&req.EggID, &req.Image, &req.Startup, &variable, &environment)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return req, owner, ErrSoftware
 		}
@@ -320,6 +324,22 @@ func (w *Worker) provision(ctx context.Context, l *jobs.Lease) error {
 	}
 	if remote.Suspended {
 		return ErrMismatch
+	}
+	var kind, version string
+	if err = l.Conn.QueryRow(ctx, "SELECT server_type,minecraft_version FROM servers WHERE id=$1", l.Job.ServerID).Scan(&kind, &version); err != nil {
+		return err
+	}
+	if requiresReceipt(kind) {
+		err = w.Verifier.VerifyInstallation(ctx, remote.Identifier, kind, version, req.Environment)
+		if errors.Is(err, ErrInstallation) && l.Job.RetryInstall && l.Job.Attempts == 1 {
+			if err = w.Panel.ReinstallServer(ctx, remote.ID); err != nil {
+				return err
+			}
+			return ErrInstalling
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return w.complete(ctx, l, server.Running, false)
 }

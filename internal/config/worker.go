@@ -6,10 +6,10 @@ import (
 )
 
 // Worker configuration is separate from the API: only the worker needs the Application key.
-type Worker struct{ Environment, DatabaseURL, PanelURL, ApplicationKey string }
+type Worker struct{ Environment, DatabaseURL, PanelURL, ApplicationKey, InstallationKey string }
 
 func LoadWorker() (Worker, error) {
-	c := Worker{Environment: env("APP_ENV", "development"), DatabaseURL: os.Getenv("DATABASE_URL"), PanelURL: os.Getenv("PTERODACTYL_URL"), ApplicationKey: os.Getenv("PTERODACTYL_APPLICATION_API_KEY")}
+	c := Worker{Environment: env("APP_ENV", "development"), DatabaseURL: os.Getenv("DATABASE_URL"), PanelURL: os.Getenv("PTERODACTYL_URL"), ApplicationKey: os.Getenv("PTERODACTYL_APPLICATION_API_KEY"), InstallationKey: os.Getenv("PTERODACTYL_INSTALLATION_API_KEY")}
 	if c.Environment != "development" && c.Environment != "production" {
 		return c, fmt.Errorf("invalid environment")
 	}

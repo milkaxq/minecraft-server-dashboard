@@ -10,16 +10,18 @@ import (
 
 	"minecraft-hosting/internal/audit"
 	"minecraft-hosting/internal/jobs"
+	"minecraft-hosting/internal/server"
 )
 
 type SoftwareTemplate struct {
-	ServerType      string            `json:"server_type"`
-	EggID           int               `json:"egg_id"`
-	Image           string            `json:"docker_image"`
-	Startup         string            `json:"startup"`
-	VersionVariable string            `json:"version_variable"`
-	Environment     map[string]string `json:"environment"`
-	Versions        []string          `json:"versions"`
+	ServerType         string                       `json:"server_type"`
+	EggID              int                          `json:"egg_id"`
+	Image              string                       `json:"docker_image"`
+	Startup            string                       `json:"startup"`
+	VersionVariable    string                       `json:"version_variable"`
+	Environment        map[string]string            `json:"environment"`
+	VersionEnvironment map[string]map[string]string `json:"version_environment,omitempty"`
+	Versions           []string                     `json:"versions"`
 }
 
 var variablePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
@@ -29,7 +31,7 @@ func ConfigureSoftware(ctx context.Context, db *pgxpool.Pool, actor uuid.UUID, t
 	if err := (jobs.Service{DB: db}).RequireAdmin(ctx, actor); err != nil {
 		return err
 	}
-	if (t.ServerType != "VANILLA" && t.ServerType != "PAPER") || t.EggID <= 0 || t.Image == "" || t.Startup == "" || !variablePattern.MatchString(t.VersionVariable) || len(t.Versions) == 0 {
+	if !server.ValidSoftware(t.ServerType) || t.EggID <= 0 || t.Image == "" || t.Startup == "" || !variablePattern.MatchString(t.VersionVariable) || len(t.Versions) == 0 {
 		return fmt.Errorf("invalid software template")
 	}
 	for k, v := range t.Environment {
@@ -40,6 +42,22 @@ func ConfigureSoftware(ctx context.Context, db *pgxpool.Pool, actor uuid.UUID, t
 	for _, v := range t.Versions {
 		if !releasePattern.MatchString(v) {
 			return fmt.Errorf("invalid supported release")
+		}
+	}
+	for version, environment := range t.VersionEnvironment {
+		approved := false
+		for _, v := range t.Versions {
+			if version == v {
+				approved = true
+			}
+		}
+		if !approved {
+			return fmt.Errorf("environment for unapproved release")
+		}
+		for k, v := range environment {
+			if !variablePattern.MatchString(k) || k == t.VersionVariable || len(v) > 4096 {
+				return fmt.Errorf("invalid release environment")
+			}
 		}
 	}
 	if t.Environment == nil {
@@ -58,7 +76,7 @@ func ConfigureSoftware(ctx context.Context, db *pgxpool.Pool, actor uuid.UUID, t
 		return err
 	}
 	for _, v := range t.Versions {
-		if _, err = tx.Exec(ctx, "INSERT INTO minecraft_versions(server_type,version) VALUES($1,$2) ON CONFLICT(server_type,version) DO UPDATE SET enabled=true", t.ServerType, v); err != nil {
+		if _, err = tx.Exec(ctx, "INSERT INTO minecraft_versions(server_type,version,environment) VALUES($1,$2,$3) ON CONFLICT(server_type,version) DO UPDATE SET enabled=true,environment=EXCLUDED.environment", t.ServerType, v, versionEnvironment(t, v)); err != nil {
 			return err
 		}
 	}
@@ -66,4 +84,11 @@ func ConfigureSoftware(ctx context.Context, db *pgxpool.Pool, actor uuid.UUID, t
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func versionEnvironment(t SoftwareTemplate, version string) map[string]string {
+	if env := t.VersionEnvironment[version]; env != nil {
+		return env
+	}
+	return map[string]string{}
 }

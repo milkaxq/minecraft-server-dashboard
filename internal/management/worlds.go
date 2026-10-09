@@ -59,7 +59,7 @@ func (s *Service) world(ctx context.Context, t Target) (World, []worldFile, erro
 	}
 	w := World{Name: name, Directories: []string{}}
 	candidates := []string{name}
-	if t.Type == "PAPER" {
+	if server.SupportsPlugins(t.Type) {
 		candidates = append(candidates, name+"_nether", name+"_the_end")
 	}
 	files := []worldFile{}
@@ -276,7 +276,7 @@ func validateWorldZIP(data []byte, name, kind string) (*zip.Reader, int64, error
 		seen[n] = true
 		if !root {
 			top := strings.Split(n, "/")[0]
-			if top != name && !(kind == "PAPER" && (top == name+"_nether" || top == name+"_the_end")) {
+			if top != name && !(server.SupportsPlugins(kind) && (top == name+"_nether" || top == name+"_the_end")) {
 				return nil, 0, server.ErrInvalid
 			}
 		}

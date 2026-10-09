@@ -56,11 +56,23 @@ func TestInput(t *testing.T) {
 			t.Errorf("accepted version %q", version)
 		}
 	}
-	for _, kind := range []string{"FORGE", "paper", ""} {
+	for _, kind := range []string{"BUKKIT", "paper", ""} {
 		v := input
 		v.ServerType = kind
 		if v.Validate() == nil {
 			t.Errorf("accepted type %q", kind)
+		}
+	}
+}
+
+func TestSoftwareCapabilities(t *testing.T) {
+	for _, kind := range []string{"VANILLA", "PAPER", "SPIGOT", "PURPUR", "FABRIC", "FORGE", "NEOFORGE"} {
+		input := CreateInput{PlanID: uuid.New(), Name: "World", MinecraftVersion: "1.21.1", ServerType: kind}
+		if err := input.Validate(); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if SupportsPlugins(kind) && SupportsMods(kind) {
+			t.Fatal("mixed ecosystem", kind)
 		}
 	}
 }

@@ -30,12 +30,15 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 		"GET /servers/{id}/files":                     a.files,
 		"GET /servers/{id}/files/text":                a.fileText,
 		"POST /servers/{id}/files":                    a.changeFile,
-		"POST /servers/{id}/files/upload":             a.uploadFile(false),
+		"POST /servers/{id}/files/upload":             a.uploadFile("file"),
 		"GET /servers/{id}/files/download":            a.download(false),
 		"GET /servers/{id}/settings":                  a.settings,
 		"PUT /servers/{id}/settings":                  a.saveSettings,
+		"GET /servers/{id}/mods":                      a.mods,
+		"POST /servers/{id}/mods/upload":              a.uploadFile("mod"),
+		"DELETE /servers/{id}/mods":                   a.deleteMod,
 		"GET /servers/{id}/plugins":                   a.plugins,
-		"POST /servers/{id}/plugins/upload":           a.uploadFile(true),
+		"POST /servers/{id}/plugins/upload":           a.uploadFile("plugin"),
 		"DELETE /servers/{id}/plugins":                a.deletePlugin,
 		"GET /servers/{id}/backups":                   a.backups,
 		"POST /servers/{id}/backups":                  a.newBackup,
@@ -131,7 +134,7 @@ func (a *API) changeFile(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, result)
 }
-func (a *API) uploadFile(plugin bool) http.HandlerFunc {
+func (a *API) uploadFile(asset string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := a.managementID(w, r)
 		if !ok {
@@ -144,7 +147,7 @@ func (a *API) uploadFile(plugin bool) http.HandlerFunc {
 		}
 		// Authenticate/authorize before reading potentially large input.
 		permission := server.Files
-		if plugin {
+		if asset == "plugin" {
 			permission = server.Plugins
 		}
 		if err = a.Servers.Authorize(r.Context(), currentUser(r).ID, id, permission); err != nil {
@@ -177,10 +180,15 @@ func (a *API) uploadFile(plugin bool) http.HandlerFunc {
 			return
 		}
 		dir := r.URL.Query().Get("path")
-		if plugin {
+		if asset == "plugin" {
 			dir = "/plugins"
 		}
-		result, err := a.Management.Upload(r.Context(), currentUser(r).ID, id, key, dir, r.URL.Query().Get("name"), data, plugin, requestID(r))
+		var result any
+		if asset == "mod" {
+			result, err = a.Management.UploadMod(r.Context(), currentUser(r).ID, id, key, r.URL.Query().Get("name"), data, requestID(r))
+		} else {
+			result, err = a.Management.Upload(r.Context(), currentUser(r).ID, id, key, dir, r.URL.Query().Get("name"), data, asset == "plugin", requestID(r))
+		}
 		if err != nil {
 			a.fail(w, r, err)
 			return
@@ -351,4 +359,42 @@ func (a *API) download(backup bool) http.HandlerFunc {
 			a.Log.Error("download interrupted", "request_id", requestID(r), "server_id", id)
 		}
 	}
+}
+
+func (a *API) mods(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.managementID(w, r)
+	if !ok {
+		return
+	}
+	list, err := a.Management.Mods(r.Context(), currentUser(r).ID, id)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, 200, list)
+}
+func (a *API) deleteMod(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.managementID(w, r)
+	if !ok {
+		return
+	}
+	key, err := operationKey(r)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	var in struct {
+		Name         string `json:"name"`
+		Confirmation string `json:"confirmation"`
+	}
+	if err = decode(w, r, &in); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	result, err := a.Management.DeleteMod(r.Context(), currentUser(r).ID, id, key, in.Name, in.Confirmation, requestID(r))
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, 200, result)
 }

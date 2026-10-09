@@ -181,7 +181,9 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, management.ErrChanged):
 		status, message = 409, "file changed or already exists; reload before saving"
 	case errors.Is(err, management.ErrPlugin):
-		status, message = 400, "Paper requires a valid plugin .jar with plugin.yml or paper-plugin.yml"
+		status, message = 400, "upload a compatible plugin .jar; Paper-only plugins require Paper or Purpur"
+	case errors.Is(err, management.ErrMod):
+		status, message = 400, "upload a server mod .jar for your chosen loader; other loaders and client-only Fabric mods are incompatible"
 	case errors.Is(err, control.ErrState):
 		status, message = 409, "server is not available for live management"
 	case errors.Is(err, control.ErrEULA):

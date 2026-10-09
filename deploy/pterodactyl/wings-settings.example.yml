@@ -19,6 +19,11 @@ allowed_origins:
   - http://panel
 # Select a subnet unused by existing Docker networks.
 docker:
+  # Spigot compiles source code. Reserve this installation memory separately
+  # from sellable game capacity and limit concurrent installations per node.
+  installer_limits:
+    memory: 2048
+    cpu: 100
   network:
     interface: 172.30.0.1
     name: pterodactyl_nw

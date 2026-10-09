@@ -94,7 +94,7 @@ async function mockAPI(
     created_at: "2026-10-08T10:00:00Z",
   };
   const server = {
-    ...baseServer,
+    ...(servers[0] || baseServer),
     status: serverState,
     role,
     permissions:
@@ -218,6 +218,10 @@ async function mockAPI(
       return reply([
         { server_type: "PAPER", minecraft_version: "1.21.1" },
         { server_type: "PAPER", minecraft_version: "1.21.10" },
+        ...["VANILLA", "SPIGOT", "PURPUR", "FABRIC", "FORGE", "NEOFORGE"].map((server_type) => ({
+          server_type,
+          minecraft_version: "1.21.1",
+        })),
       ]);
     if (path === "/servers" && request.method() === "GET")
       return errorList ? reply({ error: "Service temporarily unavailable" }, 503) : reply(servers);
@@ -274,9 +278,17 @@ async function mockAPI(
       });
     if (path === `/servers/${serverID}/files` || path.endsWith("/files/upload"))
       return reply({ status: "saved", restart_required: true });
-    if (path === `/servers/${serverID}/plugins` && request.method() === "GET")
+    if (
+      (path === `/servers/${serverID}/plugins` || path === `/servers/${serverID}/mods`) &&
+      request.method() === "GET"
+    )
       return reply([{ name: "Essentials.jar", is_file: true, size: 1048576 }]);
-    if (path === `/servers/${serverID}/plugins` || path.endsWith("/plugins/upload"))
+    if (
+      path === `/servers/${serverID}/plugins` ||
+      path === `/servers/${serverID}/mods` ||
+      path.endsWith("/mods/upload") ||
+      path.endsWith("/plugins/upload")
+    )
       return reply({ status: "saved", restart_required: true });
     if (path === `/servers/${serverID}/members` && request.method() === "GET")
       return reply(sharedMembers);
@@ -823,4 +835,109 @@ test("moderator cannot manage members", async ({ page }) => {
   await mockAPI(page, { role: "MODERATOR" });
   await openServer(page);
   await expect(page.getByRole("link", { name: "Members", exact: true })).toHaveCount(0);
+});
+
+test("guide explains software ecosystems and custom code", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.getByRole("link", { name: "Guide", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your first server, step by step." }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "New blocks, machines or a modpack" }).click();
+  await expect(
+    page.getByRole("button", { name: "New blocks, machines or a modpack" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("NeoForge", { exact: true })).toBeVisible();
+  await page.getByText("Can I write my own plugin or mod?", { exact: true }).click();
+  await expect(page.getByText(/build a .jar with the correct plugin descriptor/)).toBeVisible();
+});
+for (const type of ["VANILLA", "SPIGOT", "PURPUR", "FABRIC", "FORGE", "NEOFORGE"]) {
+  test(`purchase resolves ${type} from approved software options`, async ({ page }) => {
+    const calls = await mockAPI(page);
+    await login(page);
+    await page.getByRole("link", { name: "New server", exact: true }).click();
+    await page.getByLabel("Server software").selectOption(type);
+    await page.getByLabel("Server name", { exact: true }).fill("Custom world");
+    await expect(page.getByLabel("Minecraft version")).toHaveValue("1.21.1");
+    await page.getByRole("button", { name: "Continue to checkout" }).click();
+    await expect(page).toHaveURL(/checkout/);
+    expect(calls.find((c) => c.path === "/orders" && c.method === "POST").body.server_type).toBe(
+      type,
+    );
+  });
+}
+test("Fabric mods have a guided upload page", async ({ page }) => {
+  const calls = await mockAPI(page, { servers: [{ ...baseServer, server_type: "FABRIC" }] });
+  await login(page);
+  await page
+    .getByRole("link")
+    .filter({ has: page.getByRole("heading", { name: baseServer.name }) })
+    .click();
+  await page.getByRole("link", { name: "Mods", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your mods" })).toBeVisible();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "example.jar",
+    mimeType: "application/java-archive",
+    buffer: Buffer.from("browser fixture"),
+  });
+  await expect(page.getByRole("status")).toContainText("Mod uploaded");
+  expect(
+    calls.find((c) => c.path.endsWith("/mods/upload")).headers["idempotency-key"],
+  ).toBeTruthy();
+});
+
+test("guide and software comparison fit a mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page);
+  await login(page);
+  await page.getByRole("link", { name: "Guide", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your first server, step by step." }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+});
+
+test("guide topic links reveal and focus the matching answer", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.getByRole("link", { name: "Guide", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Guide topics" })
+    .getByRole("link", { name: "Write your own code" })
+    .click();
+  await expect(page).toHaveURL(/\/guide#custom-code$/);
+  await expect(page.locator("#custom-code")).toHaveAttribute("open", "");
+  await expect(page.locator("#custom-code summary")).toBeFocused();
+  await expect(page.getByText(/build a .jar with the correct plugin descriptor/)).toBeVisible();
+});
+
+test("mods contextual help links directly to installation instructions", async ({ page }) => {
+  await mockAPI(page, { servers: [{ ...baseServer, server_type: "FORGE" }] });
+  await openServer(page);
+  await page.getByRole("link", { name: "Mods", exact: true }).click();
+  const help = page.getByRole("complementary", { name: "Help with mods" });
+  await help.locator("summary").click();
+  await expect(help).toContainText("Minecraft version and loader");
+  await help.getByRole("link", { name: "Open the step-by-step guide" }).click();
+  await expect(page).toHaveURL(/\/guide#add-extras$/);
+  await expect(page.getByRole("heading", { name: "3. Add plugins or mods" })).toBeInViewport();
+});
+
+test("console help deep link opens startup troubleshooting", async ({ page }) => {
+  await mockAPI(page);
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Advanced", exact: true }).click();
+  const help = page.getByRole("complementary", { name: "Help with console" });
+  await help.locator("summary").click();
+  await expect(help).toContainText("without the chat’s leading slash");
+  await help.getByRole("link", { name: "Open the step-by-step guide" }).click();
+  await expect(page).toHaveURL(/\/guide#server-errors$/);
+  await expect(page.locator("#server-errors")).toHaveAttribute("open", "");
+  await expect(page.getByText(/find the first error/)).toBeVisible();
 });

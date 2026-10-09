@@ -125,6 +125,7 @@ export function Shell({ children }) {
     ["server", "/servers", "Servers"],
     ["wallet", "/billing", "Billing"],
     ["user", "/account", "Account"],
+    ["world", "/guide", "Guide"],
     ...(session.user.is_admin ? [["shield", "/admin", "Admin"]] : []),
   ];
   return (

@@ -13,11 +13,11 @@ import (
 
 type Service struct{ DB *pgxpool.Pool }
 
-const columns = "s.id,s.owner_id,s.plan_id,s.name,s.status,s.minecraft_version,s.server_type,s.hostname,s.port,s.ram_mb,s.disk_mb,s.cpu_limit,s.backup_limit,s.database_limit,s.created_at,s.updated_at"
+const columns = "s.id,s.owner_id,s.plan_id,s.name,s.status,s.minecraft_version,s.server_type,s.hostname,s.port,s.ram_mb,s.disk_mb,s.cpu_limit,s.backup_limit,s.database_limit,s.created_at,s.updated_at,COALESCE(s.provisioning_request->'Environment'->>CASE s.server_type WHEN 'FABRIC' THEN 'LOADER_VERSION' WHEN 'FORGE' THEN 'FORGE_VERSION' WHEN 'NEOFORGE' THEN 'NEOFORGE_VERSION' END,'')"
 
 func scan(row pgx.Row) (Server, error) {
 	var s Server
-	err := row.Scan(&s.ID, &s.OwnerID, &s.PlanID, &s.Name, &s.Status, &s.MinecraftVersion, &s.ServerType, &s.Hostname, &s.Port, &s.RAMMB, &s.DiskMB, &s.CPULimit, &s.BackupLimit, &s.DatabaseLimit, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.OwnerID, &s.PlanID, &s.Name, &s.Status, &s.MinecraftVersion, &s.ServerType, &s.Hostname, &s.Port, &s.RAMMB, &s.DiskMB, &s.CPULimit, &s.BackupLimit, &s.DatabaseLimit, &s.CreatedAt, &s.UpdatedAt, &s.LoaderVersion)
 	return s, err
 }
 

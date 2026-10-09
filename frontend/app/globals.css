@@ -2850,3 +2850,99 @@ progress::-moz-progress-bar {
 .world-panel .section-heading span {
   overflow-wrap: anywhere;
 }
+
+/* Give instructional steps room to read, including on small screens. */
+.guide-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 24px;
+}
+.guide-topics a {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  font-size: 13px;
+}
+.guide-content section,
+.guide-content details {
+  scroll-margin-top: 24px;
+}
+.context-help {
+  margin: 18px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f3f7f2;
+  line-height: 1.65;
+}
+.context-help summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.context-help p,
+.context-help ol {
+  margin: 12px 0;
+}
+.context-help ol {
+  padding-left: 22px;
+}
+.context-help li + li {
+  margin-top: 6px;
+}
+.context-help a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.guide-content p,
+.guide-content li {
+  line-height: 1.65;
+}
+.guide-content li + li {
+  margin-top: 0.8rem;
+}
+.guide-content h2 {
+  margin-bottom: 1rem;
+}
+.guide-content .field-help {
+  color: #59695f;
+}
+.guide-content details {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.guide-content summary {
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.guide-content p a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.guide-table {
+  table-layout: fixed;
+  min-width: 0;
+}
+.guide-table th:first-child {
+  width: 22%;
+}
+.guide-table th:last-child {
+  width: 23%;
+}
+.guide-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  line-height: 1.5;
+}
+@media (max-width: 640px) {
+  .guide-table th:first-child {
+    width: 29%;
+  }
+  .guide-table th:last-child,
+  .guide-table td:last-child {
+    display: none;
+  }
+}

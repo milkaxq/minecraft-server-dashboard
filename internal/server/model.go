@@ -89,11 +89,12 @@ type CreateInput struct {
 	Name             string    `json:"name"`
 	MinecraftVersion string    `json:"minecraft_version"`
 	ServerType       string    `json:"server_type"`
+	LoaderVersion    string    `json:"loader_version,omitempty"`
 }
 
 func (i *CreateInput) Validate() error {
 	i.Name = strings.TrimSpace(i.Name)
-	if i.PlanID == uuid.Nil || len(i.Name) == 0 || len(i.Name) > 80 || !versionPattern.MatchString(i.MinecraftVersion) || (i.ServerType != "VANILLA" && i.ServerType != "PAPER") {
+	if i.PlanID == uuid.Nil || len(i.Name) == 0 || len(i.Name) > 80 || !versionPattern.MatchString(i.MinecraftVersion) || !ValidSoftware(i.ServerType) {
 		return ErrInvalid
 	}
 	for _, c := range i.Name {
@@ -112,6 +113,7 @@ type Server struct {
 	Status           State     `json:"status"`
 	MinecraftVersion string    `json:"minecraft_version"`
 	ServerType       string    `json:"server_type"`
+	LoaderVersion    string    `json:"loader_version,omitempty"`
 	Hostname         *string   `json:"hostname"`
 	Port             *int      `json:"port"`
 	RAMMB            int       `json:"ram_mb"`

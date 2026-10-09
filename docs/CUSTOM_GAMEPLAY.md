@@ -1,6 +1,6 @@
 # Plugins, mods, and custom gameplay
 
-The platform currently provisions **Vanilla** and **Paper**. The local demo is
+The platform currently provisions **Vanilla, Paper, Spigot, Purpur, Fabric, Forge and NeoForge**. The local demo is
 Paper 1.21.1 on Java 21. Plugin and mod compatibility must match the selected
 Minecraft/server-software version.
 
@@ -14,7 +14,7 @@ Minecraft/server-software version.
 5. If configuration files were created in `/plugins/<plugin-name>/`, stop the
    server again, edit them through **Advanced → Files**, and start it again.
 
-Plugin uploads work only on Paper. The file is kept in the server's `/plugins`
+Plugin uploads work on Paper, Spigot and Purpur; Paper-specific descriptors require Paper/Purpur. The file is kept in the server's `/plugins`
 folder and loaded by Paper inside its existing isolated container. Upload Java
 bytecode only from a source you trust. Updating a plugin requires explicitly
 removing the old jar and uploading the replacement while stopped; keep backups
@@ -27,9 +27,9 @@ Official guide: https://docs.papermc.io/paper/adding-plugins/
 
 Fabric, Forge and NeoForge mods require their matching loader/server software.
 Putting a Fabric mod into Paper's `plugins` folder does not install that mod.
-Loader support is not implemented in this platform yet. It needs a tested
-Pterodactyl egg, server-side version/template validation, installation/startup
-variables and a mod-management UI. Switching an existing Paper world also needs
+Loader support uses reviewed Pterodactyl eggs, per-release loader pins, and a
+Mods page for uploading/listing/deleting jars. Only operator-approved releases
+appear during purchase. See [software setup](MINECRAFT_SOFTWARE.md). Switching an existing Paper world also needs
 an explicit backup and compatibility check.
 
 With a supported loader, the general workflow is: stop, upload compatible mod
@@ -93,3 +93,8 @@ HTTP service. Keep credentials scoped to that service, avoid blocking the game
 thread with network requests, and never give the plugin the hosting database or
 Panel application API credentials. This bridge is a future extension, not an
 implemented integration in this MVP.
+
+The website’s **Guide** page explains software choices, first start, modpacks,
+custom code, worlds and troubleshooting. Mod uploads check the loader descriptor
+and reject Fabric client-only jars; exact Minecraft versions and dependencies
+still need to match the release documentation.

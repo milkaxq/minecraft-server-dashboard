@@ -1,6 +1,12 @@
 # Development overlay: docker compose -f docker-compose.yml -f docker-compose.pterodactyl.yml ...
 # v2 has no released image yet. Build the upstream Dockerfile at this reviewed commit.
 services:
+  minecraft-installer:
+    profiles: ["installers"]
+    image: blockyard/minecraft-installer:java21
+    build: ./deploy/pterodactyl/installer
+    entrypoint: ["/bin/true"]
+    restart: "no"
   panel-database:
     image: mariadb:11.4
     environment:
