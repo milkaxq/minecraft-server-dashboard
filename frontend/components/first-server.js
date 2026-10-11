@@ -76,6 +76,9 @@ export function FirstServerChecklist({
       <Link className="text-link" href="/guide#start-and-join">
         Open the setup guide →
       </Link>
+      <Link className="text-link" href={`/feedback?server=${server.id}`}>
+        Having trouble? Tell your host →
+      </Link>
     </details>
   );
 }

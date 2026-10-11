@@ -1320,3 +1320,135 @@ test("first-session checklist reflects the EULA and real startup state", async (
   await page.getByRole("button", { name: "Start", exact: true }).click();
   await expect(checklist.locator("summary")).toContainText("3 of 4 steps complete");
 });
+
+const feedbackFixture = {
+  id: "90000000-0000-4000-8000-000000000011",
+  author_id: user.id,
+  author_name: user.name,
+  author_email: user.email,
+  server_id: serverID,
+  category: "BUG",
+  title: "Cannot join the world",
+  message: "I started Minecraft but cannot connect to the world.",
+  status: "NEW",
+  response: "",
+  revision: 1,
+  created_at: "2026-10-11T10:00:00Z",
+  updated_at: "2026-10-11T10:00:00Z",
+};
+test("beta feedback retries safely and displays host replies on mobile", async ({ page }) => {
+  await mockAPI(page, { inviteRequired: true, paymentDisabled: true });
+  let report = null;
+  const submissions = [];
+  await page.route("http://localhost:8080/feedback*", (route) => {
+    if (route.request().method() === "POST") {
+      submissions.push({
+        key: route.request().headers()["idempotency-key"],
+        body: route.request().postDataJSON(),
+      });
+      if (submissions.length === 1)
+        return route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Please try again" }),
+        });
+      report = {
+        ...feedbackFixture,
+        ...submissions.at(-1).body,
+        status: "REVIEWED",
+        response: "Use the server address shown on Overview.",
+        revision: 2,
+      };
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(report),
+      });
+    }
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(report ? [report] : []),
+    });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Feedback", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Help us improve." })).toBeVisible();
+  await page.evaluate(
+    (id) => window.history.replaceState(null, "", "/feedback?server=" + id),
+    serverID,
+  );
+  await expect(page.getByLabel("Related server (optional)")).toHaveValue(serverID);
+  await page.getByLabel("Short summary").fill("Cannot join the world");
+  await page
+    .getByLabel("What happened?")
+    .fill("I started Minecraft but cannot connect to the world.");
+  await page.getByRole("button", { name: "Send report", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Please try again" })).toBeVisible();
+  await page.getByRole("button", { name: "Send report", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("received");
+  expect(submissions[0].key).toBe(submissions[1].key);
+  expect(submissions[1].body.server_id).toBe(serverID);
+  await expect(page.getByRole("article")).toContainText(
+    "Use the server address shown on Overview.",
+  );
+  await page.setViewportSize({ width: 320, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+test("admin reviews reports without rendering submitted markup", async ({ page }) => {
+  await mockAPI(page, { isAdmin: true });
+  let report = {
+    ...feedbackFixture,
+    message: '<img src=x onerror="window.reportExecuted=true"> is the text I saw.',
+  };
+  await page.route("http://localhost:8080/admin/feedback*", (route) => {
+    if (route.request().method() === "PUT") {
+      const update = route.request().postDataJSON();
+      expect(update.revision).toBe(1);
+      report = { ...report, ...update, revision: 2 };
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(report) });
+    }
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify([report]) });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Admin", exact: true }).click();
+  await page.getByRole("button", { name: "Feedback", exact: true }).click();
+  await expect(page.getByRole("article")).toContainText("<img src=x");
+  expect(await page.evaluate(() => window.reportExecuted)).toBeUndefined();
+  await page.getByRole("button", { name: "Review report", exact: true }).click();
+  await page.getByLabel("Report status").selectOption("RESOLVED");
+  await page.getByLabel("Reply to tester").fill("This is fixed. Try joining again.");
+  await page.getByRole("button", { name: "Save response", exact: true }).click();
+  await expect(page.getByRole("article")).toContainText("Resolved");
+  await expect(page.getByRole("article")).toContainText("This is fixed. Try joining again.");
+});
+test("feedback only offers accessible servers and paginates personal reports", async ({ page }) => {
+  await mockAPI(page, { servers: [] });
+  const offsets = [];
+  await page.route("http://localhost:8080/feedback*", (route) => {
+    const offset = new URL(route.request().url()).searchParams.get("offset");
+    offsets.push(offset);
+    const reports =
+      offset === "0"
+        ? Array.from({ length: 50 }, (_, i) => ({
+            ...feedbackFixture,
+            id: `report-${i}`,
+            title: `Report number ${i}`,
+            server_id: null,
+          }))
+        : [];
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(reports) });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Feedback", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Help us improve." })).toBeVisible();
+  await page.evaluate(
+    (id) => window.history.replaceState(null, "", "/feedback?server=" + id),
+    serverID,
+  );
+  await expect(page.getByLabel("Related server (optional)")).toHaveValue("");
+  await expect(page.getByLabel("Related server (optional)").locator("option")).toHaveCount(1);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  expect(offsets).toContain("50");
+});

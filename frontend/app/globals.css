@@ -3569,3 +3569,76 @@ body:has(.mobile-navigation[open]) {
     margin-left: 0;
   }
 }
+
+.feedback-panel {
+  display: grid;
+  gap: 18px;
+}
+.feedback-form,
+.feedback-list {
+  display: grid;
+  gap: 18px;
+}
+.feedback-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.feedback-form textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--white);
+  resize: vertical;
+}
+.feedback-form textarea:focus-visible {
+  outline: 3px solid #8ebe91;
+  outline-offset: 3px;
+}
+.feedback-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.feedback-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.feedback-status {
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-weight: 600;
+}
+.feedback-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.feedback-response {
+  padding: 14px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+.first-server-checklist > .text-link {
+  display: block;
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .feedback-fields {
+    grid-template-columns: 1fr;
+  }
+  .feedback-card {
+    padding: 14px;
+  }
+}

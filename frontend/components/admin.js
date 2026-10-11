@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Loading, PageHeading, Shell, Badge } from "./ui";
+import { ReportList } from "./feedback";
 import { Invitations } from "./invitations";
 import { formatBytes, price } from "../lib/api";
-const tabs = ["plans", "servers", "users", "orders", "nodes", "audit", "invitations"];
+const tabs = ["plans", "servers", "users", "orders", "nodes", "audit", "invitations", "feedback"];
 const numbers = [
   ["price_cents", "Price (cents)", 0, 100000000],
   ["ram_mb", "RAM (MB)", 512, 131072],
@@ -22,7 +23,7 @@ export function Admin() {
   const [offset, setOffset] = useState(0);
   const resource = useResource(
     account.data?.is_admin
-      ? `/admin/${tab}${["users", "servers", "orders", "audit"].includes(tab) ? `?offset=${offset}` : ""}`
+      ? `/admin/${tab}${["users", "servers", "orders", "audit", "feedback"].includes(tab) ? `?offset=${offset}` : ""}`
       : null,
     10000,
   );
@@ -214,6 +215,21 @@ export function Admin() {
           )}
           {tab === "invitations" ? (
             <Invitations rows={rows} loading={resource.loading} refresh={resource.refresh} />
+          ) : tab === "feedback" ? (
+            <section className="panel management-panel feedback-panel">
+              <h2>Beta feedback inbox</h2>
+              <p className="field-help">
+                Private reports from testers. Review, reply and resolve them here.
+              </p>
+              <ReportList
+                rows={rows}
+                loading={resource.loading}
+                offset={offset}
+                setOffset={setOffset}
+                admin
+                refresh={resource.refresh}
+              />
+            </section>
           ) : (
             <section className="panel management-panel">
               {resource.loading ? (

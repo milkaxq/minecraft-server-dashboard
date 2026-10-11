@@ -64,6 +64,15 @@ installation percentage. Copy completion only records a successful clipboard
 operation in the current page; it does not claim the player has joined.
 Forge/Fabric/NeoForge guidance explains the matching loader and mod requirements.
 
+## Collect feedback
+
+Testers can open **Feedback** from navigation or **Having trouble? Tell your host**
+from the server checklist. They can report a problem, ask for help or suggest an
+improvement, and see only their own reports and host replies. Review them in
+**Admin → Feedback**. Reports and replies are saved in PostgreSQL; no notification
+email is sent automatically. See [BETA_TESTING.md](BETA_TESTING.md) for the test
+script, privacy expectations and report limits.
+
 ## Validation
 
 Use the code-quality commands in CODE_QUALITY.md. PostgreSQL tests cover closed

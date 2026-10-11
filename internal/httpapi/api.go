@@ -22,6 +22,7 @@ import (
 	"minecraft-hosting/internal/billing"
 	"minecraft-hosting/internal/console"
 	"minecraft-hosting/internal/control"
+	"minecraft-hosting/internal/feedback"
 	"minecraft-hosting/internal/jobs"
 	"minecraft-hosting/internal/management"
 	"minecraft-hosting/internal/plan"
@@ -81,6 +82,8 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /auth/resend-verification", a.limited(a.resend))
 	mux.HandleFunc("POST /auth/logout", a.protected(a.logout))
 	mux.HandleFunc("GET /account", a.protected(func(w http.ResponseWriter, r *http.Request) { write(w, 200, currentUser(r)) }))
+	mux.HandleFunc("GET /feedback", a.protected(a.listFeedback))
+	mux.HandleFunc("POST /feedback", a.protected(a.liveLimit("feedback", 10, a.createFeedback)))
 	mux.HandleFunc("GET /plans", a.plans)
 	mux.HandleFunc("GET /servers", a.protected(a.listServers))
 	mux.HandleFunc("POST /servers", a.protected(a.createServer))
@@ -162,6 +165,8 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, feedback.ErrConflict):
+		status, message = 409, "Report changed or submission key was reused. Refresh the report before saving changes."
 	case errors.Is(err, auth.ErrInvitation):
 		status, message = 403, "A valid invitation for this email is required. Ask your host for a new link."
 	case errors.Is(err, auth.ErrInviteAdmin):

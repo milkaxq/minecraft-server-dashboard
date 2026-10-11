@@ -283,3 +283,5 @@ See [Phase 5](docs/PHASE5.md) for repeatable commands and integration limits.
 For the invited-beta and production prerequisites, see [launch readiness](docs/LAUNCH_READINESS.md).
 
 Private beta setup and invitation management: [PRIVATE_BETA.md](docs/PRIVATE_BETA.md).
+
+Tester checklist and private feedback/review workflow: [BETA_TESTING.md](docs/BETA_TESTING.md).

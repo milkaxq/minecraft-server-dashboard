@@ -137,6 +137,7 @@ export function Shell({ children }) {
     ["wallet", "/billing", "Billing"],
     ["user", "/account", "Account"],
     ["world", "/guide", "Guide"],
+    ["user", "/feedback", "Feedback"],
     ...(session.user.is_admin ? [["shield", "/admin", "Admin"]] : []),
   ];
   const navigation = (
