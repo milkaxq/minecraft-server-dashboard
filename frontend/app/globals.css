@@ -3642,3 +3642,19 @@ body:has(.mobile-navigation[open]) {
     padding: 14px;
   }
 }
+
+.addon-catalog .plugin-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.addon-catalog .section-heading label {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .addon-catalog .plugin-list li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}

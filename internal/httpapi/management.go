@@ -46,6 +46,15 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 		"DELETE /servers/{id}/backups/{backup}":       a.changeBackup("delete"),
 		"GET /servers/{id}/backups/{backup}/download": a.download(true),
 	}
+	for _, collection := range []string{"plugins", "mods"} {
+		for method, handler := range map[string]http.HandlerFunc{"GET": a.catalogPreview, "POST": a.catalogInstall} {
+			mux.HandleFunc(method+" /servers/{id}/"+collection+"/catalog/{project}", a.protected(a.liveLimit("catalog", 30, func(w http.ResponseWriter, r *http.Request) { r.SetPathValue("collection", collection); handler(w, r) })))
+		}
+		mux.HandleFunc("GET /servers/{id}/"+collection+"/catalog", a.protected(a.liveLimit("catalog", 30, func(w http.ResponseWriter, r *http.Request) {
+			r.SetPathValue("collection", collection)
+			a.catalogSearch(w, r)
+		})))
+	}
 	for route, handler := range routes {
 		mux.HandleFunc(route, a.protected(a.liveLimit("management", 240, handler)))
 	}

@@ -324,6 +324,24 @@ async function mockAPI(
       path.endsWith("/plugins/upload")
     )
       return reply({ status: "saved", restart_required: true });
+    if (path.endsWith("/catalog"))
+      return reply([
+        {
+          project_id: "viaversion",
+          title: "ViaVersion",
+          description: "Allow newer clients to join.",
+        },
+      ]);
+    if (path.endsWith("/catalog/viaversion") && request.method() === "GET")
+      return reply({
+        project: "viaversion",
+        software: "PAPER",
+        minecraft_version: "1.21.1",
+        revision: "c".repeat(64),
+        files: [{ version_id: "stable", filename: "ViaVersion.jar", size: 6500000 }],
+      });
+    if (path.endsWith("/catalog/viaversion"))
+      return reply({ status: "installed", restart_required: true });
     if (path === `/servers/${serverID}/members` && request.method() === "GET")
       return reply(sharedMembers);
     if (path === `/servers/${serverID}/members`) {
@@ -1588,4 +1606,37 @@ test("failed logout keeps the session and explains how to retry", async ({ page 
   await page.getByRole("button", { name: "A Alex Sign out" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Could not sign out" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Welcome back, Alex." })).toBeVisible();
+});
+
+test("plugin catalog reviews compatible files before installing", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await page.getByLabel("Search plugins", { exact: true }).fill("ViaVersion");
+  await page.getByRole("button", { name: "Search Modrinth" }).click();
+  await page.getByRole("button", { name: "Review install" }).click();
+  await expect(page.getByRole("dialog")).toContainText("PAPER 1.21.1");
+  await expect(page.getByRole("dialog")).toContainText("ViaVersion.jar");
+  expect(
+    calls.filter((c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST"),
+  ).toHaveLength(0);
+  await page.getByRole("button", { name: "Install now", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  const install = calls.find((c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST");
+  expect(install.body).toEqual({ revision: "c".repeat(64) });
+  expect(install.headers["idempotency-key"]).toBeTruthy();
+});
+
+test("catalog search and review fit a narrow mobile screen", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await page.getByRole("button", { name: "Search Modrinth" }).click();
+  await expect(page.getByRole("button", { name: "Review install" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.getByRole("button", { name: "Review install" }).click();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
 });

@@ -129,6 +129,13 @@ export function Guide() {
         </section>
         <section id="add-extras" className="panel management-panel">
           <h2>3. Add plugins or mods</h2>
+          <p className="field-help">
+            ViaVersion lets newer Java clients connect to an older Paper server; it does not add
+            newer blocks or gameplay. Search for ViaVersion in Plugins, install it while stopped,
+            then start the server. Complete modpacks need their author’s server pack and matching
+            client setup; the catalog currently installs individual projects and required
+            dependencies.
+          </p>
           <ol>
             <li>Create a backup before making changes, then stop the server.</li>
             <li>
@@ -137,9 +144,10 @@ export function Guide() {
               install files you trust.
             </li>
             <li>
-              For Paper, Spigot or Purpur, open Plugins and upload the plugin .jar. For Fabric,
-              Forge or NeoForge, open Mods and upload each server mod .jar. Include required
-              dependencies such as Fabric API when the mod asks for them.
+              For Paper, Spigot or Purpur, open Plugins. For Fabric, Forge or NeoForge, open Mods.
+              Search Modrinth, choose Review install, check the files and required dependencies,
+              then click Install now. The browser matches your server’s version and software. You
+              can still upload trusted .jar files manually.
             </li>
             <li>
               Start the server once so it can generate configuration files. Stop it, open Advanced →

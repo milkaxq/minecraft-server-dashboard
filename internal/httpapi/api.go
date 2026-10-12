@@ -20,6 +20,7 @@ import (
 	"minecraft-hosting/internal/admin"
 	"minecraft-hosting/internal/auth"
 	"minecraft-hosting/internal/billing"
+	"minecraft-hosting/internal/catalog"
 	"minecraft-hosting/internal/console"
 	"minecraft-hosting/internal/control"
 	"minecraft-hosting/internal/feedback"
@@ -214,6 +215,8 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 		status, message = 409, "your backup allowance is full; delete a backup before creating another"
 	case errors.Is(err, management.ErrChanged):
 		status, message = 409, "file changed or already exists; reload before saving"
+	case errors.Is(err, catalog.ErrUnavailable):
+		status, message = 502, "package unavailable: a stable server-compatible release and supported dependencies are required; retry or choose another project"
 	case errors.Is(err, management.ErrPlugin):
 		status, message = 400, "upload a compatible plugin .jar; Paper-only plugins require Paper or Purpur"
 	case errors.Is(err, management.ErrMod):

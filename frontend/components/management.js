@@ -749,6 +749,12 @@ function Plugins({ id, offline, mods = false }) {
     <>
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
+      <CatalogBrowser
+        id={id}
+        collection={collection}
+        offline={offline}
+        onInstalled={resource.refresh}
+      />
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -821,6 +827,129 @@ function Plugins({ id, offline, mods = false }) {
         </Confirm>
       )}
     </>
+  );
+}
+function CatalogBrowser({ id, collection, offline, onInstalled }) {
+  const { api } = useAuth();
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [installKey, setInstallKey] = useState(null);
+  const action = useAction(onInstalled);
+  async function browse(e) {
+    e.preventDefault();
+    await action.run(async () => {
+      setResults(await api(`/servers/${id}/${collection}/catalog?q=${query(search)}`));
+    });
+  }
+  async function review(project) {
+    await action.run(async () => {
+      setPreview(await api(`/servers/${id}/${collection}/catalog/${query(project)}`));
+      setInstallKey(crypto.randomUUID());
+    });
+  }
+  async function install() {
+    if (
+      await action.run(
+        () =>
+          api(`/servers/${id}/${collection}/catalog/${query(preview.project)}`, {
+            method: "POST",
+            key: installKey,
+            body: { revision: preview.revision },
+          }),
+        "Installed. Start your server to load the changes.",
+      )
+    )
+      setPreview(null);
+  }
+  return (
+    <section className="panel management-panel addon-catalog">
+      <h2>Find {collection}</h2>
+      <p className="field-help">
+        Browse Modrinth releases matched to your server software and Minecraft version. Review
+        required dependencies before installing. Stop your server to install.
+      </p>
+      {collection === "plugins" ? (
+        <p className="field-help">
+          Want newer Java clients to join? Search for ViaVersion. Your server keeps its existing
+          gameplay version.
+        </p>
+      ) : (
+        <p className="field-help">
+          Players may need the same mods on their computers. Complete modpacks also include settings
+          and client files; use the pack author’s server setup instructions.
+        </p>
+      )}
+      <Feedback action={action} />
+      <form onSubmit={browse} className="section-heading">
+        <label>
+          Search {collection}
+          <input
+            value={search}
+            maxLength={100}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={
+              collection === "plugins" ? "ViaVersion, LuckPerms…" : "Search server mods…"
+            }
+          />
+        </label>
+        <button className="button primary" disabled={action.busy}>
+          Search Modrinth
+        </button>
+      </form>
+      {results && (
+        <ul className="plugin-list">
+          {results.map((project) => (
+            <li key={project.project_id}>
+              <span>
+                <strong>{project.title}</strong>
+                <small>{project.description}</small>
+                <a
+                  href={`https://modrinth.com/project/${encodeURIComponent(project.project_id)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Project details
+                </a>
+              </span>
+              <button
+                className="button"
+                disabled={action.busy}
+                onClick={() => review(project.project_id)}
+              >
+                Review install
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {results?.length === 0 && <p>No compatible projects found. Try another search.</p>}
+      {preview && (
+        <Confirm
+          title="Review installation"
+          label="Install now"
+          busy={action.busy}
+          confirmDisabled={!offline}
+          onCancel={() => setPreview(null)}
+          onConfirm={install}
+        >
+          <p>
+            For {preview.software} {preview.minecraft_version}. Required dependencies are included.
+            Existing files with different contents will not be overwritten. Remove older versions of
+            these projects first to avoid duplicates.
+          </p>
+          <ul>
+            {preview.files.map((file) => (
+              <li key={file.version_id}>
+                {file.filename} · {formatBytes(file.size)}
+              </li>
+            ))}
+          </ul>
+          {!offline && <p>Stop your server before installing.</p>}
+          <ErrorMessage error={action.error} />
+        </Confirm>
+      )}
+    </section>
   );
 }
 function Backups({ id, offline, limit }) {

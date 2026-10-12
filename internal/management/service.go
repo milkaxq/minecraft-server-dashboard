@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"minecraft-hosting/internal/audit"
+	"minecraft-hosting/internal/catalog"
 	"minecraft-hosting/internal/control"
 	"minecraft-hosting/internal/pterodactyl"
 	"minecraft-hosting/internal/server"
@@ -31,6 +32,7 @@ var ErrChanged = errors.New("file changed; reload before saving")
 var ErrPlugin = errors.New("this server requires a compatible plugin jar")
 
 type Service struct {
+	Catalog *catalog.Client
 	DB      *pgxpool.Pool
 	Control *control.Service
 	Panel   pterodactyl.ManagementClient
@@ -45,6 +47,7 @@ type Target struct {
 	Type        string
 	BackupLimit int
 	DiskMB      int
+	Version     string
 }
 
 func (s *Service) access(ctx context.Context, user, id uuid.UUID, p server.Permission) (Target, error) {
@@ -59,7 +62,7 @@ func (s *Service) accessWith(ctx context.Context, q querier, user, id uuid.UUID,
 		return Target{}, control.ErrNotConfigured
 	}
 	v := Target{Target: t, q: q}
-	if err = q.QueryRow(ctx, "SELECT server_type,backup_limit,disk_mb FROM servers WHERE id=$1", id).Scan(&v.Type, &v.BackupLimit, &v.DiskMB); err != nil {
+	if err = q.QueryRow(ctx, "SELECT server_type,backup_limit,disk_mb,minecraft_version FROM servers WHERE id=$1", id).Scan(&v.Type, &v.BackupLimit, &v.DiskMB, &v.Version); err != nil {
 		return v, err
 	}
 	if err = s.Panel.Ready(ctx, t.Identifier); err != nil {
@@ -255,7 +258,7 @@ func (s *Service) mutate(ctx context.Context, user, id, key uuid.UUID, p server.
 	outcome := "SUCCEEDED"
 	if runErr != nil {
 		outcome = "UNKNOWN"
-		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, ErrMod) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
+		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, ErrMod) || errors.Is(runErr, catalog.ErrUnavailable) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
 			outcome = "REJECTED"
 		}
 	}
