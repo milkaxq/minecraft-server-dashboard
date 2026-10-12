@@ -2,7 +2,11 @@ package httpapi
 
 import (
 	"net/http"
+	"strconv"
 	"time"
+
+	"minecraft-hosting/internal/catalog"
+	"minecraft-hosting/internal/server"
 
 	"minecraft-hosting/internal/auth"
 )
@@ -12,7 +16,17 @@ func (a *API) catalogSearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	v, err := a.Management.CatalogSearch(r.Context(), currentUser(r).ID, id, r.PathValue("collection"), r.URL.Query().Get("q"))
+	q := r.URL.Query()
+	offset := 0
+	if raw := q.Get("offset"); raw != "" {
+		var err error
+		offset, err = strconv.Atoi(raw)
+		if err != nil {
+			a.fail(w, r, server.ErrInvalid)
+			return
+		}
+	}
+	v, err := a.Management.CatalogSearch(r.Context(), currentUser(r).ID, id, r.PathValue("collection"), catalog.SearchOptions{Query: q.Get("q"), Sort: q.Get("sort"), Category: q.Get("category"), Offset: offset})
 	if err != nil {
 		a.fail(w, r, err)
 		return

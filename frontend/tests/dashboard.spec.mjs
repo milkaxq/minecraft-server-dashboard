@@ -351,13 +351,21 @@ async function mockAPI(
     )
       return reply({ status: "saved", restart_required: true });
     if (path.endsWith("/catalog"))
-      return reply([
-        {
-          project_id: "viaversion",
-          title: "ViaVersion",
-          description: "Allow newer clients to join.",
-        },
-      ]);
+      return reply({
+        projects: [
+          {
+            project_id: "viaversion",
+            title: "ViaVersion",
+            description: "Allow newer clients to join.",
+            downloads: 10000,
+            release_version: "5.12.1",
+          },
+        ],
+        has_more: false,
+        next_offset: 1,
+        software: "PAPER",
+        minecraft_version: "1.21.1",
+      });
     if (path.endsWith("/catalog/viaversion") && request.method() === "GET")
       return reply({
         project: "viaversion",
@@ -658,7 +666,9 @@ test("Paper plugin uploads raw binary and confirms removal", async ({ page }) =>
     mimeType: "application/java-archive",
     buffer: Buffer.from("test-only binary jar"),
   });
-  await expect(page.getByRole("status")).toContainText("Plugin uploaded");
+  await expect(page.getByRole("status").filter({ hasText: "Plugin uploaded" })).toContainText(
+    "Plugin uploaded",
+  );
   const upload = calls.find((c) => c.path.endsWith("/plugins/upload"));
   expect(upload.headers["content-type"]).toBe("application/octet-stream");
   expect(upload.bytes).toBeGreaterThan(0);
@@ -1022,7 +1032,9 @@ test("Fabric mods have a guided upload page", async ({ page }) => {
     mimeType: "application/java-archive",
     buffer: Buffer.from("browser fixture"),
   });
-  await expect(page.getByRole("status")).toContainText("Mod uploaded");
+  await expect(page.getByRole("status").filter({ hasText: "Mod uploaded" })).toContainText(
+    "Mod uploaded",
+  );
   expect(
     calls.find((c) => c.path.endsWith("/mods/upload")).headers["idempotency-key"],
   ).toBeTruthy();
@@ -1900,21 +1912,27 @@ test("catalog displays safe project icons and recovers from failed images", asyn
   await page.setViewportSize({ width: 320, height: 900 });
   await page.route("http://localhost:8080/servers/*/plugins/catalog?**", (route) =>
     route.fulfill({
-      json: [
-        {
-          project_id: "viaversion",
-          title: "ViaVersion",
-          description: "Version compatibility",
-          icon_url: "https://cdn.modrinth.com/data/test/icon.png",
-        },
-        {
-          project_id: "unsafe",
-          title: "Unsafe image",
-          description: "Fallback",
-          icon_url: "https://example.com/tracker.png",
-        },
-        { project_id: "missing", title: "No image", description: "Fallback" },
-      ],
+      json: {
+        projects: [
+          {
+            project_id: "viaversion",
+            title: "ViaVersion",
+            description: "Version compatibility",
+            icon_url: "https://cdn.modrinth.com/data/test/icon.png",
+          },
+          {
+            project_id: "unsafe",
+            title: "Unsafe image",
+            description: "Fallback",
+            icon_url: "https://example.com/tracker.png",
+          },
+          { project_id: "missing", title: "No image", description: "Fallback" },
+        ],
+        has_more: false,
+        next_offset: 3,
+        software: "PAPER",
+        minecraft_version: "1.21.1",
+      },
     }),
   );
   await page.route("https://cdn.modrinth.com/data/test/icon.png", (route) =>
@@ -1938,4 +1956,137 @@ test("catalog displays safe project icons and recovers from failed images", asyn
   await expect(icons.locator("svg")).toHaveCount(3);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("plugin-images.png"), fullPage: true });
+});
+
+for (const width of [320, 1366]) {
+  test(`catalog defaults to most downloaded and preserves filters across pages at ${width}px`, async ({
+    page,
+  }) => {
+    await mockAPI(page);
+    const searches = [];
+    await page.route(
+      `http://localhost:8080/servers/${serverID}/plugins/catalog?**`,
+      async (route) => {
+        const url = new URL(route.request().url());
+        searches.push(Object.fromEntries(url.searchParams));
+        const more = url.searchParams.get("offset") === "12";
+        await route.fulfill({
+          json: {
+            projects: [
+              {
+                project_id: more ? "second" : "viaversion",
+                title: more ? "Second plugin" : "ViaVersion",
+                description: "Compatible release",
+                release_version: "5.0",
+                downloads: 10000,
+              },
+            ],
+            has_more: !more,
+            next_offset: more ? 24 : 12,
+            software: "PAPER",
+            minecraft_version: "1.21.1",
+          },
+        });
+      },
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await openServer(page);
+    await page.getByRole("link", { name: "Plugins", exact: true }).click();
+    await expect(page.getByLabel("Sort catalog")).toHaveValue("downloads", { timeout: 1500 });
+    await expect(
+      page.locator(".addon-catalog").getByText("ViaVersion", { exact: true }),
+    ).toBeVisible();
+    expect(searches[0]).toEqual({ q: "", sort: "downloads", category: "", offset: "0" });
+    await page.getByLabel("Category filter").selectOption("utility");
+    await page.getByLabel("Sort catalog").selectOption("updated");
+    await page.getByLabel("Search plugins", { exact: true }).fill("versions");
+    await page.getByRole("button", { name: "Search Modrinth" }).click();
+    await expect
+      .poll(() => searches.at(-1))
+      .toEqual({ q: "versions", sort: "updated", category: "utility", offset: "0" });
+    await page.getByRole("button", { name: "Load more" }).click();
+    await expect(
+      page.locator(".addon-catalog").getByText("Second plugin", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".addon-catalog").getByText("ViaVersion", { exact: true }),
+    ).toBeVisible();
+    expect(searches.at(-1)).toEqual({
+      q: "versions",
+      sort: "updated",
+      category: "utility",
+      offset: "12",
+    });
+    await page.getByRole("button", { name: "Reset filters" }).click();
+    await expect(page.getByLabel("Sort catalog")).toHaveValue("downloads");
+    await expect(page.getByLabel("Category filter")).toHaveValue("");
+    await expect(page.getByLabel("Search plugins", { exact: true })).toHaveValue("");
+    await expect(
+      page.locator(".addon-catalog").getByText("Second plugin", { exact: true }),
+    ).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}
+
+test("catalog ignores late responses from earlier sorting choices", async ({ page }) => {
+  await mockAPI(page);
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog?**`,
+    async (route) => {
+      const sort = new URL(route.request().url()).searchParams.get("sort");
+      if (sort === "newest") await new Promise((resolve) => setTimeout(resolve, 400));
+      await route
+        .fulfill({
+          json: {
+            projects: [
+              {
+                project_id: sort,
+                title: sort === "newest" ? "Old response" : "Current response",
+                description: "Matching release",
+              },
+            ],
+            has_more: false,
+            next_offset: 1,
+            software: "PAPER",
+            minecraft_version: "1.21.1",
+          },
+        })
+        .catch(() => {});
+    },
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await page.getByLabel("Sort catalog").selectOption("newest");
+  await page.getByLabel("Sort catalog").selectOption("updated");
+  await expect(page.getByText("Current response", { exact: true })).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.getByText("Old response", { exact: true })).toHaveCount(0);
+});
+test("catalog failure offers retry instead of claiming no compatible projects", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let failing = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog?**`, (route) =>
+    failing
+      ? route.fulfill({ status: 503, json: { error: "Catalog temporarily unavailable" } })
+      : route.fulfill({
+          json: {
+            projects: [],
+            has_more: false,
+            next_offset: 0,
+            software: "PAPER",
+            minecraft_version: "1.21.1",
+          },
+        }),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await expect(page.getByText("Catalog temporarily unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByText("No compatible projects found.", { exact: false })).toHaveCount(0);
+  failing = false;
+  await page.getByRole("button", { name: "Retry catalog load" }).click();
+  await expect(page.getByText("No compatible projects found.", { exact: false })).toBeVisible();
 });

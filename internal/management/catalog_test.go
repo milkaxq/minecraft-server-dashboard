@@ -105,3 +105,35 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 		t.Fatal("existing file overwritten", err)
 	}
 }
+
+func TestCatalogSearchUsesStoredServerVersionAndAuthorizesBeforeProvider(t *testing.T) {
+	f := setup(t)
+	calls := 0
+	c := catalog.New()
+	c.HTTP.Transport = catalogTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Path != "/v2/search" || !strings.Contains(r.URL.Query().Get("facets"), `"versions:1.21.1"`) || !strings.Contains(r.URL.Query().Get("facets"), `"categories:paper"`) {
+			t.Fatal("search did not use stored server software/version", r.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"hits":[],"total_hits":0}`))}, nil
+	})
+	f.s.Catalog = c
+	for _, user := range []uuid.UUID{f.other, f.mod} {
+		if _, err := f.s.CatalogSearch(context.Background(), user, f.id, "plugins", catalog.SearchOptions{Sort: "downloads"}); !errors.Is(err, server.ErrNotFound) {
+			t.Fatal("unauthorized search", err)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("unauthorized request reached provider")
+	}
+	if _, err := f.s.CatalogSearch(context.Background(), f.owner, f.id, "plugins", catalog.SearchOptions{Sort: "arbitrary"}); !errors.Is(err, server.ErrInvalid) {
+		t.Fatal("invalid sort accepted", err)
+	}
+	if calls != 0 {
+		t.Fatal("invalid options reached provider")
+	}
+	page, err := f.s.CatalogSearch(context.Background(), f.owner, f.id, "plugins", catalog.SearchOptions{Sort: "downloads", Category: "utility", Offset: 12})
+	if err != nil || page.Software != "PAPER" || page.MinecraftVersion != "1.21.1" || calls != 1 {
+		t.Fatal("stored compatibility not enforced", page, err)
+	}
+}

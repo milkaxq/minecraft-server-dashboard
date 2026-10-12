@@ -1,6 +1,6 @@
 "use client";
 import { ProjectIcon } from "./project-icon";
-import { supportsPlugins, supportsMods } from "../lib/software";
+import { supportsPlugins, supportsMods, softwareName } from "../lib/software";
 import { Players } from "./players";
 import Link from "next/link";
 import { ContextHelp } from "./context-help";
@@ -165,13 +165,13 @@ export function ManagementPage({ id, section }) {
                 <Settings id={id} offline={offline} />
               ) : section === "mods" ? (
                 supportsMods(server.server_type) ? (
-                  <Plugins id={id} offline={offline} mods />
+                  <Plugins id={id} server={server} offline={offline} mods />
                 ) : (
                   <p className="notice">Mods require Fabric, Forge, or NeoForge.</p>
                 )
               ) : section === "plugins" ? (
                 supportsPlugins(server.server_type) ? (
-                  <Plugins id={id} offline={offline} />
+                  <Plugins id={id} server={server} offline={offline} />
                 ) : (
                   <p className="notice">
                     Plugins are available for Paper, Spigot, and Purpur servers.
@@ -718,7 +718,7 @@ function Settings({ id, offline }) {
     </>
   );
 }
-function Plugins({ id, offline, mods = false }) {
+function Plugins({ id, server, offline, mods = false }) {
   const collection = mods ? "mods" : "plugins";
   const label = mods ? "mod" : "plugin";
   const { api } = useAuth();
@@ -758,6 +758,8 @@ function Plugins({ id, offline, mods = false }) {
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
       <CatalogBrowser
+        key={`${id}:${server.server_type}:${server.minecraft_version}`}
+        server={server}
         id={id}
         collection={collection}
         offline={offline}
@@ -837,18 +839,44 @@ function Plugins({ id, offline, mods = false }) {
     </>
   );
 }
-function CatalogBrowser({ id, collection, offline, onInstalled }) {
+function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
   const { api } = useAuth();
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState(null);
+  const [filters, setFilters] = useState({ query: "", sort: "downloads", category: "" });
+  const [offset, setOffset] = useState(0);
+  const filterKey = JSON.stringify([id, collection, filters]);
+  const params = new URLSearchParams({
+    q: filters.query,
+    sort: filters.sort,
+    category: filters.category,
+    offset: String(offset),
+  });
+  const resource = useResource(`/servers/${id}/${collection}/catalog?${params}`);
+  const [loaded, setLoaded] = useState({ filterKey: "", response: null, items: [] });
+  let results = loaded.filterKey === filterKey ? loaded.items : [];
+  if (resource.data && resource.data !== loaded.response) {
+    const combined =
+      offset === 0 ? resource.data.projects : [...results, ...resource.data.projects];
+    results = [...new Map(combined.map((project) => [project.project_id, project])).values()];
+    setLoaded({ filterKey, response: resource.data, items: results });
+  }
   const [preview, setPreview] = useState(null);
   const [installKey, setInstallKey] = useState(null);
   const action = useAction(onInstalled);
-  async function browse(e) {
+  function changeFilters(next) {
+    setFilters(next);
+    setOffset(0);
+    setPreview(null);
+  }
+  function browse(e) {
     e.preventDefault();
-    await action.run(async () => {
-      setResults(await api(`/servers/${id}/${collection}/catalog?q=${query(search)}`));
-    });
+    changeFilters({ ...filters, query: search.trim() });
+    resource.refresh();
+  }
+  function resetFilters() {
+    setSearch("");
+    changeFilters({ query: "", sort: "downloads", category: "" });
+    resource.refresh();
   }
   async function review(project) {
     await action.run(async () => {
@@ -873,6 +901,10 @@ function CatalogBrowser({ id, collection, offline, onInstalled }) {
   return (
     <section className="panel management-panel addon-catalog">
       <h2>Find {collection}</h2>
+      <p className="catalog-compatibility">
+        For {softwareName(server.server_type)} · Minecraft {server.minecraft_version} · Stable
+        matching releases only
+      </p>
       <p className="field-help">
         Browse Modrinth releases matched to your server software and Minecraft version. Review
         required dependencies before installing. Stop your server to install.
@@ -889,7 +921,8 @@ function CatalogBrowser({ id, collection, offline, onInstalled }) {
         </p>
       )}
       <Feedback action={action} />
-      <form onSubmit={browse} className="section-heading">
+      <ErrorMessage error={resource.error} />
+      <form onSubmit={browse} className="catalog-controls">
         <label>
           Search {collection}
           <input
@@ -901,10 +934,61 @@ function CatalogBrowser({ id, collection, offline, onInstalled }) {
             }
           />
         </label>
-        <button className="button primary" disabled={action.busy}>
-          Search Modrinth
-        </button>
+        <label>
+          Sort catalog
+          <select
+            value={filters.sort}
+            onChange={(e) => changeFilters({ ...filters, sort: e.target.value })}
+            disabled={action.busy}
+          >
+            <option value="downloads">Most downloaded</option>
+            <option value="relevance">Relevance</option>
+            <option value="newest">Newest</option>
+            <option value="updated">Recently updated</option>
+          </select>
+        </label>
+        <label>
+          Category filter
+          <select
+            value={filters.category}
+            onChange={(e) => changeFilters({ ...filters, category: e.target.value })}
+            disabled={action.busy}
+          >
+            <option value="">All categories</option>
+            {[
+              ["utility", "Utilities"],
+              ["management", "Server management"],
+              ["optimization", "Performance"],
+              ["economy", "Economy"],
+              ["adventure", "Adventure"],
+              ["worldgen", "World generation"],
+            ].map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="catalog-filter-actions">
+          <button className="button primary" disabled={action.busy}>
+            Search Modrinth
+          </button>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={resetFilters}
+            disabled={action.busy}
+          >
+            Reset filters
+          </button>
+        </div>
       </form>
+      {resource.loading && <Loading message="Checking compatible releases…" />}
+      {results.length > 0 && (
+        <p className="field-help" role="status">
+          {results.length} compatible {results.length === 1 ? "project" : "projects"} shown
+        </p>
+      )}
       {results && (
         <ul className="plugin-list">
           {results.map((project) => (
@@ -914,6 +998,10 @@ function CatalogBrowser({ id, collection, offline, onInstalled }) {
                 <span>
                   <strong>{project.title}</strong>
                   <small>{project.description}</small>
+                  <small>
+                    {project.downloads?.toLocaleString() || "0"} downloads
+                    {project.release_version ? ` · Release ${project.release_version}` : ""}
+                  </small>
                   <a
                     href={`https://modrinth.com/project/${encodeURIComponent(project.project_id)}`}
                     target="_blank"
@@ -934,7 +1022,27 @@ function CatalogBrowser({ id, collection, offline, onInstalled }) {
           ))}
         </ul>
       )}
-      {results?.length === 0 && <p>No compatible projects found. Try another search.</p>}
+      {!resource.loading && !resource.error && results.length === 0 && (
+        <p>
+          {resource.data?.has_more
+            ? "No matching stable releases on this page. Load more to continue checking."
+            : "No compatible projects found. Try another search or reset your filters."}
+        </p>
+      )}
+      {resource.data?.has_more && !resource.error && (
+        <button
+          className="button secondary"
+          disabled={action.busy || resource.loading}
+          onClick={() => setOffset(resource.data.next_offset)}
+        >
+          Load more
+        </button>
+      )}
+      {resource.error && (
+        <button className="button secondary" onClick={resource.refresh}>
+          Retry catalog load
+        </button>
+      )}
       {preview && (
         <Confirm
           title="Review installation"

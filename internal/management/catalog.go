@@ -40,20 +40,25 @@ func catalogLoader(t Target, collection string) (string, error) {
 	}
 	return "", server.ErrInvalid
 }
-func (s *Service) CatalogSearch(ctx context.Context, user, id uuid.UUID, collection, query string) ([]catalog.Project, error) {
+func (s *Service) CatalogSearch(ctx context.Context, user, id uuid.UUID, collection string, options catalog.SearchOptions) (catalog.SearchPage, error) {
 	p, err := catalogPermission(collection)
 	if err != nil {
-		return nil, err
+		return catalog.SearchPage{}, err
 	}
 	t, err := s.access(ctx, user, id, p)
 	if err != nil {
-		return nil, err
+		return catalog.SearchPage{}, err
 	}
 	loader, err := catalogLoader(t, collection)
 	if err != nil {
-		return nil, err
+		return catalog.SearchPage{}, err
 	}
-	return s.catalogClient().Search(ctx, loader, t.Version, query)
+	if options.Validate() != nil {
+		return catalog.SearchPage{}, server.ErrInvalid
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return s.catalogClient().SearchPage(ctx, loader, t.Version, options)
 }
 func (s *Service) resolvePreview(ctx context.Context, t Target, collection, project string) (InstallPreview, error) {
 	loader, err := catalogLoader(t, collection)

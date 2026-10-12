@@ -5,6 +5,8 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -107,10 +109,15 @@ func TestSearchSanitizesProjectIcons(t *testing.T) {
 	urls := []string{"https://cdn.modrinth.com/data/icon.png", "https://cdn.modrinth.com/icon.webp", "http://cdn.modrinth.com/icon.png", "https://cdn.modrinth.com.evil.test/icon.png", "https://127.0.0.1/icon.png", "https://user@cdn.modrinth.com/icon.png", "https://cdn.modrinth.com:443/icon.png", "https://cdn.modrinth.com/icon.svg", "data:image/png;base64,test", "", "https://cdn.modrinth.com/icon.png#fragment"}
 	hits := make([]Project, len(urls))
 	for i, raw := range urls {
-		hits[i] = Project{ID: "project", Title: "Example", IconURL: raw}
+		hits[i] = Project{ID: "project", Title: "Example", IconURL: raw, ServerSide: "required"}
 	}
 	c := New()
-	c.HTTP.Transport = roundTrip(func(*http.Request) (*http.Response, error) { return response(map[string]any{"hits": hits}), nil })
+	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v2/search" {
+			return response(map[string]any{"hits": hits}), nil
+		}
+		return response([]Version{{ID: "stable", ProjectID: "project", Type: "release", Loaders: []string{"paper"}, Games: []string{"1.21.1"}}}), nil
+	})
 	projects, err := c.Search(context.Background(), "paper", "1.21.1", "")
 	if err != nil || len(projects) != len(urls) {
 		t.Fatalf("search failed: %v", err)
@@ -123,5 +130,94 @@ func TestSearchSanitizesProjectIcons(t *testing.T) {
 		if p.IconURL != expected || p.Title != "Example" {
 			t.Fatalf("unsafe or missing icon at %d: %q", i, p.IconURL)
 		}
+	}
+}
+
+// A project's software and game tags can refer to different releases.
+func TestSearchRequiresOneStableReleaseMatchingSoftwareAndGame(t *testing.T) {
+	c := New()
+	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/v2/search":
+			return response(map[string]any{"hits": []Project{{ID: "wrongGame", ServerSide: "required"}, {ID: "wrongLoader", ServerSide: "required"}, {ID: "alpha", ServerSide: "required"}, {ID: "valid", ServerSide: "required"}}, "total_hits": 4}), nil
+		case "/v2/project/wrongGame/version":
+			return response([]Version{{ID: "other", ProjectID: "wrongGame", Type: "release", Loaders: []string{"paper"}, Games: []string{"1.20.1"}}}), nil
+		case "/v2/project/wrongLoader/version":
+			return response([]Version{{ID: "other", ProjectID: "wrongLoader", Type: "release", Loaders: []string{"fabric"}, Games: []string{"1.21.1"}}}), nil
+		case "/v2/project/alpha/version":
+			return response([]Version{{ID: "alpha", ProjectID: "alpha", Type: "alpha", Loaders: []string{"paper"}, Games: []string{"1.21.1"}}}), nil
+		case "/v2/project/valid/version":
+			if r.URL.Query().Get("loaders") != `["paper"]` || r.URL.Query().Get("game_versions") != `["1.21.1"]` {
+				t.Errorf("lost compatibility filters: %s", r.URL)
+			}
+			return response([]Version{{ID: "stable", ProjectID: "valid", Type: "release", Loaders: []string{"paper"}, Games: []string{"1.21.1"}}}), nil
+		default:
+			return nil, fmt.Errorf("unexpected request %s", r.URL)
+		}
+	})
+	projects, err := c.Search(context.Background(), "paper", "1.21.1", "")
+	if err != nil || len(projects) != 1 || projects[0].ID != "valid" {
+		t.Fatalf("incompatible projects shown: %+v, %v", projects, err)
+	}
+}
+
+func TestSearchOptionsKeepCompatibilityAndUseUpstreamOrdering(t *testing.T) {
+	for _, sort := range []string{"", "downloads", "relevance", "newest", "updated"} {
+		t.Run(sort, func(t *testing.T) {
+			c := New()
+			c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/v2/search" {
+					expectedSort := sort
+					if expectedSort == "" {
+						expectedSort = "downloads"
+					}
+					if r.URL.Query().Get("index") != expectedSort || r.URL.Query().Get("offset") != "12" || r.URL.Query().Get("query") != "permissions" {
+						t.Errorf("incorrect ordering/pagination: %s", r.URL)
+					}
+					want := `[["categories:paper"],["versions:1.21.1"],["server_side:required","server_side:optional"],["project_type:mod","project_type:plugin"],["categories:utility"]]`
+					if r.URL.Query().Get("facets") != want {
+						t.Errorf("compatibility filters lost: %s", r.URL.Query().Get("facets"))
+					}
+					return response(map[string]any{"hits": []Project{{ID: "first", ServerSide: "required"}, {ID: "second", ServerSide: "optional"}}, "total_hits": 30}), nil
+				}
+				id := strings.Split(r.URL.Path, "/")[3]
+				return response([]Version{{ID: "stable", ProjectID: id, Type: "release", Number: "1.0", Loaders: []string{"paper"}, Games: []string{"1.21.1"}}}), nil
+			})
+			page, err := c.SearchPage(context.Background(), "paper", "1.21.1", SearchOptions{Query: "permissions", Sort: sort, Category: "utility", Offset: 12})
+			if err != nil || len(page.Projects) != 2 || page.Projects[0].ID != "first" || page.Projects[1].ID != "second" || !page.HasMore || page.NextOffset != 14 {
+				t.Fatalf("wrong page: %+v %v", page, err)
+			}
+		})
+	}
+}
+func TestInvalidSearchDoesNotContactProvider(t *testing.T) {
+	for _, options := range []SearchOptions{{Sort: "unknown"}, {Category: "paper"}, {Category: "utility OR versions:*"}, {Offset: -1}, {Offset: 10001}, {Query: strings.Repeat("x", 101)}} {
+		c := New()
+		c.HTTP.Transport = roundTrip(func(*http.Request) (*http.Response, error) {
+			t.Error("invalid search reached provider")
+			return nil, fmt.Errorf("unexpected request")
+		})
+		if _, err := c.SearchPage(context.Background(), "paper", "1.21.1", options); !errors.Is(err, ErrInvalidSearch) {
+			t.Fatalf("invalid options accepted: %+v %v", options, err)
+		}
+	}
+}
+func TestCompatibilityCheckFailureIsNotReportedAsEmptyCatalog(t *testing.T) {
+	c := New()
+	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v2/search" {
+			return response(map[string]any{"hits": []Project{{ID: "project", ServerSide: "required"}}, "total_hits": 1}), nil
+		}
+		return nil, fmt.Errorf("provider unavailable")
+	})
+	if _, err := c.Search(context.Background(), "paper", "1.21.1", ""); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("upstream failure hidden", err)
+	}
+}
+func TestResolveNoMatchingReleaseReturnsPublicUnavailableError(t *testing.T) {
+	c := New()
+	c.HTTP.Transport = roundTrip(func(*http.Request) (*http.Response, error) { return response([]Version{}), nil })
+	if _, err := c.Resolve(context.Background(), "project", "paper", "1.21.1"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("incompatible release error changed: %v", err)
 	}
 }

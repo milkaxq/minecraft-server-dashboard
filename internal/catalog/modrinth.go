@@ -12,7 +12,9 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,12 +28,14 @@ func New() *Client {
 }
 
 type Project struct {
-	ID          string `json:"project_id"`
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ServerSide  string `json:"server_side"`
-	IconURL     string `json:"icon_url,omitempty"`
+	ID             string `json:"project_id"`
+	Slug           string `json:"slug"`
+	Title          string `json:"title"`
+	Description    string `json:"description"`
+	ServerSide     string `json:"server_side"`
+	IconURL        string `json:"icon_url,omitempty"`
+	Downloads      int64  `json:"downloads"`
+	ReleaseVersion string `json:"release_version,omitempty"`
 }
 type File struct {
 	URL      string            `json:"url"`
@@ -87,25 +91,115 @@ func (c *Client) get(ctx context.Context, endpoint string, out any) error {
 	}
 	return nil
 }
+
+type SearchOptions struct {
+	Query    string
+	Sort     string
+	Category string
+	Offset   int
+}
+
+var ErrInvalidSearch = errors.New("invalid catalog search options")
+var errNoCompatibleRelease = errors.New("no compatible stable release")
+
+func (o SearchOptions) Validate() error {
+	if len(o.Query) > 100 || o.Offset < 0 || o.Offset > 10000 {
+		return ErrInvalidSearch
+	}
+	switch o.Sort {
+	case "", "downloads", "relevance", "newest", "updated":
+	default:
+		return ErrInvalidSearch
+	}
+	switch o.Category {
+	case "", "adventure", "cursed", "decoration", "economy", "equipment", "food", "game-mechanics", "library", "magic", "management", "minigame", "mobs", "optimization", "social", "storage", "technology", "transportation", "utility", "worldgen":
+	default:
+		return ErrInvalidSearch
+	}
+	return nil
+}
+
+type SearchPage struct {
+	Projects         []Project `json:"projects"`
+	HasMore          bool      `json:"has_more"`
+	NextOffset       int       `json:"next_offset"`
+	Software         string    `json:"software"`
+	MinecraftVersion string    `json:"minecraft_version"`
+}
+
 func (c *Client) Search(ctx context.Context, loader, game, query string) ([]Project, error) {
-	if len(query) > 100 {
-		return nil, ErrUnavailable
+	page, err := c.SearchPage(ctx, loader, game, SearchOptions{Query: query})
+	return page.Projects, err
+}
+
+func (c *Client) SearchPage(ctx context.Context, loader, game string, options SearchOptions) (SearchPage, error) {
+	out := SearchPage{Projects: []Project{}, MinecraftVersion: game, Software: strings.ToUpper(loader)}
+	if err := options.Validate(); err != nil {
+		return out, err
 	}
-	facets, _ := json.Marshal([][]string{{"categories:" + loader}, {"versions:" + game}, {"server_side:required", "server_side:optional"}, {"project_type:mod", "project_type:plugin"}})
-	q := url.Values{"query": {query}, "facets": {string(facets)}, "limit": {"12"}, "index": {"downloads"}}
+	if options.Sort == "" {
+		options.Sort = "downloads"
+	}
+	filters := [][]string{{"categories:" + loader}, {"versions:" + game}, {"server_side:required", "server_side:optional"}, {"project_type:mod", "project_type:plugin"}}
+	if options.Category != "" {
+		filters = append(filters, []string{"categories:" + options.Category})
+	}
+	facets, _ := json.Marshal(filters)
+	q := url.Values{"query": {options.Query}, "facets": {string(facets)}, "limit": {"12"}, "index": {options.Sort}, "offset": {strconv.Itoa(options.Offset)}}
 	var response struct {
-		Hits []Project `json:"hits"`
+		Hits  []Project `json:"hits"`
+		Total int       `json:"total_hits"`
 	}
-	err := c.get(ctx, "search?"+q.Encode(), &response)
-	if response.Hits == nil {
-		response.Hits = []Project{}
+	if err := c.get(ctx, "search?"+q.Encode(), &response); err != nil {
+		return out, err
 	}
-	for i := range response.Hits {
-		if !SafeIconURL(response.Hits[i].IconURL) {
-			response.Hits[i].IconURL = ""
+	if len(response.Hits) > 12 {
+		return out, ErrUnavailable
+	}
+	// Search facets describe a whole project, not one release. Check both
+	// constraints on the same stable release, preserving upstream sort order.
+	versions := make([]Version, len(response.Hits))
+	failures := make([]error, len(response.Hits))
+	slots := make(chan struct{}, 4)
+	var wait sync.WaitGroup
+	for i, project := range response.Hits {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if project.ServerSide != "required" && project.ServerSide != "optional" {
+				failures[i] = errNoCompatibleRelease
+				return
+			}
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				failures[i] = ctx.Err()
+				return
+			}
+			defer func() { <-slots }()
+			versions[i], failures[i] = c.latest(ctx, project.ID, loader, game)
+			if failures[i] == nil && (!identifier.MatchString(versions[i].ID) || versions[i].ProjectID != project.ID) {
+				failures[i] = ErrUnavailable
+			}
+		}()
+	}
+	wait.Wait()
+	for i, project := range response.Hits {
+		if errors.Is(failures[i], errNoCompatibleRelease) {
+			continue
 		}
+		if failures[i] != nil {
+			return out, ErrUnavailable
+		}
+		if !SafeIconURL(project.IconURL) {
+			project.IconURL = ""
+		}
+		project.ReleaseVersion = versions[i].Number
+		out.Projects = append(out.Projects, project)
 	}
-	return response.Hits, err
+	out.NextOffset = options.Offset + len(response.Hits)
+	out.HasMore = len(response.Hits) > 0 && out.NextOffset < response.Total && out.NextOffset <= 10000
+	return out, nil
 }
 func Compatible(v Version, loader, game string) bool {
 	return v.Type == "release" && slices.Contains(v.Loaders, loader) && slices.Contains(v.Games, game)
@@ -126,7 +220,7 @@ func (c *Client) latest(ctx context.Context, project, loader, game string) (Vers
 			return v, nil
 		}
 	}
-	return Version{}, ErrUnavailable
+	return Version{}, errNoCompatibleRelease
 }
 
 // Resolve includes required dependencies only. Bounds prevent dependency cycles and unbounded installs.
