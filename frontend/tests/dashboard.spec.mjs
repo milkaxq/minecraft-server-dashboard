@@ -1803,3 +1803,139 @@ test("offline joining guidance does not assume an authentication plugin is insta
   ).toBeVisible();
   await expect(card.getByText("Whitelist is enabled.", { exact: false })).toBeVisible();
 });
+
+for (const width of [320, 1366]) {
+  test(`admin capacity and failure guidance fit ${width}px`, async ({ page }, testInfo) => {
+    const calls = await mockAPI(page, { isAdmin: true, failedServer: true });
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await page.goto("/admin");
+    await expect(page.getByText("Not enough available capacity", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Retry setup", exact: true }).click();
+    await expect(page.getByRole("dialog")).toContainText("Free capacity or enable another node");
+    await page.getByRole("textbox", { name: "Reason" }).fill("Capacity restored after inspection");
+    await page.getByRole("button", { name: "Confirm action" }).click();
+    const retry = calls.find((c) => c.path.endsWith("/retry") && c.method === "POST");
+    expect(retry.body).toEqual({ reason: "Capacity restored after inspection" });
+    expect(retry.headers["idempotency-key"]).toBeTruthy();
+    await page.getByRole("button", { name: "Nodes", exact: true }).click();
+    const capacity = page.getByRole("region", { name: "Available hosting capacity" });
+    await expect(capacity.getByText("9 more servers", { exact: true })).toBeVisible();
+    await expect(
+      capacity.getByRole("progressbar", { name: "EU node RAM allocated" }),
+    ).toHaveAttribute("value", "2048");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath("capacity.png"), fullPage: true });
+  });
+}
+test("unknown Panel creation outcome requires inspection confirmation before retry", async ({
+  page,
+}) => {
+  await mockAPI(page, { isAdmin: true });
+  await page.route("http://localhost:8080/admin/servers?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          ...baseServer,
+          status: "FAILED",
+          job_error: "panel_create_outcome_unknown",
+          job_status: "FAILED",
+        },
+      ],
+    }),
+  );
+  await login(page);
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Retry setup", exact: true }).click();
+  await page.getByRole("textbox", { name: "Reason" }).fill("Panel operations finished and absent");
+  await expect(page.getByRole("button", { name: "Confirm action" })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await expect(page.getByRole("button", { name: "Confirm action" })).toBeEnabled();
+});
+test("disabled and full nodes do not advertise capacity for new servers", async ({ page }) => {
+  await mockAPI(page, { isAdmin: true });
+  await page.route("http://localhost:8080/admin/nodes", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "disabled",
+          name: "Disabled node",
+          enabled: false,
+          ram_capacity_mb: 20480,
+          disk_capacity_mb: 102400,
+          cpu_capacity: 1000,
+          allocated_ram_mb: 0,
+          allocated_disk_mb: 0,
+          allocated_cpu: 0,
+        },
+        {
+          id: "full",
+          name: "Full node",
+          enabled: true,
+          ram_capacity_mb: 20480,
+          disk_capacity_mb: 102400,
+          cpu_capacity: 1000,
+          allocated_ram_mb: 20480,
+          allocated_disk_mb: 0,
+          allocated_cpu: 0,
+        },
+      ],
+    }),
+  );
+  await login(page);
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Nodes", exact: true }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "Available hosting capacity" })
+      .getByText("0 more servers", { exact: true }),
+  ).toHaveCount(2);
+});
+test("catalog displays safe project icons and recovers from failed images", async ({
+  page,
+}, testInfo) => {
+  await mockAPI(page);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.route("http://localhost:8080/servers/*/plugins/catalog?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          project_id: "viaversion",
+          title: "ViaVersion",
+          description: "Version compatibility",
+          icon_url: "https://cdn.modrinth.com/data/test/icon.png",
+        },
+        {
+          project_id: "unsafe",
+          title: "Unsafe image",
+          description: "Fallback",
+          icon_url: "https://example.com/tracker.png",
+        },
+        { project_id: "missing", title: "No image", description: "Fallback" },
+      ],
+    }),
+  );
+  await page.route("https://cdn.modrinth.com/data/test/icon.png", (route) =>
+    route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNwmRn6HwAEiQIyWIHUyQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    }),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await page.getByRole("button", { name: "Search Modrinth" }).click();
+  const icons = page.locator(".project-icon");
+  await expect(icons).toHaveCount(3);
+  await expect(icons.locator("img")).toHaveCount(1);
+  await expect(icons.locator("svg")).toHaveCount(2);
+  await icons.locator("img").evaluate((img) => img.dispatchEvent(new Event("error")));
+  await expect(icons.locator("img")).toHaveCount(0);
+  await expect(icons.locator("svg")).toHaveCount(3);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("plugin-images.png"), fullPage: true });
+});

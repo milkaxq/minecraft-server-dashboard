@@ -31,6 +31,7 @@ type Project struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	ServerSide  string `json:"server_side"`
+	IconURL     string `json:"icon_url,omitempty"`
 }
 type File struct {
 	URL      string            `json:"url"`
@@ -98,6 +99,11 @@ func (c *Client) Search(ctx context.Context, loader, game, query string) ([]Proj
 	err := c.get(ctx, "search?"+q.Encode(), &response)
 	if response.Hits == nil {
 		response.Hits = []Project{}
+	}
+	for i := range response.Hits {
+		if !SafeIconURL(response.Hits[i].IconURL) {
+			response.Hits[i].IconURL = ""
+		}
 	}
 	return response.Hits, err
 }
@@ -236,4 +242,17 @@ func (c *Client) Download(ctx context.Context, p Package) ([]byte, error) {
 		return nil, ErrUnavailable
 	}
 	return data, nil
+}
+
+// SafeIconURL limits browser image requests to Modrinth's image CDN.
+func SafeIconURL(raw string) bool {
+	if len(raw) > 2048 {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host != "cdn.modrinth.com" || u.User != nil || u.Fragment != "" {
+		return false
+	}
+	path := strings.ToLower(u.Path)
+	return strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".webp") || strings.HasSuffix(path, ".gif")
 }

@@ -1,4 +1,5 @@
 "use client";
+import { JobHelp, NodeCapacity } from "./admin-health";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -25,6 +26,10 @@ export function Admin() {
     account.data?.is_admin
       ? `/admin/${tab}${["users", "servers", "orders", "audit", "feedback"].includes(tab) ? `?offset=${offset}` : ""}`
       : null,
+    10000,
+  );
+  const capacityPlans = useResource(
+    account.data?.is_admin && tab === "nodes" ? "/admin/plans" : null,
     10000,
   );
   const [edit, setEdit] = useState(null);
@@ -78,7 +83,7 @@ export function Admin() {
         title="Admin workspace."
         description="Plans, customers, capacity and audited server actions."
       />
-      <ErrorMessage error={account.error || resource.error || error} />
+      <ErrorMessage error={account.error || resource.error || capacityPlans.error || error} />
       {notice && (
         <p className="notice success" role="status">
           {notice}
@@ -232,6 +237,9 @@ export function Admin() {
             </section>
           ) : (
             <section className="panel management-panel">
+              {tab === "nodes" && resource.data && (
+                <NodeCapacity nodes={rows} plans={capacityPlans.data} />
+              )}
               {resource.loading ? (
                 <Loading />
               ) : !rows.length ? (
@@ -314,7 +322,7 @@ export function Admin() {
                                 </td>
                                 <td>
                                   {s.job_action ? `${s.job_action} · ${s.job_status}` : "—"}
-                                  {s.job_error && <small>{s.job_error}</small>}
+                                  <JobHelp server={s} />
                                 </td>
                                 <td>
                                   <div className="row-actions">
@@ -562,6 +570,7 @@ function LifecycleDialog({ action, busy, error, onCancel, onConfirm }) {
     >
       <h2>{title}</h2>
       <p>{action.server.name}</p>
+      {action.kind === "retry" && <JobHelp server={action.server} />}
       {action.kind === "terminate" && (
         <p>
           This deletes the Minecraft container and all server data. The subscription ends
@@ -612,7 +621,13 @@ function LifecycleDialog({ action, busy, error, onCancel, onConfirm }) {
           </button>
           <button
             className={`button ${action.kind === "terminate" ? "danger" : "primary"}`}
-            disabled={busy || reason.trim().length < 3}
+            disabled={
+              busy ||
+              reason.trim().length < 3 ||
+              (action.kind === "retry" &&
+                action.server.job_error === "panel_create_outcome_unknown" &&
+                !recovery)
+            }
           >
             {busy ? "Queuing…" : "Confirm action"}
           </button>

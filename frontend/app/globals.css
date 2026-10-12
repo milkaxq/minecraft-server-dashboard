@@ -3853,3 +3853,71 @@ textarea {
     width: 100%;
   }
 }
+
+.catalog-project {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+.catalog-project > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #eef3eb;
+  color: #637066;
+}
+.project-icon img {
+  object-fit: contain;
+}
+.capacity-overview {
+  margin-bottom: 28px;
+}
+.capacity-overview > p,
+.capacity-card > p,
+.job-help p {
+  line-height: 1.6;
+  color: #637066;
+}
+.capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+.capacity-card {
+  padding: 20px;
+  border: 1px solid #dce5dc;
+  border-radius: 12px;
+}
+.capacity-resource {
+  margin-block: 14px;
+}
+.capacity-resource span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.capacity-resource progress {
+  width: 100%;
+  accent-color: #4c9a5f;
+}
+.job-help {
+  max-width: 340px;
+  min-width: 180px;
+  white-space: normal;
+}
+.job-help summary {
+  cursor: pointer;
+  padding-block: 8px;
+}
+.job-help code {
+  overflow-wrap: anywhere;
+}

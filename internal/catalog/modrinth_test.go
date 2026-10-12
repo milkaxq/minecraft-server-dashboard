@@ -102,3 +102,26 @@ func TestSearchExcludesPacksAndClientOnlyProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSearchSanitizesProjectIcons(t *testing.T) {
+	urls := []string{"https://cdn.modrinth.com/data/icon.png", "https://cdn.modrinth.com/icon.webp", "http://cdn.modrinth.com/icon.png", "https://cdn.modrinth.com.evil.test/icon.png", "https://127.0.0.1/icon.png", "https://user@cdn.modrinth.com/icon.png", "https://cdn.modrinth.com:443/icon.png", "https://cdn.modrinth.com/icon.svg", "data:image/png;base64,test", "", "https://cdn.modrinth.com/icon.png#fragment"}
+	hits := make([]Project, len(urls))
+	for i, raw := range urls {
+		hits[i] = Project{ID: "project", Title: "Example", IconURL: raw}
+	}
+	c := New()
+	c.HTTP.Transport = roundTrip(func(*http.Request) (*http.Response, error) { return response(map[string]any{"hits": hits}), nil })
+	projects, err := c.Search(context.Background(), "paper", "1.21.1", "")
+	if err != nil || len(projects) != len(urls) {
+		t.Fatalf("search failed: %v", err)
+	}
+	for i, p := range projects {
+		expected := ""
+		if i < 2 {
+			expected = urls[i]
+		}
+		if p.IconURL != expected || p.Title != "Example" {
+			t.Fatalf("unsafe or missing icon at %d: %q", i, p.IconURL)
+		}
+	}
+}

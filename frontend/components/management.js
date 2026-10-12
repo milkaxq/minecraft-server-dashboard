@@ -1,4 +1,5 @@
 "use client";
+import { ProjectIcon } from "./project-icon";
 import { supportsPlugins, supportsMods } from "../lib/software";
 import { Players } from "./players";
 import Link from "next/link";
@@ -908,17 +909,20 @@ function CatalogBrowser({ id, collection, offline, onInstalled }) {
         <ul className="plugin-list">
           {results.map((project) => (
             <li key={project.project_id}>
-              <span>
-                <strong>{project.title}</strong>
-                <small>{project.description}</small>
-                <a
-                  href={`https://modrinth.com/project/${encodeURIComponent(project.project_id)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Project details
-                </a>
-              </span>
+              <div className="catalog-project">
+                <ProjectIcon project={project} />
+                <span>
+                  <strong>{project.title}</strong>
+                  <small>{project.description}</small>
+                  <a
+                    href={`https://modrinth.com/project/${encodeURIComponent(project.project_id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Project details
+                  </a>
+                </span>
+              </div>
               <button
                 className="button"
                 disabled={action.busy}
