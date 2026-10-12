@@ -8,7 +8,7 @@ Use the exact username allowed by the host. Connect to the server in Minecraft J
 
 On your first visit, complete the AuthMe registration dialog, or enter `/register yourPassword yourPassword` in Minecraft. On later visits, use the login dialog or `/login yourPassword`. Use a unique password of at least 10 characters; never reuse your Microsoft or hosting-dashboard password. Do not send passwords in dashboard support tickets or the web console.
 
-Both Microsoft-account players and offline-account players use this server password in this configuration. It does not automatically link or validate Microsoft identities. An SKlauncher website account is also separate from a Microsoft Minecraft account.
+Offline players use this server password. Microsoft-account owners register and log in once, then run `/premium` in Minecraft to opt in to verified auto-login. On subsequent connections, AuthMe and PacketEvents verify the Minecraft session before skipping the password. Use Microsoft login in the launcher; an offline session cannot authenticate an enrolled premium account. Use `/freemium` while authenticated to opt out. Merely using the official launcher or matching a username does not prove ownership. An SKlauncher website account is also separate from a Microsoft Minecraft account.
 
 Servers without a separate login plugin normally use `online-mode=true` and require Microsoft Minecraft authentication. SKlauncher supports both Microsoft and offline login, but an offline session cannot join an online-mode server. If Microsoft login reports an invalid session, sign out of the launcher account and sign back in before launching Minecraft again.
 
@@ -18,12 +18,12 @@ Official launcher guide: https://docs.skmedix.pl/getting-started/login
 
 The existing Paper 26.3 Private Beta server uses:
 
-- AuthMe 6.0.1 Paper and PacketEvents 2.14.0 for its inventory protection hook.
+- AuthMe 6.0.1 Paper and PacketEvents 2.14.0 for inventory protection and cryptographically verified Minecraft-session login.
 - Server-local SQLite for AuthMe accounts, kept inside the isolated Minecraft container.
 - BCrypt passwords, minimum length 10, maximum length 64.
 - Forced registration/login; unauthenticated movement and chat blocked.
 - AuthMe IP-based login sessions disabled.
-- AuthMe automatic premium login disabled; all players authenticate explicitly.
+- AuthMe premium mode enabled; each Microsoft-account owner must opt in with `/premium` after password authentication. IP sessions remain disabled.
 - Shutdown on AuthMe database failure enabled.
 - `online-mode=false`, `enforce-secure-profile=false`, whitelist enabled.
 
@@ -34,3 +34,5 @@ This is an explicit configuration of this server, not the default for newly prov
 AuthMe documentation: https://github.com/AuthMe/AuthMeReloaded/tree/master/docs
 
 PacketEvents release: https://github.com/retrooper/packetevents/releases/tag/v2.14.0
+
+Premium setup and verification: https://github.com/AuthMe/AuthMeReloaded/blob/master/docs/premium.md

@@ -963,6 +963,8 @@ test("guide explains software ecosystems and custom code", async ({ page }) => {
     page.getByRole("button", { name: "New blocks, machines or a modpack" }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("NeoForge", { exact: true })).toBeVisible();
+  await expect(page.getByText("/premium", { exact: true })).toBeVisible();
+  await expect(page.getByText(/future visits skip the server password/)).toBeVisible();
   await page.getByText("Can I write my own plugin or mod?", { exact: true }).click();
   await expect(page.getByText(/build a .jar with the correct plugin descriptor/)).toBeVisible();
 });

@@ -7,7 +7,7 @@
   --green-dark: #306b41;
   --sidebar: #182b23;
   --white: #fff;
-  --radius: 13px;
+  --radius: 16px;
 }
 * {
   box-sizing: border-box;
@@ -364,15 +364,16 @@ hr {
   justify-content: center;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 10px 15px;
+  border-radius: 10px;
+  padding: 12px 20px;
   min-height: 44px;
   white-space: nowrap;
   font-size: 14px;
   font-weight: 550;
   transition:
     background 0.15s,
-    box-shadow 0.15s;
+    box-shadow 0.15s,
+    border-color 0.15s;
 }
 .button.primary {
   background: var(--green);
@@ -2442,8 +2443,8 @@ progress::-moz-progress-bar {
   border-color: #327d49;
 }
 .management-panel {
-  padding: 26px;
-  margin-bottom: 22px;
+  padding: 28px;
+  margin-bottom: 24px;
 }
 .file-actions,
 .row-actions {
@@ -2473,7 +2474,8 @@ progress::-moz-progress-bar {
   color: #478052;
   font-size: 12px;
   cursor: pointer;
-  padding: 5px 0;
+  padding: 10px 14px;
+  border-radius: 8px;
 }
 .row-actions button:disabled,
 .file-path button:disabled {
@@ -2501,7 +2503,7 @@ progress::-moz-progress-bar {
   padding: 16px 10px;
 }
 .management-table td {
-  padding: 15px 10px;
+  padding: 18px 12px;
   border-top: 1px solid #e8eee6;
   vertical-align: middle;
 }
@@ -3656,5 +3658,54 @@ body:has(.mobile-navigation[open]) {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
+  }
+}
+
+/* Shared surfaces and controls keep the same rhythm across server pages. */
+.panel,
+.summary-card {
+  box-shadow: 0 4px 20px #182b2306;
+}
+.row-actions button:not(.button):hover:not(:disabled),
+.file-path button:hover:not(:disabled) {
+  background: #edf2e9;
+}
+.management-panel > h2 + p,
+.management-panel > p + p {
+  margin-top: 12px;
+}
+.management-panel > p + .file-actions,
+.management-panel > .file-actions + .table-scroll {
+  margin-top: 20px;
+}
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-radius: 10px;
+}
+textarea {
+  font: inherit;
+}
+.setting-toggle input {
+  min-height: 20px;
+  flex-shrink: 0;
+}
+.guide-content p {
+  max-width: 76ch;
+}
+@media (max-width: 600px) {
+  .management-panel {
+    padding: 20px;
+  }
+  .row-actions {
+    gap: 8px;
+  }
+  .row-actions button:not(.button),
+  .file-path button {
+    padding-inline: 12px;
+  }
+  .management-table th,
+  .management-table td {
+    padding-inline: 12px;
   }
 }

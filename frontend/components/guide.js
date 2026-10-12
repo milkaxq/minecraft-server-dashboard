@@ -151,6 +151,14 @@ export function Guide() {
             username.
           </p>
           <p>
+            Have a Microsoft account that owns Java Edition? On our Private Beta server, register
+            and sign in once, then run <code>/premium</code> in Minecraft to enable verified
+            auto-login. Reconnect using Microsoft login: future visits skip the server password
+            after your Minecraft session is verified. Offline accounts still use the server
+            password. To return to password login, use <code>/freemium</code> while signed in. This
+            feature needs AuthMe premium mode and PacketEvents enabled by the host.
+          </p>
+          <p>
             Hosts: install and verify the login plugin before disabling Minecraft account
             verification. Keep backups before switching modes: Minecraft player identities can
             change, which affects inventories, permissions and whitelists. AuthMe is a Paper plugin;
