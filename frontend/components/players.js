@@ -81,7 +81,7 @@ export function Players({ id, running }) {
         <>
           <section className="panel management-panel">
             <div className="section-heading">
-              <div>
+              <div className="whitelist-intro">
                 <h2>Who can join?</h2>
                 <p className="field-help">
                   Keep your world private with a list of allowed Minecraft usernames.

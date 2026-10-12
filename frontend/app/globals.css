@@ -3671,6 +3671,13 @@ body:has(.mobile-navigation[open]) {
 .whitelist-add .field {
   flex: 1;
   min-width: 0;
+  margin-bottom: 0;
+}
+.section-heading > .whitelist-intro {
+  display: block;
+}
+.whitelist-intro .field-help {
+  margin-top: 8px;
 }
 .whitelist-status {
   display: flex;
