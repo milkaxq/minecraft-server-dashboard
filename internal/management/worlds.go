@@ -161,6 +161,9 @@ func (s *Service) WorldBackup(ctx context.Context, user, id, key uuid.UUID, rid 
 		if unresolved {
 			return nil, control.ErrBusy
 		}
+		if err := scheduledBackupGuard(ctx, t); err != nil {
+			return nil, err
+		}
 		list, err := s.Panel.ListBackups(ctx, t.Identifier)
 		if err != nil {
 			return nil, err

@@ -44,6 +44,9 @@ func (s *Service) NewBackup(ctx context.Context, user, id, key uuid.UUID, name, 
 		if ambiguous {
 			return nil, control.ErrBusy
 		}
+		if err := scheduledBackupGuard(ctx, t); err != nil {
+			return nil, err
+		}
 		list, err := s.Panel.ListBackups(ctx, t.Identifier)
 		if err != nil {
 			return nil, err
@@ -118,4 +121,19 @@ func (s *Service) BackupDownload(ctx context.Context, user, id uuid.UUID, backup
 		return nil, 0, control.ErrUnavailable
 	}
 	return r, int64(t.DiskMB) * 1048576 * 2, nil
+}
+
+// A durable but unresolved scheduler mutation may already occupy a Panel slot.
+// This check runs under the shared management server lock before creation.
+func scheduledBackupGuard(ctx context.Context, t Target) error {
+	var blocked bool
+	err := t.q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM backup_runs WHERE server_id=$1 AND status='NEEDS_INSPECTION')
+ OR EXISTS(SELECT 1 FROM backup_intents i JOIN backup_runs r ON r.id=i.run_id WHERE r.server_id=$1 AND i.status<>'CONFIRMED')`, t.ID).Scan(&blocked)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		return control.ErrBusy
+	}
+	return nil
 }
