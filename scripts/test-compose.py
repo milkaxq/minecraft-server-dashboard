@@ -37,6 +37,24 @@ class ComposeTests(unittest.TestCase):
         ]
         result = subprocess.run(command, cwd=ROOT, env=environment, capture_output=True, check=True)
         cls.services = json.loads(result.stdout)["services"]
+        vps_command = command.copy()
+        vps_command[8:8] = ["-f", "docker-compose.vps.yml"]
+        result = subprocess.run(vps_command, cwd=ROOT, env=environment, capture_output=True, check=True)
+        cls.vps_services = json.loads(result.stdout)["services"]
+
+    def test_vps_database_tls_and_private_ports(self):
+        for name in ["postgres", "redis", "panel-database", "panel-cache"]:
+            self.assertFalse(self.vps_services[name].get("ports"), name)
+        postgres = self.vps_services["postgres"]
+        self.assertIn("ssl=on", postgres["command"])
+        self.assertIn("hba_file=/etc/postgresql/pg_hba.conf", postgres["command"])
+        for name in ["backend", "worker", "migrate"]:
+            mounts = self.vps_services[name]["volumes"]
+            ca = next(m for m in mounts if m["target"] == "/etc/hosting/ca.crt")
+            self.assertTrue(ca["read_only"])
+        for name in ["backend", "frontend", "panel"]:
+            for port in self.vps_services[name].get("ports", []):
+                self.assertEqual(port["host_ip"], "127.0.0.1", name)
 
     def test_only_wings_has_host_privileges(self):
         for name, service in self.services.items():

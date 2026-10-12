@@ -1,0 +1,23 @@
+# VPS overlay; PostgreSQL certificates are generated privately on the host.
+services:
+  postgres:
+    ports: !reset []
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/etc/postgresql/tls/server.crt", "-c", "ssl_key_file=/etc/postgresql/tls/server.key", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    volumes:
+      - ./.local/postgres-tls:/etc/postgresql/tls:ro
+      - ./deploy/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    restart: unless-stopped
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+  migrate:
+    volumes:
+      - ./.local/postgres-tls/ca.crt:/etc/hosting/ca.crt:ro
+  backend:
+    volumes:
+      - ./.local/postgres-tls/ca.crt:/etc/hosting/ca.crt:ro
+  worker:
+    volumes:
+      - ./.local/postgres-tls/ca.crt:/etc/hosting/ca.crt:ro
+  frontend:
+    restart: unless-stopped

@@ -1,0 +1,83 @@
+# PlayBlockyard private-beta deployment
+
+The VPS uses Ubuntu 24.04, rootful Docker, and host-installed Caddy. The
+customer dashboard and API share `https://app.playblockyard.com`; Caddy strips
+the `/api` prefix before forwarding requests to Go. Panel and Wings use
+`panel.playblockyard.com` and `node.playblockyard.com`. Minecraft connections
+use `play.playblockyard.com` with the allocated game port. DNS records are
+DNS-only A records. The root domain is not configured as a website yet.
+
+When transferring an archive from macOS, use `COPYFILE_DISABLE=1 tar ...`
+to omit AppleDouble metadata. Files named `._*.sql` must not be included in
+migration directories; Docker also excludes these metadata files explicitly.
+
+`deploy/Caddyfile` provides the HTTPS routes. Docker publishes application and
+Panel ports on loopback only. The VPS overlay removes PostgreSQL and Redis
+published ports entirely. Only the trusted Wings service may access Docker and
+the game-server filesystem, as in the existing Wings configuration.
+
+Use these Compose files in this order from `/opt/blockyard`:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.pterodactyl.yml \
+  -f docker-compose.vps.yml --profile frontend --profile pterodactyl config --quiet
+```
+
+Add `-f docker-compose.wings.yml --profile wings` only after creating the full
+private Wings configuration and its host directories. Never use
+`--remove-orphans`: Wings manages sibling game containers independently.
+
+## Secrets and database TLS
+
+The server has its own mode-600 `.env`; do not copy development accounts,
+tokens, or databases to the VPS. Use `APP_ENV=production`, invite-only
+registration, disabled payments, and an HTTPS frontend origin. Build the
+frontend with `NEXT_PUBLIC_API_URL=https://app.playblockyard.com/api`.
+
+Generate a private PostgreSQL CA and server certificate with `DNS:postgres`
+in its subject alternative names. Store them in `.local/postgres-tls` on the
+VPS. The server key must be mode 600 and owned by the image's PostgreSQL UID;
+the CA and server certificates must be readable by the application containers.
+Use `sslmode=verify-full&sslrootcert=/etc/hosting/ca.crt` in `DATABASE_URL`.
+The CA certificate is mounted read-only into API, worker and migration
+containers. Keep the CA signing key private and renew the server certificate
+before its expiry. The mounted `pg_hba.conf` rejects plaintext TCP connections
+and requires SCRAM authentication over TLS. Local Unix-socket access stays
+available inside the trusted database container for initialization and operations.
+
+## Email is a launch prerequisite
+
+Create a transactional email provider account, authenticate the sending domain
+with its exact DNS records, and configure implicit-TLS SMTP, usually port 465:
+
+```dotenv
+SMTP_ADDRESS=smtp-relay.brevo.com:465
+SMTP_USERNAME=provider-issued-smtp-login
+SMTP_PASSWORD=provider-issued-smtp-key
+SMTP_FROM=accounts@playblockyard.com
+```
+
+Enter credentials privately on the VPS, never in chat or tracked files. Provider
+account approval and domain authentication must succeed before testing delivery.
+SMTP sends mail; it does not create a receiving mailbox for the sender address.
+
+The API deliberately refuses production startup without SMTP configuration.
+Do not switch to development mode or configure fictional credentials to bypass
+this requirement. After real delivery works, bootstrap the first administrator
+using [PRIVATE_BETA.md](PRIVATE_BETA.md).
+
+## Remaining launch checks
+
+Initialize Panel migrations and an administrator, issue separate Application,
+Client and installation-receipt tokens, configure Wings, and register capacity
+with OS/control-plane headroom. Keep the existing reviewed Panel revision pinned.
+Before inviting users, verify HTTPS cookie persistence, verification/recovery
+emails, provisioning, console, uploads/backups and an external Minecraft join.
+Configure off-host backups and test restoration. See
+[LAUNCH_READINESS.md](LAUNCH_READINESS.md) for the complete checklist.
+
+SSH password authentication is disabled after verifying key-based access.
+Retain the matching private key and provider-console access. UFW allows SSH and
+HTTP/HTTPS; game and SFTP ports are opened when their services are configured.
+Docker-published game ports also require review of Docker's forwarding rules;
+UFW alone does not reliably restrict published container ports.
