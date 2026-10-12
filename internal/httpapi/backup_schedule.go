@@ -7,12 +7,13 @@ import (
 
 	"minecraft-hosting/internal/backups"
 	"minecraft-hosting/internal/control"
+	"minecraft-hosting/internal/server"
 )
 
 func (a *API) backupScheduleID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		a.fail(w, r, err)
+		a.fail(w, r, server.ErrInvalid)
 		return uuid.Nil, false
 	}
 	if a.BackupSchedules == nil {

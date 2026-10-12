@@ -287,3 +287,88 @@ For the invited-beta and production prerequisites, see [launch readiness](docs/L
 Private beta setup and invitation management: [PRIVATE_BETA.md](docs/PRIVATE_BETA.md).
 
 Tester checklist and private feedback/review workflow: [BETA_TESTING.md](docs/BETA_TESTING.md).
+
+## Daily automatic backups
+
+Server owners can configure a daily local time and IANA timezone on **Servers →
+Backups**. Admin members can read the schedule; moderators cannot access backups.
+Schedules start off, including for existing servers. A plan needs at least two
+backup slots: one protects the latest successful copy while its replacement is
+created. The next run, last successful completion, recent runs and controlled
+warnings appear on the same page. A returned backup UUID means creation was
+accepted, not that the backup succeeded.
+
+Apply migration `014_backup_schedules.sql` with the normal migration command.
+To enable the scheduler, create a **separate Pterodactyl Client API token** for a
+Panel account with backup access to the managed servers, store it privately as
+`PTERODACTYL_BACKUP_CLIENT_API_KEY` in the worker's environment, and set
+`BACKUP_SCHEDULER_ENABLED=true` for both backend and worker. Compose forwards the
+flag to both services and the backup token only to the worker. Restart those
+services after configuration. Application and installation-verification tokens
+are not used as fallback backup credentials. An enabled worker without the
+explicit Client credential fails startup. Leave the flag false when that
+credential is not yet configured; the dashboard then prevents enabling a new
+schedule. Never put API keys in frontend settings or Git.
+
+The worker polls every 15 seconds, uses PostgreSQL leased runs and the same
+per-server advisory lock as manual backup operations, and rechecks ownership,
+subscription/lifecycle eligibility, server identity and purchased allowance before
+remote mutation. Three attempts are allowed for failures before remote mutation,
+with 30- and 120-second retry delays. Completion polls do not consume these
+attempts. A worker restart resumes the recorded UUID rather than creating another
+backup. Multiple workers cannot create the same scheduled run twice.
+
+A skipped daylight saving time uses the first valid local minute after the chosen
+time; a repeated hour uses its earlier occurrence once. Downtime produces at
+most one catch-up run per server, then advances to the next future daily time.
+Changing or disabling a schedule prevents new requests under its old revision;
+a backup already sent is still monitored. Suspension and pending lifecycle work
+prevent new creation or rotation. Backups do not stop the server or run console
+commands. Stop it yourself if you need a consistent world snapshot; an online
+backup cannot guarantee consistency for every plugin or external database.
+
+Manual backups are never automatically deleted. Rotation uses recorded backup
+UUIDs and Panel server identity, never backup names. Scheduled copies are created
+unlocked so older eligible copies can be rotated; a customer/operator lock makes
+a copy ineligible. The automatic delete adapter never unlocks it. In-progress
+copies and the latest successful automatic copy are protected. If the purchased
+allowance is full and no safe older copy exists, the run is skipped with a capacity
+warning. An unsuccessful replacement does not erase the previous success. Manual
+restore still requires explicit confirmation and a stopped server.
+
+### Inspecting uncertain backup outcomes
+
+A lost or malformed create/delete response may mean Panel already performed the
+operation. The durable intent therefore blocks new scheduled and manual backup
+creation until the outcome is established. The dashboard shows **Needs
+inspection**; do not repeatedly retry, delete intent records, or rely on a name
+starting with “Daily backup” as proof of ownership.
+
+For trusted operator recovery:
+
+1. Disable that server's schedule, then stop the worker before repairing run or
+   intent records. Stopping the worker also pauses provisioning/subscription
+   reconciliation; restart it promptly after inspection. Disabling alone still
+   monitors requests that have already been sent.
+2. Inspect that server's `backup_runs`, `backup_intents` and automation audit
+   entries through a private database connection. Compare the application server
+   UUID, Panel identifier, operation/run IDs and any recorded backup UUID with
+   Panel's backup list and authoritative operator evidence.
+3. For an uncertain deletion, absence of its recorded UUID establishes deletion;
+   presence does not justify retrying it or removing a customer lock. For an
+   uncertain creation without a recorded UUID, a matching name is insufficient.
+   Keep it blocked unless the specific object or the absence of any created
+   object can be established authoritatively. Do not use this uncertainty to
+   grant deletion rights over a manual backup.
+4. With workers stopped, perform any verified repair in one PostgreSQL transaction
+   and record an audit entry including the run/operation IDs and the evidence for
+   the decision. A verified existing UUID can resume as `CREATING` with its create
+   intent `CONFIRMED`; only a completed successful Panel backup becomes
+   `COMPLETED`. A verified non-creation can terminate as `FAILED` with confirmed
+   intent. Preserve run history and last-success; never mark an accepted request
+   successful merely to clear a warning.
+5. Restart the worker and review the schedule/run status before enabling it again.
+
+Logs identify run/server UUIDs and controlled outcome codes. They do not contain
+Panel response bodies or tokens. No live world, EULA acceptance or restore is
+created automatically as part of deployment verification.

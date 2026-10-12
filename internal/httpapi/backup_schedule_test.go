@@ -70,4 +70,12 @@ func TestBackupScheduleHTTP(t *testing.T) {
 	if w := call("PUT", tokens[owner], body, false); w.Code != 409 {
 		t.Fatalf("stale revision: %d %s", w.Code, w.Body.String())
 	}
+	r := httptest.NewRequest("GET", "/servers/not-a-uuid/backup-schedule", nil)
+	r.Header.Set("Authorization", "Bearer "+tokens[owner])
+	bad := httptest.NewRecorder()
+	h.ServeHTTP(bad, r)
+	if bad.Code != 400 {
+		t.Fatalf("malformed server ID: %d %s", bad.Code, bad.Body.String())
+	}
+
 }
