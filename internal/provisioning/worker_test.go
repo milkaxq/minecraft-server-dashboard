@@ -112,7 +112,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	panel := &faultPanel{Mock: pterodactyl.NewMock()}
-	return &fixture{db: db, panel: panel, worker: &Worker{DB: db, Panel: panel, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, queue: jobs.Service{DB: db}, owner: owner, admin: admin, node: node}
+	return &fixture{db: db, panel: panel, worker: &Worker{DB: db, Panel: panel, Verifier: acceptInstallation{}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, queue: jobs.Service{DB: db}, owner: owner, admin: admin, node: node}
 }
 func (f *fixture) create(t *testing.T) server.Server {
 	t.Helper()

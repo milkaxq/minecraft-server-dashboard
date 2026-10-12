@@ -59,6 +59,7 @@ def main():
     parser.add_argument("--panel-url", required=True)
     parser.add_argument("--output", type=Path, default=Path(".local/software-config"))
     parser.add_argument("--update-reviewed", action="store_true", help="replace an existing project egg with the reviewed checked-in configuration")
+    parser.add_argument("--software", action="append", choices=["paper", "vanilla", "spigot", "purpur", "fabric", "forge", "neoforge"], help="import only selected software; may be repeated")
     args = parser.parse_args()
     key = os.environ.get("PTERODACTYL_ADMIN_API_KEY")
     if not key:
@@ -68,6 +69,8 @@ def main():
     source_root = Path(__file__).resolve().parent.parent / "deploy/pterodactyl"
     args.output.mkdir(parents=True, exist_ok=True)
     for source in sorted((source_root / "eggs").glob("*.json")):
+        if args.software and source.stem not in args.software:
+            continue
         egg = json.loads(source.read_text())
         matches = [item for item in existing if item["name"] == egg["name"]]
         if len(matches) > 1:

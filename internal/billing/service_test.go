@@ -31,6 +31,14 @@ type fixture struct {
 	input                     server.CreateInput
 }
 
+// Billing tests simulate an already verified installation; provisioning tests
+// exercise the real receipt and starter bundle checks.
+type verifiedBillingInstall struct{}
+
+func (verifiedBillingInstall) VerifyInstallation(context.Context, string, string, string, map[string]string) error {
+	return nil
+}
+
 func setup(t *testing.T) fixture {
 	t.Helper()
 	ctx := context.Background()
@@ -55,7 +63,7 @@ func setup(t *testing.T) fixture {
 	f.provider, _ = NewMock("test-only-payment-secret-at-least-32-characters")
 	f.s = &Service{DB: db, Provider: f.provider}
 	f.panel = pterodactyl.NewMock()
-	f.worker = &provisioning.Worker{DB: db, Panel: f.panel, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	f.worker = &provisioning.Worker{DB: db, Panel: f.panel, Verifier: verifiedBillingInstall{}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	return f
 }
 func (f fixture) purchase(t *testing.T) Order {

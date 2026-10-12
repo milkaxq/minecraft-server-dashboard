@@ -123,6 +123,12 @@ export function Guide() {
               address from Overview.
             </li>
             <li>
+              New Paper and Purpur servers include AuthMe, ViaVersion and PacketEvents. Their
+              whitelist is on: open Players and add yourself and your friends before joining.
+              Offline players use a server password; Microsoft-account owners can enable verified
+              auto-login with <code>/premium</code> after registering and logging in once.
+            </li>
+            <li>
               In Minecraft Java Edition, open Multiplayer → Add Server and paste the address,
               including the port. Use the matching Minecraft version.
             </li>
@@ -145,9 +151,9 @@ export function Guide() {
             game again.
           </p>
           <p>
-            Some Paper servers use AuthMe for separate server accounts. Both Microsoft and offline
-            players can connect when the host has configured this mode. After joining in Minecraft,
-            follow the registration dialog on your first visit, or use{" "}
+            Our new Paper and Purpur servers use AuthMe for separate server accounts. Both Microsoft
+            and offline players can connect when the host has configured this mode. After joining in
+            Minecraft, follow the registration dialog on your first visit, or use{" "}
             <code>/register yourPassword yourPassword</code>. On later visits, use the login dialog
             or <code>/login yourPassword</code>.
           </p>
@@ -158,10 +164,10 @@ export function Guide() {
             username.
           </p>
           <p>
-            Have a Microsoft account that owns Java Edition? On our Private Beta server, register
-            and sign in once, then run <code>/premium</code> in Minecraft to enable verified
-            auto-login. Reconnect using Microsoft login: future visits skip the server password
-            after your Minecraft session is verified. Offline accounts still use the server
+            Have a Microsoft account that owns Java Edition? On an AuthMe-enabled Blockyard server,
+            register and sign in once, then run <code>/premium</code> in Minecraft to enable
+            verified auto-login. Reconnect using Microsoft login: future visits skip the server
+            password after your Minecraft session is verified. Offline accounts still use the server
             password. To return to password login, use <code>/freemium</code> while signed in. This
             feature needs AuthMe premium mode and PacketEvents enabled by the host.
           </p>

@@ -4,7 +4,9 @@ services:
   minecraft-installer:
     profiles: ["installers"]
     image: blockyard/minecraft-installer:java21
-    build: ./deploy/pterodactyl/installer
+    build:
+      context: .
+      dockerfile: deploy/pterodactyl/installer/Dockerfile
     entrypoint: ["/bin/true"]
     restart: "no"
   panel-database:

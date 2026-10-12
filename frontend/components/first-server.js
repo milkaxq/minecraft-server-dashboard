@@ -38,7 +38,7 @@ export function FirstServerChecklist({
     {
       done: addressCopied,
       title: "Copy the address and join",
-      text: `In Minecraft Java ${server.minecraft_version}, choose Multiplayer → Add Server. ${supportsMods(server.server_type) ? `Use ${softwareName(server.server_type)} with the matching loader and required mods.` : "A normal Minecraft Java client is enough."}`,
+      text: `In Minecraft Java ${server.minecraft_version}, choose Multiplayer → Add Server. ${supportsMods(server.server_type) ? `Use ${softwareName(server.server_type)} with the matching loader and required mods.` : "A normal Minecraft Java client is enough."} ${["PAPER", "PURPUR"].includes(server.server_type) ? "New servers have a whitelist: ask your host to add your username in Players, then follow the AuthMe registration or login prompt." : ""}`,
     },
   ];
   return (
@@ -65,9 +65,17 @@ export function FirstServerChecklist({
               <strong>{step.title}</strong>
               <p>{step.text}</p>
               {index === 3 && address && (
-                <button className="button secondary" onClick={onCopy}>
-                  Copy address
-                </button>
+                <div className="row-actions">
+                  {server.permissions?.includes("settings") &&
+                    ["PAPER", "PURPUR"].includes(server.server_type) && (
+                      <Link className="button secondary" href={`/servers/${server.id}/players`}>
+                        Manage allowed players
+                      </Link>
+                    )}
+                  <button className="button secondary" onClick={onCopy}>
+                    Copy address
+                  </button>
+                </div>
               )}
             </div>
           </li>

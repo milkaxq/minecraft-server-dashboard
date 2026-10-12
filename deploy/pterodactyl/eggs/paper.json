@@ -5,7 +5,7 @@
   },
   "name": "Blockyard Paper",
   "author": "accounts@playblockyard.com",
-  "description": "Reviewed Minecraft installer; fails if the selected version is unavailable. EULA acceptance is separate.",
+  "description": "Reviewed Minecraft installer with AuthMe, ViaVersion and PacketEvents. Minecraft and offline accounts supported with password protection and whitelist enabled. EULA acceptance is separate.",
   "features": [
     "eula"
   ],
@@ -23,7 +23,7 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\nset -euo pipefail\ncd /mnt/server\nUSER_AGENT='Blockyard/0.1 (Minecraft hosting)'\nBASE=\"https://fill.papermc.io/v3/projects/paper/versions/${MINECRAFT_VERSION}\"\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$BASE\" -o version.json\nif [ \"$BUILD_NUMBER\" = latest ]; then BUILD_NUMBER=$(jq -er '.builds[0]' version.json); fi\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$BASE/builds/$BUILD_NUMBER\" -o build.json\nDOWNLOAD_URL=$(jq -er '.downloads[\"server:default\"].url' build.json)\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$DOWNLOAD_URL\" -o server.jar.part\njar tf server.jar.part >/dev/null\nmv server.jar.part server.jar\nrm version.json build.json\nif [ ! -f server.properties ]; then\n  printf 'server-port=25565\\nserver-ip=0.0.0.0\\nonline-mode=true\\nmotd=PlayBlockyard Minecraft Server\\n' > server.properties\nfi\n",
+      "script": "#!/bin/bash\nset -euo pipefail\ncd /mnt/server\nrm -f .blockyard-install.json\nUSER_AGENT='Blockyard/0.1 (Minecraft hosting)'\nBASE=\"https://fill.papermc.io/v3/projects/paper/versions/${MINECRAFT_VERSION}\"\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$BASE\" -o version.json\nif [ \"$BUILD_NUMBER\" = latest ]; then BUILD_NUMBER=$(jq -er '.builds[0]' version.json); fi\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$BASE/builds/$BUILD_NUMBER\" -o build.json\nDOWNLOAD_URL=$(jq -er '.downloads[\"server:default\"].url' build.json)\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$DOWNLOAD_URL\" -o server.jar.part\njar tf server.jar.part >/dev/null\nmv server.jar.part server.jar\nrm version.json build.json\nbash /opt/blockyard/default-plugins/install.sh \"$MINECRAFT_VERSION\"\nprintf '{\"software\":\"PAPER\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"$MINECRAFT_VERSION\" \"$BUILD_NUMBER\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n",
       "container": "blockyard/minecraft-installer:java21",
       "entrypoint": "bash"
     }
@@ -31,9 +31,9 @@
   "variables": [
     {
       "name": "Minecraft Version",
-      "description": "The version of minecraft to download. \r\n\r\nLeave at latest to always get the latest version. Invalid versions will default to latest.",
+      "description": "Operator-approved Minecraft version. Unsupported versions fail installation.",
       "env_variable": "MINECRAFT_VERSION",
-      "default_value": "latest",
+      "default_value": "26.3",
       "user_viewable": true,
       "user_editable": false,
       "rules": "nullable|string|max:20",
@@ -41,7 +41,7 @@
     },
     {
       "name": "Build Number",
-      "description": "The build number for the paper release.\r\n\r\nLeave at latest to always get the latest version. Invalid versions will default to latest.",
+      "description": "Paper build for the approved Minecraft release. latest selects the newest published build for that exact release.",
       "env_variable": "BUILD_NUMBER",
       "default_value": "latest",
       "user_viewable": true,

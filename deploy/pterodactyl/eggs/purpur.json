@@ -5,7 +5,7 @@
   },
   "name": "Blockyard Purpur",
   "author": "operator@blockyard.local",
-  "description": "Reviewed Minecraft 1.21.1 installer. EULA acceptance is required separately. Loader variables are operator-managed.",
+  "description": "Reviewed Minecraft installer with AuthMe, ViaVersion and PacketEvents. Minecraft and offline accounts supported with password protection and whitelist enabled. EULA acceptance is separate.",
   "features": [
     "eula"
   ],
@@ -22,7 +22,7 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\nrm -f .blockyard-install.json\ncurl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --fail --location --retry 3 \"https://api.purpurmc.org/v2/purpur/${MINECRAFT_VERSION}/${BUILD_NUMBER}/download\" -o server.jar.part\nmv server.jar.part server.jar\njar tf server.jar > /dev/null\nprintf '{\"software\":\"PURPUR\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"${MINECRAFT_VERSION}\" \"${BUILD_NUMBER}\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n",
+      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\nrm -f .blockyard-install.json\ncurl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --fail --location --retry 3 \"https://api.purpurmc.org/v2/purpur/${MINECRAFT_VERSION}/${BUILD_NUMBER}/download\" -o server.jar.part\nmv server.jar.part server.jar\njar tf server.jar > /dev/null\nbash /opt/blockyard/default-plugins/install.sh \"$MINECRAFT_VERSION\"\nprintf '{\"software\":\"PURPUR\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"${MINECRAFT_VERSION}\" \"${BUILD_NUMBER}\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n",
       "container": "blockyard/minecraft-installer:java21",
       "entrypoint": "bash"
     }

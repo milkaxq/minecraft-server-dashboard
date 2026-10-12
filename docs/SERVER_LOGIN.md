@@ -4,6 +4,8 @@ Blockyard website accounts and Minecraft player accounts are separate.
 
 ## Join an AuthMe-enabled server
 
+New Paper and Purpur servers now install AuthMe 6.0.1, ViaVersion 5.12.1 and PacketEvents 2.14.0 automatically. They start with a private whitelist, AuthMe password protection, and premium opt-in enabled. Accept the EULA, start Minecraft, then add your own username under Players before joining. The Paper-specific AuthMe jar is used for 26.3; the Spigot-compatible legacy jar is used for 1.21.1. Vanilla, Spigot and modded loaders do not receive this Paper/Purpur bundle.
+
 Hosts can manage the whitelist under **Servers → their server → Players**. Add exact Minecraft usernames, search the saved list, remove entries with confirmation, and turn the whitelist on or off. Start Minecraft before making changes; no restart is required. Removing an entry blocks future joins while the whitelist is on; it does not delete player inventory or world progress. Minecraft operators can bypass the whitelist. Website Members are separate from game players.
 
 The dashboard uses `GET /servers/{id}/whitelist` and idempotent `POST /servers/{id}/whitelist`. Only owners/admins with Settings permission can access these routes. Reads use Pterodactyl's sandboxed files API, with symlink checks. Writes send a fixed `minecraft:whitelist` command through Pterodactyl, using validated usernames and a snapshot revision. UUID resolution stays inside Minecraft. Changes share the server operation lock and audit log; the backend checks saved state before claiming success. Command delivery without an observed result is shown as unconfirmed.
@@ -33,7 +35,7 @@ The existing Paper 26.3 Private Beta server uses:
 
 A completed Pterodactyl backup was made before switching the server's account mode. AuthMe was first started while Minecraft account verification remained enabled; the login mode was changed only after successful plugin initialization. No game operator permissions were granted.
 
-This is an explicit configuration of this server, not the default for newly provisioned servers. Do not remove the login plugin while leaving offline access enabled. Whitelist names alone do not authenticate players. Changing account mode changes Minecraft UUID semantics, so check player inventories, permissions and whitelist entries and retain backups when migrating an existing populated server.
+This existing server was configured separately. New Paper/Purpur installations receive the same account policy through the reviewed installer bundle. Do not remove the login plugin while leaving offline access enabled. Whitelist names alone do not authenticate players. Changing account mode changes Minecraft UUID semantics, so check player inventories, permissions and whitelist entries and retain backups when migrating an existing populated server.
 
 AuthMe documentation: https://github.com/AuthMe/AuthMeReloaded/tree/master/docs
 

@@ -67,7 +67,7 @@ private registry and update each egg's installer image):
 ```sh
 make minecraft-installer
 # Or build directly on a standalone Wings host:
-docker build -t blockyard/minecraft-installer:java21 deploy/pterodactyl/installer
+docker build -t blockyard/minecraft-installer:java21 -f deploy/pterodactyl/installer/Dockerfile .
 ```
 
 The installer extends the Java 21 image with root inside its disposable
@@ -159,3 +159,29 @@ archived under the local fixture account; the original Paper world was retained.
 Normal backend/frontend/migrate/worker Docker builds passed without the offline
 packaging workaround. Additional Minecraft releases still require their own
 reviewed templates and live validation before being offered.
+
+## Default Paper/Purpur plugins
+
+New installations include a reviewed bundle from `internal/provisioning/defaultplugins/manifest.json`: AuthMe 6.0.1, ViaVersion 5.12.1 and PacketEvents 2.14.0. Paper 26.3 uses the Paper AuthMe artifact; 1.21.1 uses its Spigot-compatible legacy artifact because the Paper artifact requires a newer release. Other software does not receive this bundle.
+
+The isolated Wings installer downloads pinned Modrinth CDN artifacts without redirects, checks byte size, SHA-512 and JAR structure, and validates the full bundle before installing it. It seeds AuthMe's SQLite/Bcrypt configuration before creating offline-mode server properties. The whitelist starts enabled, premium opt-in is enabled, IP login sessions are disabled, and failed account-database operations stop Minecraft. Missing AuthMe options are filled from the plugin's packaged defaults at first start. The owner must still explicitly accept the EULA; the installer never starts Minecraft.
+
+The worker's separate Client API verifier checks the bundle receipt, release, plugin filenames/sizes and safe paths before marking Paper/Purpur ready. `PTERODACTYL_INSTALLATION_API_KEY` is now also required for Paper provisioning. Existing running servers are not reinstalled or edited by this update. Installer retries preserve settings and worlds; a different or modified starter jar requires operator review rather than an automatic overwrite. To enable another Minecraft release, first review and pin compatible artifacts in the manifest and rebuild the installer image on every node. Updating the manifest does not upgrade existing servers automatically.
+
+Deploy the updated installer and import only the changed eggs before provisioning new servers:
+
+```sh
+docker build -t blockyard/minecraft-installer:java21 -f deploy/pterodactyl/installer/Dockerfile .
+python3 scripts/install-minecraft-software.py --panel-url https://panel.example.com \
+  --software paper --software purpur --update-reviewed
+```
+
+The administrator token comes from the operator environment as described above. Both installer assets and Go verifier embed the same manifest; deploy the updated worker too. After accepting the EULA and starting Minecraft, add yourself and friends under **Players** before joining. AuthMe protects game identities; removing it while leaving offline mode enabled removes that protection. ViaVersion provides protocol compatibility, not newer blocks or gameplay.
+
+Checks:
+
+```sh
+go test ./internal/provisioning/defaultplugins ./internal/provisioning
+```
+
+The shell tests use temporary server folders and mock network/archive inspection, while exercising real checksum checks, safe file handling, receipts, and reinstallation behavior. They require bash, jq and sha512sum; the installer image contains these tools.

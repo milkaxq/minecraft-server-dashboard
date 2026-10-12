@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "versions": {
+    "1.21.1": [
+      {
+        "name": "AuthMe",
+        "version": "6.0.1",
+        "filename": "AuthMe-6.0.1-Spigot-Legacy.jar",
+        "url": "https://cdn.modrinth.com/data/9js4IEHC/versions/atrJDDxJ/AuthMe-6.0.1-Spigot-Legacy.jar",
+        "sha512": "56592f76428ba56000a576f6bc434f1a4e635c07165cec13da10ecbafeec43fb03506701150d16b6bbd0022338318f6ffbef2163778864f6b6b03650536e398f",
+        "size": 1117257
+      },
+      {
+        "name": "ViaVersion",
+        "version": "5.12.1",
+        "filename": "ViaVersion-5.12.1.jar",
+        "url": "https://cdn.modrinth.com/data/P1OZGk5p/versions/5WgnasGG/ViaVersion-5.12.1.jar",
+        "sha512": "b2e5c03689e2265410613a928640076cfcd576e7a3dc7ca1276a76dbe624f2f5467348c3b3eaf8b5987ed7662afb93cc5cb9373035f4c5512884116e4bb6add9",
+        "size": 6503217
+      },
+      {
+        "name": "PacketEvents",
+        "version": "2.14.0",
+        "filename": "packetevents-spigot-2.14.0.jar",
+        "url": "https://cdn.modrinth.com/data/HYKaKraK/versions/m78nFxYg/packetevents-spigot-2.14.0.jar",
+        "sha512": "18a942cb55f64783a63b28deea2cebbbe782e5d6a1089f6700430e183bfbce0a45398a640ed0dff4361b55190dcf47017f2ca7788f4a5c8c9efad1f549a63fe3",
+        "size": 5723413
+      }
+    ],
+    "26.3": [
+      {
+        "name": "AuthMe",
+        "version": "6.0.1",
+        "filename": "AuthMe-6.0.1-Paper.jar",
+        "url": "https://cdn.modrinth.com/data/9js4IEHC/versions/fPuH4uYs/AuthMe-6.0.1-Paper.jar",
+        "sha512": "832eb1570f1887493dc09bd183360c6c890aafe24fbc635d36f7c3162c339f064e3a0e082519defe7e67569c1d78072f582cb49c14a24d125d4ece463b765271",
+        "size": 1153596
+      },
+      {
+        "name": "ViaVersion",
+        "version": "5.12.1",
+        "filename": "ViaVersion-5.12.1.jar",
+        "url": "https://cdn.modrinth.com/data/P1OZGk5p/versions/5WgnasGG/ViaVersion-5.12.1.jar",
+        "sha512": "b2e5c03689e2265410613a928640076cfcd576e7a3dc7ca1276a76dbe624f2f5467348c3b3eaf8b5987ed7662afb93cc5cb9373035f4c5512884116e4bb6add9",
+        "size": 6503217
+      },
+      {
+        "name": "PacketEvents",
+        "version": "2.14.0",
+        "filename": "packetevents-spigot-2.14.0.jar",
+        "url": "https://cdn.modrinth.com/data/HYKaKraK/versions/m78nFxYg/packetevents-spigot-2.14.0.jar",
+        "sha512": "18a942cb55f64783a63b28deea2cebbbe782e5d6a1089f6700430e183bfbce0a45398a640ed0dff4361b55190dcf47017f2ca7788f4a5c8c9efad1f549a63fe3",
+        "size": 5723413
+      }
+    ]
+  }
+}
