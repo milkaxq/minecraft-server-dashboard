@@ -82,3 +82,23 @@ func TestResolveStableDependenciesAndCompatibility(t *testing.T) {
 		t.Fatal("compatibility mismatch accepted")
 	}
 }
+
+func TestSearchExcludesPacksAndClientOnlyProjects(t *testing.T) {
+	c := New()
+	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		var facets [][]string
+		if err := json.Unmarshal([]byte(r.URL.Query().Get("facets")), &facets); err != nil {
+			t.Fatal(err)
+		}
+		expected := [][]string{{"categories:forge"}, {"versions:1.21.1"}, {"server_side:required", "server_side:optional"}, {"project_type:mod", "project_type:plugin"}}
+		got, _ := json.Marshal(facets)
+		want, _ := json.Marshal(expected)
+		if string(got) != string(want) {
+			t.Fatal("incorrect catalog filters", string(got))
+		}
+		return response(map[string]any{"hits": []Project{}}), nil
+	})
+	if _, err := c.Search(context.Background(), "forge", "1.21.1", "test"); err != nil {
+		t.Fatal(err)
+	}
+}

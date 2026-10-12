@@ -90,7 +90,7 @@ func (c *Client) Search(ctx context.Context, loader, game, query string) ([]Proj
 	if len(query) > 100 {
 		return nil, ErrUnavailable
 	}
-	facets, _ := json.Marshal([][]string{{"categories:" + loader}, {"versions:" + game}, {"server_side:required", "server_side:optional"}})
+	facets, _ := json.Marshal([][]string{{"categories:" + loader}, {"versions:" + game}, {"server_side:required", "server_side:optional"}, {"project_type:mod", "project_type:plugin"}})
 	q := url.Values{"query": {query}, "facets": {string(facets)}, "limit": {"12"}, "index": {"downloads"}}
 	var response struct {
 		Hits []Project `json:"hits"`
