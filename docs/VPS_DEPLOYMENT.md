@@ -7,6 +7,14 @@ the `/api` prefix before forwarding requests to Go. Panel and Wings use
 use `play.playblockyard.com` with the allocated game port. DNS records are
 DNS-only A records. The root domain is not configured as a website yet.
 
+Panel returns explicit port 443 in node URLs. Configure the exact origins:
+
+```dotenv
+PTERODACTYL_URL=https://panel.playblockyard.com
+PTERODACTYL_WEBSOCKET_ORIGINS=wss://node.playblockyard.com:443
+PTERODACTYL_TRANSFER_ORIGINS=https://node.playblockyard.com,https://node.playblockyard.com:443
+```
+
 When transferring an archive from macOS, use `COPYFILE_DISABLE=1 tar ...`
 to omit AppleDouble metadata. Files named `._*.sql` must not be included in
 migration directories; Docker also excludes these metadata files explicitly.
@@ -45,6 +53,42 @@ before its expiry. The mounted `pg_hba.conf` rejects plaintext TCP connections
 and requires SCRAM authentication over TLS. Local Unix-socket access stays
 available inside the trusted database container for initialization and operations.
 
+The VPS application uses the `hosting_app` database owner role, which has no
+superuser, role creation, database creation, replication or RLS bypass privileges.
+The PostgreSQL bootstrap role is retained only for infrastructure operations.
+
+## Connect to PostgreSQL from your Mac
+
+For an interactive SQL prompt without installing a database client:
+
+```sh
+ssh -i ~/.ssh/minecraft_vps -t root@169.58.54.42 \
+  'docker exec -it blockyard-postgres-1 psql -U blockyard_readonly -d hosting'
+```
+
+For DataGrip, DBeaver, TablePlus or a local `psql`, run this from the repository:
+
+```sh
+bash scripts/vps-db-tunnel.sh
+```
+
+Leave that terminal open. Connect to `localhost:55433`, database `hosting`, user
+`blockyard_readonly`. The password is stored privately in
+`.local/vps-database-access.json`. Enable SSL with full certificate/hostname
+verification and select `.local/vps-postgres-ca.crt` as the trusted CA. The server
+certificate includes `postgres`, `localhost`, and `127.0.0.1` for internal and
+tunneled connections. Stop the tunnel with Ctrl+C; restart it if the database
+container is recreated, since its private IP can change. The script discovers
+the container address without publishing PostgreSQL on the host.
+
+The read-only role can view hosting tables, including sensitive account records;
+keep its credentials private. Writes are denied. Use the privileged operator CLI
+for supported administration rather than manually editing server/job/resource
+records. Local Unix-socket access is trusted inside the database container, so
+SSH/Docker access remains infrastructure-level authority.
+
+Pterodactyl stores its own data in MariaDB, not this PostgreSQL database.
+
 ## Email is a launch prerequisite
 
 Create a transactional email provider account, authenticate the sending domain
@@ -76,8 +120,37 @@ emails, provisioning, console, uploads/backups and an external Minecraft join.
 Configure off-host backups and test restoration. See
 [LAUNCH_READINESS.md](LAUNCH_READINESS.md) for the complete checklist.
 
+Use a separate infrastructure email for the Panel administrator, such as
+`panel-operator@playblockyard.com`. Customer provisioning creates a distinct
+Panel user with the customer's email and application UUID. Reusing a customer's
+email for the Panel administrator makes that creation fail; do not adopt a Panel
+administrator as a customer server owner.
+
+The checked-in Paper and Vanilla eggs fail if the chosen version is unavailable
+instead of substituting another version. They use the isolated Java installer
+image, verify the downloaded JAR, and leave EULA acceptance to the server owner.
+Vanilla also checks Mojang's published SHA-1. The existing software import script
+imports all reviewed eggs and writes configurations with actual destination egg
+IDs; never use example egg IDs directly. Build the installer image on each Wings
+host before creating servers.
+
 SSH password authentication is disabled after verifying key-based access.
 Retain the matching private key and provider-console access. UFW allows SSH and
 HTTP/HTTPS; game and SFTP ports are opened when their services are configured.
 Docker-published game ports also require review of Docker's forwarding rules;
 UFW alone does not reliably restrict published container ports.
+
+## Validated on the VPS
+
+On 2026-10-12: dashboard/API HTTPS, real account verification email, administrator
+login, Panel/Wings connectivity, capacity registration, async Paper 1.21.1
+provisioning, file listing/writing through Panel, and TLS console WebSocket
+authentication passed. The database tunnel passed full certificate verification
+and a read-only write-denial check. Vanilla 1.21.1 downloaded and passed Mojang's
+checksum/JAR checks in an isolated installer. Unavailable Paper/Vanilla releases
+were rejected without substituting a different version.
+
+The complimentary `Blockyard Beta` server is installed and stopped. The owner
+must review/accept Minecraft's EULA before starting it. An external Minecraft
+join and the remaining launch-readiness checks are still required; installation
+success alone does not prove gameplay performance or recovery readiness.

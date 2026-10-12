@@ -1,0 +1,11 @@
+{
+  "server_type": "VANILLA",
+  "docker_image": "ghcr.io/pterodactyl/yolks:java_21",
+  "startup": "java -Xms128M -XX:MaxRAMPercentage=75.0 -jar server.jar nogui",
+  "version_variable": "VANILLA_VERSION",
+  "environment": {},
+  "egg_id": 0,
+  "versions": [
+    "1.21.1"
+  ]
+}

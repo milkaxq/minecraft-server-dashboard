@@ -9,7 +9,7 @@ import (
 )
 
 func TestReviewedInstallersPreserveIsolationAndConsent(t *testing.T) {
-	for _, kind := range []string{"spigot", "purpur", "fabric", "forge", "neoforge"} {
+	for _, kind := range []string{"paper", "vanilla", "spigot", "purpur", "fabric", "forge", "neoforge"} {
 		t.Run(kind, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join("../../deploy/pterodactyl/eggs", kind+".json"))
 			if err != nil {

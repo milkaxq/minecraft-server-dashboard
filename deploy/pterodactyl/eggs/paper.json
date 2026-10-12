@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "name": "Blockyard Paper",
+  "author": "accounts@playblockyard.com",
+  "description": "Reviewed Minecraft installer; fails if the selected version is unavailable. EULA acceptance is separate.",
+  "features": [
+    "eula"
+  ],
+  "docker_images": {
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
+  },
+  "file_denylist": [],
+  "startup": "java -Xms128M -XX:MaxRAMPercentage=75.0 -Dterminal.jline=false -Dterminal.ansi=true -jar server.jar nogui",
+  "config": {
+    "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-ip\": \"0.0.0.0\",\r\n            \"server-port\": \"{{server.build.default.port}}\",\r\n            \"query.port\": \"{{server.build.default.port}}\"\r\n        }\r\n    }\r\n}",
+    "startup": "{\r\n    \"done\": \")! For help, type \"\r\n}",
+    "logs": "{}",
+    "stop": "stop"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\nset -euo pipefail\ncd /mnt/server\nUSER_AGENT='Blockyard/0.1 (Minecraft hosting)'\nBASE=\"https://fill.papermc.io/v3/projects/paper/versions/${MINECRAFT_VERSION}\"\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$BASE\" -o version.json\nif [ \"$BUILD_NUMBER\" = latest ]; then BUILD_NUMBER=$(jq -er '.builds[0]' version.json); fi\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$BASE/builds/$BUILD_NUMBER\" -o build.json\nDOWNLOAD_URL=$(jq -er '.downloads[\"server:default\"].url' build.json)\ncurl --fail --location --retry 3 --user-agent \"$USER_AGENT\" \"$DOWNLOAD_URL\" -o server.jar.part\njar tf server.jar.part >/dev/null\nmv server.jar.part server.jar\nrm version.json build.json\nif [ ! -f server.properties ]; then\n  printf 'server-port=25565\\nserver-ip=0.0.0.0\\nonline-mode=true\\nmotd=PlayBlockyard Minecraft Server\\n' > server.properties\nfi\n",
+      "container": "blockyard/minecraft-installer:java21",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Minecraft Version",
+      "description": "The version of minecraft to download. \r\n\r\nLeave at latest to always get the latest version. Invalid versions will default to latest.",
+      "env_variable": "MINECRAFT_VERSION",
+      "default_value": "latest",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "nullable|string|max:20",
+      "field_type": "text"
+    },
+    {
+      "name": "Build Number",
+      "description": "The build number for the paper release.\r\n\r\nLeave at latest to always get the latest version. Invalid versions will default to latest.",
+      "env_variable": "BUILD_NUMBER",
+      "default_value": "latest",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|max:20",
+      "field_type": "text"
+    }
+  ]
+}

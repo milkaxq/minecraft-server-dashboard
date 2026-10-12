@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "name": "Blockyard Vanilla",
+  "author": "accounts@playblockyard.com",
+  "description": "Reviewed Minecraft installer; fails if the selected version is unavailable. EULA acceptance is separate.",
+  "features": [
+    "eula"
+  ],
+  "docker_images": {
+    "Java 21": "ghcr.io/pterodactyl/yolks:java_21"
+  },
+  "file_denylist": [],
+  "startup": "java -Xms128M -XX:MaxRAMPercentage=75.0 -jar server.jar nogui",
+  "config": {
+    "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-ip\": \"0.0.0.0\",\r\n            \"server-port\": \"{{server.build.default.port}}\",\r\n            \"query.port\": \"{{server.build.default.port}}\"\r\n        }\r\n    }\r\n}",
+    "startup": "{\r\n    \"done\": \")! For help, type \"\r\n}",
+    "logs": "{}",
+    "stop": "stop"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\nset -euo pipefail\ncd /mnt/server\ncurl --fail --location --retry 3 https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o manifest.json\nMANIFEST_URL=$(jq -er --arg v \"$VANILLA_VERSION\" '.versions[] | select(.id==$v) | .url' manifest.json)\ncurl --fail --location --retry 3 \"$MANIFEST_URL\" -o version.json\nDOWNLOAD_URL=$(jq -er '.downloads.server.url' version.json)\nEXPECTED_SHA1=$(jq -er '.downloads.server.sha1' version.json)\ncurl --fail --location --retry 3 \"$DOWNLOAD_URL\" -o server.jar.part\nprintf '%s  server.jar.part\\n' \"$EXPECTED_SHA1\" | sha1sum -c -\njar tf server.jar.part >/dev/null\nmv server.jar.part server.jar\nrm manifest.json version.json\nif [ ! -f server.properties ]; then\n  printf 'server-port=25565\\nserver-ip=0.0.0.0\\nonline-mode=true\\nmotd=PlayBlockyard Minecraft Server\\n' > server.properties\nfi\n",
+      "container": "blockyard/minecraft-installer:java21",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Server Version",
+      "description": "The version of Minecraft Vanilla to install. Use \"latest\" to install the latest version, or use \"snapshot\" to install the latest snapshot. Go to Settings > Reinstall Server to apply.",
+      "env_variable": "VANILLA_VERSION",
+      "default_value": "latest",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|string|between:3,15",
+      "field_type": "text"
+    }
+  ]
+}

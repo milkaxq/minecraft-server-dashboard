@@ -1,0 +1,13 @@
+{
+  "server_type": "PAPER",
+  "docker_image": "ghcr.io/pterodactyl/yolks:java_21",
+  "startup": "java -Xms128M -XX:MaxRAMPercentage=75.0 -Dterminal.jline=false -Dterminal.ansi=true -jar server.jar nogui",
+  "version_variable": "MINECRAFT_VERSION",
+  "environment": {
+    "BUILD_NUMBER": "latest"
+  },
+  "egg_id": 0,
+  "versions": [
+    "1.21.1"
+  ]
+}
