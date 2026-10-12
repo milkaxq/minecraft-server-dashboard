@@ -150,7 +150,11 @@ and a read-only write-denial check. Vanilla 1.21.1 downloaded and passed Mojang'
 checksum/JAR checks in an isolated installer. Unavailable Paper/Vanilla releases
 were rejected without substituting a different version.
 
-The complimentary `Blockyard Beta` server is installed and stopped. The owner
-must review/accept Minecraft's EULA before starting it. An external Minecraft
-join and the remaining launch-readiness checks are still required; installation
-success alone does not prove gameplay performance or recovery readiness.
+The complimentary `Blockyard Beta` server was started after the owner accepted
+Minecraft's EULA. Its Paper 1.21.1 status ping from a Mac, console WebSocket,
+`list` command and resource metrics passed. A real player login, off-host backup
+restore and the remaining launch-readiness checks are still required.
+
+The dashboard now keeps a requested shutdown visible while Minecraft saves its
+world, including after a browser refresh. Repeat Stop requests are blocked for a
+short interval; Force stop remains available if graceful shutdown gets stuck.

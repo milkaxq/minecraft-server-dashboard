@@ -75,6 +75,36 @@ func TestApprovedLoaderPinsAndProvisioningSnapshot(t *testing.T) {
 
 type acceptInstallation struct{}
 
+func TestPaperRuntimeFollowsApprovedRelease(t *testing.T) {
+	for _, release := range []struct{ version, image string }{{"1.21.1", "java21"}, {"26.3", "java25"}} {
+		t.Run(release.version, func(t *testing.T) {
+			f := setup(t)
+			ctx := context.Background()
+			template := SoftwareTemplate{ServerType: "PAPER", EggID: 7, Image: "java21", Startup: "java -jar server.jar", VersionVariable: "MINECRAFT_VERSION", Versions: []string{"1.21.1", "26.3"}, VersionImages: map[string]string{"26.3": "java25"}}
+			if err := ConfigureSoftware(ctx, f.db, f.admin, template); err != nil {
+				t.Fatal(err)
+			}
+			s, err := (server.Service{DB: f.db}).Create(ctx, f.owner, server.CreateInput{PlanID: uuid.MustParse("10000000-0000-4000-8000-000000000001"), Name: "Paper world", MinecraftVersion: release.version, ServerType: "PAPER"}, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.enqueue(t, s, jobs.Provision)
+			f.once(t)
+			remote, err := f.panel.FindServerByExternalID(ctx, s.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if remote.Request.Image != release.image || remote.Request.Environment["MINECRAFT_VERSION"] != release.version {
+				t.Fatal("wrong runtime or release", remote.Request.Image, remote.Request.Environment)
+			}
+			template.VersionImages["not-approved"] = "java25"
+			if ConfigureSoftware(ctx, f.db, f.admin, template) == nil {
+				t.Fatal("unapproved image accepted")
+			}
+		})
+	}
+}
+
 func (acceptInstallation) VerifyInstallation(context.Context, string, string, string, map[string]string) error {
 	return nil
 }

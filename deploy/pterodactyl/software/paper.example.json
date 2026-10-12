@@ -7,7 +7,11 @@
     "BUILD_NUMBER": "latest"
   },
   "egg_id": 0,
+  "version_images": {
+    "26.3": "ghcr.io/pterodactyl/yolks:java_25"
+  },
   "versions": [
-    "1.21.1"
+    "1.21.1",
+    "26.3"
   ]
 }

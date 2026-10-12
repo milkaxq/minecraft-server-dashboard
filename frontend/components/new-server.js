@@ -11,7 +11,7 @@ import { formatBytes, price } from "../lib/api";
 export function NewServer({ initialPlan = "" }) {
   const orderRequest = useRef(null);
   const { data: checkoutConfig, error: checkoutError } = useResource("/billing/config");
-  const { api } = useAuth();
+  const { api, session } = useAuth();
   const router = useRouter();
   const { data: plans, error: plansError, loading } = useResource("/plans");
   const { data: options, error: optionsError } = useResource("/minecraft/options");
@@ -35,6 +35,7 @@ export function NewServer({ initialPlan = "" }) {
     (o) => o.server_type === type && o.minecraft_version === version,
   )?.loader_version;
   const selected = plans?.find((p) => p.id === planID);
+  const beta = checkoutConfig?.provider === "disabled" && session?.user.is_admin;
   const software = [...new Set(options?.map((o) => o.server_type) || [])];
   async function submit(event) {
     event.preventDefault();
@@ -51,6 +52,15 @@ export function NewServer({ initialPlan = "" }) {
       const fingerprint = JSON.stringify(body);
       if (orderRequest.current?.fingerprint !== fingerprint)
         orderRequest.current = { fingerprint, key: crypto.randomUUID() };
+      if (beta) {
+        const server = await api("/admin/beta-servers", {
+          method: "POST",
+          body,
+          key: orderRequest.current.key,
+        });
+        router.push(`/servers/${server.id}`);
+        return;
+      }
       const order = await api("/orders", {
         method: "POST",
         body,
@@ -207,17 +217,23 @@ export function NewServer({ initialPlan = "" }) {
               </>
             )}
             <p className="activation-note">
-              {checkoutConfig?.provider === "mock"
-                ? "Development demo checkout. No real money is charged."
-                : "Checkout is currently unavailable. Please contact hosting support."}
+              {beta
+                ? "Private beta setup. No checkout or charge; your server will install automatically."
+                : checkoutConfig?.provider === "mock"
+                  ? "Development demo checkout. No real money is charged."
+                  : "Checkout is currently unavailable. Please contact hosting support."}
             </p>
             <button
               className="button primary wide"
               disabled={
-                busy || !selected || !version || !name.trim() || !checkoutConfig?.checkout_enabled
+                busy ||
+                !selected ||
+                !version ||
+                !name.trim() ||
+                (!beta && !checkoutConfig?.checkout_enabled)
               }
             >
-              {busy ? "Creating order…" : "Continue to checkout"}
+              {busy ? "Creating server…" : beta ? "Create beta server" : "Continue to checkout"}
               <Icon name="arrow" size={16} />
             </button>
           </aside>

@@ -4,6 +4,7 @@ import { FirstServerChecklist } from "./first-server";
 import { FeatureLinks } from "./management";
 import { ContextHelp } from "./context-help";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -35,6 +36,47 @@ function ConfirmStop({ onCancel, onConfirm, busy }) {
         </button>
         <button className="button danger" onClick={onConfirm} disabled={busy}>
           {busy ? "Sending…" : "Force stop"}
+        </button>
+      </div>
+    </dialog>
+  );
+}
+function ConfirmDelete({ server, onCancel, onConfirm, busy, error }) {
+  const dialog = useRef(null);
+  const [name, setName] = useState("");
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="confirm-dialog"
+      aria-labelledby="delete-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <h2 id="delete-title">Delete this server?</h2>
+      <p>
+        This permanently removes its world, files and backups and ends its subscription. Download
+        anything you want to keep first.
+      </p>
+      <ErrorMessage error={error} />
+      <label className="field">
+        Type <strong>{server.name}</strong> to confirm
+        <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+      </label>
+      <div className="dialog-actions">
+        <button className="button secondary" disabled={busy} onClick={onCancel}>
+          Keep server
+        </button>
+        <button
+          className="button danger"
+          disabled={busy || name !== server.name}
+          onClick={onConfirm}
+        >
+          {busy ? "Queuing deletion…" : "Delete server"}
         </button>
       </div>
     </dialog>
@@ -111,6 +153,7 @@ function LiveResourceChart({ usage, cpuLimit }) {
 
 export function ServerDetail({ id, advanced = false }) {
   const { api } = useAuth();
+  const router = useRouter();
   const { data: server, error, loading } = useResource(`/servers/${id}`, 10000);
   const {
     data: usage,
@@ -121,9 +164,12 @@ export function ServerDetail({ id, advanced = false }) {
     5000,
   );
   const [busy, setBusy] = useState("");
+  const [pendingPower, setPendingPower] = useState("");
   const [actionError, setActionError] = useState(null);
   const [notice, setNotice] = useState("");
   const [confirm, setConfirm] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteKey, setDeleteKey] = useState("");
   const [copied, setCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
   const ready = server?.status === "RUNNING" && server.management_available;
@@ -133,6 +179,15 @@ export function ServerDetail({ id, advanced = false }) {
   const permissions = server?.permissions || [];
   const has = (action) => permissions.includes(action);
   const transitioning = ["starting", "stopping"].includes(usage?.power_state);
+  const powerPending =
+    ((pendingPower === "stop" || pendingPower === "kill") && usage?.power_state !== "offline") ||
+    (pendingPower === "start" && usage?.power_state !== "running");
+  const displayPowerState =
+    powerPending && (pendingPower === "stop" || pendingPower === "kill")
+      ? "stopping"
+      : powerPending && pendingPower === "start"
+        ? "starting"
+        : usage?.power_state;
   const address = server?.hostname && server.port ? `${server.hostname}:${server.port}` : null;
   async function acceptAgreement() {
     if (!agreementChecked || busy) return;
@@ -154,7 +209,7 @@ export function ServerDetail({ id, advanced = false }) {
     }
   }
   async function power(action) {
-    if (busy) return;
+    if (busy || (powerPending && !(action === "kill" && pendingPower === "stop"))) return;
     setBusy(action);
     setActionError(null);
     setNotice("");
@@ -164,8 +219,13 @@ export function ServerDetail({ id, advanced = false }) {
         body: action === "kill" ? { confirmation: id } : {},
         key: crypto.randomUUID(),
       });
+      setPendingPower(action === "restart" ? "" : action);
       setNotice(
-        `${action === "kill" ? "Force stop" : action[0].toUpperCase() + action.slice(1)} request accepted. Watching for a status update.`,
+        action === "stop"
+          ? "Shutting down safely. This can take a minute while Minecraft saves the world."
+          : action === "kill"
+            ? "Force stop requested. Waiting for the server to go offline."
+            : `${action[0].toUpperCase() + action.slice(1)} requested. Watching for a status update.`,
       );
       setConfirm(false);
       refreshUsage();
@@ -183,6 +243,22 @@ export function ServerDetail({ id, advanced = false }) {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setNotice("Copy the server address from the connection panel below.");
+    }
+  }
+  async function removeServer() {
+    if (busy) return;
+    setBusy("delete");
+    setActionError(null);
+    try {
+      await api(`/servers/${id}/terminate`, {
+        method: "POST",
+        body: { reason: "Owner requested deletion", confirmation: id },
+        key: deleteKey,
+      });
+      router.push("/servers");
+    } catch (err) {
+      setActionError(err);
+      setBusy("");
     }
   }
   return (
@@ -211,7 +287,7 @@ export function ServerDetail({ id, advanced = false }) {
                   state={
                     ready && eula.data?.accepted === false
                       ? "ACCEPTANCE_REQUIRED"
-                      : usage?.power_state || server.status
+                      : displayPowerState || server.status
                   }
                 />
               }
@@ -232,21 +308,35 @@ export function ServerDetail({ id, advanced = false }) {
                     className="button primary"
                     onClick={() => power("start")}
                     disabled={
-                      !canStart || !!busy || transitioning || usage?.power_state !== "offline"
+                      !canStart ||
+                      !!busy ||
+                      powerPending ||
+                      transitioning ||
+                      usage?.power_state !== "offline"
                     }
                   >
                     <Icon name="play" size={15} />
-                    {busy === "start" ? "Starting…" : "Start"}
+                    {busy === "start" || (powerPending && pendingPower === "start")
+                      ? "Starting…"
+                      : "Start"}
                   </button>
                 )}
                 {has("stop") && (
                   <button
                     className="button secondary"
                     onClick={() => power("stop")}
-                    disabled={!ready || !!busy || transitioning || usage?.power_state !== "running"}
+                    disabled={
+                      !ready ||
+                      !!busy ||
+                      powerPending ||
+                      transitioning ||
+                      usage?.power_state !== "running"
+                    }
                   >
                     <Icon name="stop" size={15} />
-                    {busy === "stop" ? "Stopping…" : "Stop"}
+                    {busy === "stop" || (powerPending && pendingPower === "stop")
+                      ? "Shutting down…"
+                      : "Stop"}
                   </button>
                 )}
                 {has("restart") && (
@@ -254,7 +344,11 @@ export function ServerDetail({ id, advanced = false }) {
                     className="button secondary"
                     onClick={() => power("restart")}
                     disabled={
-                      !canStart || !!busy || transitioning || usage?.power_state !== "running"
+                      !canStart ||
+                      !!busy ||
+                      powerPending ||
+                      transitioning ||
+                      usage?.power_state !== "running"
                     }
                   >
                     <Icon name="restart" size={16} />
@@ -381,7 +475,12 @@ export function ServerDetail({ id, advanced = false }) {
                   {has("kill") && (
                     <button
                       className="button danger-outline"
-                      disabled={!ready || !!busy || usage?.power_state === "offline"}
+                      disabled={
+                        !ready ||
+                        !!busy ||
+                        (powerPending && pendingPower !== "stop") ||
+                        usage?.power_state === "offline"
+                      }
                       onClick={() => setConfirm(true)}
                     >
                       Force stop
@@ -538,6 +637,34 @@ export function ServerDetail({ id, advanced = false }) {
                     </div>
                   </dl>
                 </section>
+                {has("delete") && server.status !== "CANCELLED" && (
+                  <section className="panel details-panel">
+                    <div>
+                      <h2>Change Minecraft version</h2>
+                      <p>
+                        Create a new server with the version you want. Back up and download this
+                        world before moving it; newer worlds may not open on older versions.
+                      </p>
+                      <Link href="/servers/new" className="button secondary">
+                        Create another server
+                      </Link>
+                    </div>
+                    <div>
+                      <h2>Delete server</h2>
+                      <p>Remove this server and its files after you have saved what you need.</p>
+                      <button
+                        className="button danger-outline"
+                        onClick={() => {
+                          setDeleteKey(crypto.randomUUID());
+                          setActionError(null);
+                          setConfirmDelete(true);
+                        }}
+                      >
+                        Delete server
+                      </button>
+                    </div>
+                  </section>
+                )}
               </>
             )}
             {confirm && (
@@ -545,6 +672,18 @@ export function ServerDetail({ id, advanced = false }) {
                 onCancel={() => setConfirm(false)}
                 onConfirm={() => power("kill")}
                 busy={!!busy}
+              />
+            )}
+            {confirmDelete && (
+              <ConfirmDelete
+                server={server}
+                busy={busy === "delete"}
+                error={actionError}
+                onCancel={() => {
+                  setConfirmDelete(false);
+                  setActionError(null);
+                }}
+                onConfirm={removeServer}
               />
             )}
           </>

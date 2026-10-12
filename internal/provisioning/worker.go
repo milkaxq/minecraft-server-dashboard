@@ -170,7 +170,7 @@ func (w *Worker) request(ctx context.Context, l *jobs.Lease) (pterodactyl.Server
 		var variable string
 		var environment []byte
 		req = pterodactyl.ServerRequest{ExternalID: l.Job.ServerID, Name: name, Limits: limits}
-		err = tx.QueryRow(ctx, `SELECT t.egg_id,t.docker_image,t.startup,t.version_variable,(t.environment || v.environment) FROM software_templates t JOIN minecraft_versions v ON v.server_type=t.server_type WHERE t.server_type=$1 AND t.enabled AND v.enabled AND v.version=$2 FOR SHARE OF t,v`, kind, version).Scan(&req.EggID, &req.Image, &req.Startup, &variable, &environment)
+		err = tx.QueryRow(ctx, `SELECT t.egg_id,COALESCE(v.docker_image,t.docker_image),t.startup,t.version_variable,(t.environment || v.environment) FROM software_templates t JOIN minecraft_versions v ON v.server_type=t.server_type WHERE t.server_type=$1 AND t.enabled AND v.enabled AND v.version=$2 FOR SHARE OF t,v`, kind, version).Scan(&req.EggID, &req.Image, &req.Startup, &variable, &environment)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return req, owner, ErrSoftware
 		}

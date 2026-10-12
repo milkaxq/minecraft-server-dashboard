@@ -53,6 +53,7 @@ const baseServer = {
     "worlds",
     "members",
     "backups",
+    "delete",
   ],
   management_available: true,
   console_available: true,
@@ -71,6 +72,7 @@ async function mockAPI(
     serverState = "RUNNING",
     initiallyRunning = false,
     inviteRequired = false,
+    holdStop = false,
   } = {},
 ) {
   let loggedIn = false;
@@ -243,10 +245,13 @@ async function mockAPI(
         },
       ]);
     if (path.startsWith("/admin/servers/")) return reply({ id: orderID, status: "PENDING" }, 202);
+    if (path === "/admin/beta-servers" && request.method() === "POST")
+      return reply({ ...server, ...body, status: "PAYMENT_CONFIRMED" }, 201);
     if (path === "/minecraft/options")
       return reply([
         { server_type: "PAPER", minecraft_version: "1.21.1" },
         { server_type: "PAPER", minecraft_version: "1.21.10" },
+        { server_type: "PAPER", minecraft_version: "26.3" },
         ...["VANILLA", "SPIGOT", "PURPUR", "FABRIC", "FORGE", "NEOFORGE"].map((server_type) => ({
           server_type,
           minecraft_version: "1.21.1",
@@ -388,7 +393,9 @@ async function mockAPI(
       );
     if (path === `/servers/${serverID}/commands`) return reply({ status: "accepted" }, 202);
     if (path.startsWith(`/servers/${serverID}/`)) {
-      running = ["start", "restart"].includes(path.split("/").at(-1));
+      const action = path.split("/").at(-1);
+      if (action === "terminate") return reply({ id: orderID, status: "PENDING" }, 202);
+      if (!(action === "stop" && holdStop)) running = ["start", "restart"].includes(action);
       return reply({ status: "accepted" }, 202);
     }
     return reply({ error: "Not found" }, 404);
@@ -422,7 +429,7 @@ test("order request sends approved choices without resource or price fields", as
   await page.getByRole("link", { name: "New server", exact: true }).click();
   await page.getByLabel("Server name", { exact: true }).fill("A new adventure");
   await expect(page.getByRole("combobox", { name: "Minecraft version", exact: true })).toHaveValue(
-    "1.21.10",
+    "26.3",
   );
   await page.getByRole("button", { name: "Continue to checkout" }).click();
   await expect(page).toHaveURL(new RegExp(`/checkout/${orderID}$`));
@@ -430,7 +437,7 @@ test("order request sends approved choices without resource or price fields", as
   expect(call.body).toEqual({
     plan_id: planID,
     name: "A new adventure",
-    minecraft_version: "1.21.10",
+    minecraft_version: "26.3",
     server_type: "PAPER",
   });
 });
@@ -707,6 +714,49 @@ test("disabled payment configuration prevents creating an order", async ({ page 
   await page.getByLabel("Server name", { exact: true }).fill("Our adventure");
   await expect(page.getByRole("button", { name: "Continue to checkout" })).toBeDisabled();
   expect(calls.filter((c) => c.path === "/orders" && c.method === "POST")).toHaveLength(0);
+});
+
+test("beta operator creates the latest configured Paper server without checkout", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { paymentDisabled: true, isAdmin: true, inviteRequired: true });
+  await login(page);
+  await page.getByRole("link", { name: "New server", exact: true }).click();
+  await page.getByLabel("Server name", { exact: true }).fill("Latest world");
+  await page.getByLabel("Minecraft version").selectOption("26.3");
+  await page.getByRole("button", { name: "Create beta server" }).click();
+  await expect(page).toHaveURL(new RegExp(`/servers/${serverID}$`));
+  const create = calls.find((call) => call.path === "/admin/beta-servers");
+  expect(create.body.minecraft_version).toBe("26.3");
+  expect(create.body).not.toHaveProperty("docker_image");
+  expect(calls.filter((call) => call.path === "/orders" && call.method === "POST")).toHaveLength(0);
+});
+
+test("stop remains visibly pending until the server goes offline", async ({ page }) => {
+  const calls = await mockAPI(page, { initiallyRunning: true, holdStop: true });
+  await login(page);
+  await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Shutting down…" })).toBeDisabled();
+  await expect(page.getByText("Stopping", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Shutting down safely");
+  expect(calls.filter((call) => call.path === `/servers/${serverID}/stop`)).toHaveLength(1);
+});
+
+test("owner must type the server name before deletion is queued", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+  await page.getByRole("button", { name: "Delete server" }).click();
+  await expect(page.getByRole("dialog")).toContainText("world, files and backups");
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Delete server" }),
+  ).toBeDisabled();
+  await page.getByRole("dialog").getByRole("textbox").fill(baseServer.name);
+  await page.getByRole("dialog").getByRole("button", { name: "Delete server" }).click();
+  await expect(page).toHaveURL(/\/servers$/);
+  const deletion = calls.find((call) => call.path === `/servers/${serverID}/terminate`);
+  expect(deletion.body.confirmation).toBe(serverID);
 });
 
 test("first start requires an explicit owner agreement", async ({ page }) => {

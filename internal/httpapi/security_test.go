@@ -23,7 +23,7 @@ func TestPrivateRoutesRejectMissingAuthenticationBeforeBusinessLogic(t *testing.
 	for _, route := range []string{
 		"GET /feedback", "POST /feedback", "GET /admin/feedback", "PUT /admin/feedback/" + id,
 		"GET /auth/session", "GET /account", "PUT /account/password", "POST /auth/logout",
-		"GET /servers", "POST /servers", "GET /servers/" + id,
+		"GET /servers", "POST /servers", "GET /servers/" + id, "POST /servers/" + id + "/terminate", "POST /admin/beta-servers",
 		"GET /servers/" + id + "/usage",
 		"GET /servers/" + id + "/members", "POST /servers/" + id + "/members", "PUT /servers/" + id + "/members/" + id, "DELETE /servers/" + id + "/members/" + id,
 		"GET /servers/" + id + "/world", "GET /servers/" + id + "/world/download", "POST /servers/" + id + "/world/backup", "POST /servers/" + id + "/world/reset", "POST /servers/" + id + "/world/upload",

@@ -21,6 +21,7 @@ type SoftwareTemplate struct {
 	VersionVariable    string                       `json:"version_variable"`
 	Environment        map[string]string            `json:"environment"`
 	VersionEnvironment map[string]map[string]string `json:"version_environment,omitempty"`
+	VersionImages      map[string]string            `json:"version_images,omitempty"`
 	Versions           []string                     `json:"versions"`
 }
 
@@ -60,6 +61,17 @@ func ConfigureSoftware(ctx context.Context, db *pgxpool.Pool, actor uuid.UUID, t
 			}
 		}
 	}
+	for version, image := range t.VersionImages {
+		approved := false
+		for _, v := range t.Versions {
+			if version == v {
+				approved = true
+			}
+		}
+		if !approved || image == "" || len(image) > 255 {
+			return fmt.Errorf("invalid release image")
+		}
+	}
 	if t.Environment == nil {
 		t.Environment = map[string]string{}
 	}
@@ -76,7 +88,11 @@ func ConfigureSoftware(ctx context.Context, db *pgxpool.Pool, actor uuid.UUID, t
 		return err
 	}
 	for _, v := range t.Versions {
-		if _, err = tx.Exec(ctx, "INSERT INTO minecraft_versions(server_type,version,environment) VALUES($1,$2,$3) ON CONFLICT(server_type,version) DO UPDATE SET enabled=true,environment=EXCLUDED.environment", t.ServerType, v, versionEnvironment(t, v)); err != nil {
+		var image *string
+		if selected, ok := t.VersionImages[v]; ok {
+			image = &selected
+		}
+		if _, err = tx.Exec(ctx, "INSERT INTO minecraft_versions(server_type,version,environment,docker_image) VALUES($1,$2,$3,$4) ON CONFLICT(server_type,version) DO UPDATE SET enabled=true,environment=EXCLUDED.environment,docker_image=EXCLUDED.docker_image", t.ServerType, v, versionEnvironment(t, v), image); err != nil {
 			return err
 		}
 	}

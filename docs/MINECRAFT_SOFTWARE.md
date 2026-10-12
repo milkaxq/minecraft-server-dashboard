@@ -12,6 +12,8 @@ variables. Operator configuration in `internal/provisioning/software.go` accepts
 `version_environment`; the worker merges it over the software environment and
 then sets the selected Minecraft version. The resolved request is persisted
 before provisioning, so retrying retains the selected loader and resources.
+`version_images` selects the required Java runtime for a particular release;
+Paper 26.3 uses Java 25 while Paper 1.21.1 keeps Java 21.
 Only a loader version is exposed publicly, never the egg ID or environment map.
 The new eggs write a completion receipt only after all installation commands
 succeed. The worker checks that receipt and the launcher through the separate
@@ -36,7 +38,7 @@ configuration. No automatic marketplace scraping or arbitrary host scripts.
 
 Reviewed PTDL_v2 egg exports are in `deploy/pterodactyl/eggs`. These are project
 installers using official distribution endpoints, not upstream source clones.
-They use Java 21, leave EULA acceptance to the customer, and reserve 25% of the
+The initial releases use Java 21, leave EULA acceptance to the customer, and reserve 25% of the
 container RAM outside the Java heap. Forge and NeoForge verify Mojang artifacts
 against their per-release SHA-1. Installers stop on failed downloads and never
 silently replace an unavailable requested release with another version.
@@ -103,10 +105,10 @@ The CLI requires an application administrator and audits every configuration.
 No capacity is added by importing an egg; order provisioning still reserves
 purchased resources under PostgreSQL locks.
 
+Paper 26.3 is also approved with Java 25. The Paper installer still runs in its
+isolated Java 21 utility container; the game runtime is selected per release.
 For another Minecraft release, review its Java requirement, installer, loader
-compatibility and memory needs before adding it. The current template image is
-Java 21 for all approved releases; do not add Java 17/25-only releases without
-updating the template design accordingly. Loader pins and `MOJANG_SERVER_SHA1`
+compatibility and memory needs before adding it. Loader pins and `MOJANG_SERVER_SHA1`
 are operator-managed. Forge/NeoForge
 pre-download the verified Mojang artifact with bounded curl retries to avoid
 their installer’s short network timeout. To add a release, obtain its official
@@ -127,6 +129,12 @@ start it again. To replace a jar, explicitly delete the old file first.
 Players may need the matching loader/modpack installed on their own computers.
 There is no in-place software conversion; back up and test a world copy on a new
 server before moving between software types.
+The same safe path applies to version upgrades: make a backup, create a new
+server with the desired release, and test a copy of the world. Paper warns that
+worlds upgraded to 26.3 cannot be downgraded. Private-beta administrators can
+create approved servers directly from the dashboard while checkout is disabled.
+Owners may delete an old server after typing its name to confirm; termination is
+queued and releases its capacity only after Panel confirms removal.
 
 Official references: [Spigot BuildTools](https://www.spigotmc.org/wiki/buildtools/),
 [Purpur API](https://purpurmc.org/docs/purpur/downloads/),

@@ -77,6 +77,20 @@ func (s Service) RequireAdmin(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 func (s Service) Enqueue(ctx context.Context, actor, id, key uuid.UUID, action Action, input Input, requestID string) (Job, error) {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return Job{}, err
+	}
+	defer tx.Rollback(context.Background())
+	job, err := s.EnqueueTx(ctx, tx, actor, id, key, action, input, requestID)
+	if err != nil {
+		return Job{}, err
+	}
+	return job, tx.Commit(ctx)
+}
+
+// EnqueueTx lets private-beta creation commit its server and job together.
+func (s Service) EnqueueTx(ctx context.Context, tx pgx.Tx, actor, id, key uuid.UUID, action Action, input Input, requestID string) (Job, error) {
 	if key == uuid.Nil || actor == uuid.Nil || id == uuid.Nil {
 		return Job{}, ErrInvalid
 	}
@@ -93,14 +107,9 @@ func (s Service) Enqueue(ctx context.Context, actor, id, key uuid.UUID, action A
 	if input.RecoveryConfirmation != "" && ((action != Provision && action != Terminate) || input.RecoveryConfirmation != "PANEL_OPERATIONS_FINISHED_AND_ABSENT") {
 		return Job{}, ErrInvalid
 	}
-	tx, err := s.DB.Begin(ctx)
-	if err != nil {
-		return Job{}, err
-	}
-	defer tx.Rollback(context.Background())
 	var admin bool
-	err = tx.QueryRow(ctx, "SELECT is_admin FROM users WHERE id=$1 AND verified_at IS NOT NULL", actor).Scan(&admin)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && !admin {
+	err := tx.QueryRow(ctx, "SELECT is_admin FROM users WHERE id=$1 AND verified_at IS NOT NULL", actor).Scan(&admin)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return Job{}, ErrForbidden
 	}
 	if err != nil {
@@ -113,6 +122,18 @@ func (s Service) Enqueue(ctx context.Context, actor, id, key uuid.UUID, action A
 	}
 	if err != nil {
 		return Job{}, err
+	}
+	if !admin {
+		if action != Terminate {
+			return Job{}, ErrForbidden
+		}
+		var owner uuid.UUID
+		if err = tx.QueryRow(ctx, "SELECT owner_id FROM servers WHERE id=$1", id).Scan(&owner); err != nil {
+			return Job{}, err
+		}
+		if owner != actor {
+			return Job{}, server.ErrNotFound
+		}
 	}
 	body, _ := json.Marshal(struct {
 		Action Action
@@ -225,7 +246,7 @@ func (s Service) Enqueue(ctx context.Context, actor, id, key uuid.UUID, action A
 	if err = audit.Record(ctx, tx, actor, id, "job.enqueued."+strings.ToLower(string(action)), requestID, metadata); err != nil {
 		return Job{}, err
 	}
-	return job, tx.Commit(ctx)
+	return job, nil
 }
 func (s Service) Get(ctx context.Context, actor, id uuid.UUID) (Job, error) {
 	if err := s.RequireAdmin(ctx, actor); err != nil {

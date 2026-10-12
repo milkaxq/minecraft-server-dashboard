@@ -142,12 +142,31 @@ func TestLiveAuthorizationAndIdempotency(t *testing.T) {
 	if err != nil || usage.PlayersOnline == nil || *usage.PlayersOnline != 7 || players.calls.Load() != 1 {
 		t.Fatal("players unavailable", err)
 	}
+	shutdown := uuid.New()
+	if _, err = db.Exec(ctx, `INSERT INTO control_requests(id,server_id,user_id,idempotency_key,action,fingerprint,status,request_id) VALUES($1,$2,$3,$4,'stop','test','SUCCEEDED','test')`, shutdown, id, owner, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	usage, err = s.Usage(ctx, owner, id)
+	if err != nil || usage.PowerState != "stopping" {
+		t.Fatal("accepted stop not visible during shutdown", err, usage.PowerState)
+	}
+	before := panel.power.Load()
+	if err = s.Power(ctx, owner, id, uuid.New(), pterodactyl.PowerStop, "", "repeat"); !errors.Is(err, ErrBusy) || panel.power.Load() != before {
+		t.Fatal("repeated stop reached Panel", err)
+	}
+	if _, err = db.Exec(ctx, "UPDATE control_requests SET created_at=now()-interval '4 minutes' WHERE id=$1", shutdown); err != nil {
+		t.Fatal(err)
+	}
+	usage, err = s.Usage(ctx, owner, id)
+	if err != nil || usage.PowerState != "running" {
+		t.Fatal("old stop kept server pending", err, usage.PowerState)
+	}
 	panel.losePower.Store(true)
 	uncertain := uuid.New()
 	if err = s.Power(ctx, owner, id, uncertain, pterodactyl.PowerRestart, "", "test"); !errors.Is(err, ErrUnknown) {
 		t.Fatal("lost power response not marked uncertain")
 	}
-	before := panel.power.Load()
+	before = panel.power.Load()
 	if err = s.Power(ctx, owner, id, uncertain, pterodactyl.PowerRestart, "", "replay"); !errors.Is(err, ErrUnknown) {
 		t.Fatal(err)
 	}
@@ -161,7 +180,7 @@ func TestLiveAuthorizationAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	usage, err = s.Usage(ctx, owner, id)
-	if err != nil || usage.PlayersOnline == nil || *usage.PlayersOnline != 0 || players.calls.Load() != 1 {
+	if err != nil || usage.PlayersOnline == nil || *usage.PlayersOnline != 0 || players.calls.Load() != 3 {
 		t.Fatal("offline player query not skipped", err)
 	}
 	if _, err = db.Exec(ctx, "UPDATE servers SET status='SUSPENDED' WHERE id=$1", id); err != nil {

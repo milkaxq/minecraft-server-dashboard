@@ -127,6 +127,15 @@ func (s Service) Usage(ctx context.Context, user, id uuid.UUID) (Usage, error) {
 		return Usage{}, ErrUnavailable
 	}
 	result := Usage{PowerState: u.State, CPUPercent: u.CPUPercent, MemoryBytes: u.MemoryBytes, DiskBytes: u.DiskBytes, UptimeMS: u.UptimeMillis}
+	if u.State == "running" {
+		pending, err := recentShutdown(ctx, s.DB, id)
+		if err != nil {
+			return Usage{}, err
+		}
+		if pending {
+			result.PowerState = "stopping"
+		}
+	}
 	if u.State == "offline" {
 		zero := 0
 		result.PlayersOnline = &zero
@@ -140,6 +149,17 @@ func (s Service) Usage(ctx context.Context, user, id uuid.UUID) (Usage, error) {
 		}
 	}
 	return result, nil
+}
+
+// Panel may report "running" until Minecraft has finished saving its world.
+// Keep the accepted shutdown visible across page refreshes for three minutes.
+func recentShutdown(ctx context.Context, q querier, id uuid.UUID) (bool, error) {
+	var pending bool
+	err := q.QueryRow(ctx, `SELECT COALESCE((SELECT c.action IN ('stop','kill')
+  AND c.status IN ('PENDING','SUCCEEDED') AND c.created_at > now()-interval '3 minutes'
+ FROM control_requests c WHERE c.server_id=$1 AND c.action IN ('start','stop','restart','kill')
+ ORDER BY c.created_at DESC,c.id DESC LIMIT 1),false)`, id).Scan(&pending)
+	return pending, err
 }
 func validateCommand(role server.Role, command string) error {
 	if strings.TrimSpace(command) == "" || len(command) == 0 || len(command) > 1024 || strings.ContainsAny(command, "\r\n\x00") {
@@ -236,6 +256,15 @@ func (s Service) perform(ctx context.Context, user, id, key uuid.UUID, permissio
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
+	}
+	if action == "stop" {
+		pending, e := recentShutdown(ctx, conn, id)
+		if e != nil {
+			return e
+		}
+		if pending {
+			return ErrBusy
+		}
 	}
 	if action == "start" || action == "restart" {
 		var worldUncertain bool

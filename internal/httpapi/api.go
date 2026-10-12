@@ -91,6 +91,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /servers", a.protected(a.listServers))
 	mux.HandleFunc("POST /servers", a.protected(a.createServer))
 	mux.HandleFunc("GET /servers/{id}", a.protected(a.getServer))
+	mux.HandleFunc("POST /servers/{id}/terminate", a.protected(a.terminateOwnServer))
 	mux.HandleFunc("GET /minecraft/options", a.softwareOptions)
 	mux.HandleFunc("GET /servers/{id}/usage", a.protected(a.usage))
 	for _, signal := range []pterodactyl.PowerSignal{pterodactyl.PowerStart, pterodactyl.PowerStop, pterodactyl.PowerRestart, pterodactyl.PowerKill} {
@@ -104,6 +105,7 @@ func (a *API) Handler() http.Handler {
 	a.billingRoutes(mux)
 	a.adminRoutes(mux)
 	if a.Jobs.DB != nil {
+		mux.HandleFunc("POST /admin/beta-servers", a.protected(a.createBetaServer))
 		mux.HandleFunc("POST /admin/servers/{id}/provision", a.protected(a.enqueue(jobs.Provision)))
 		mux.HandleFunc("POST /admin/servers/{id}/retry", a.protected(a.enqueue(jobs.Provision)))
 		mux.HandleFunc("POST /admin/servers/{id}/suspend", a.protected(a.enqueue(jobs.Suspend)))
