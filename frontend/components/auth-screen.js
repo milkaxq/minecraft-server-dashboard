@@ -12,7 +12,7 @@ const subscribeHash = (notify) => {
 const readHash = () => window.location.hash;
 const emptyHash = () => "";
 export function AuthScreen({ mode = "login" }) {
-  const { login, session, authNotice } = useAuth();
+  const { login, session, authNotice, forgetSession } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -40,8 +40,8 @@ export function AuthScreen({ mode = "login" }) {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
   useEffect(() => {
-    if (session) router.replace("/dashboard");
-  }, [session, router]);
+    if (session && (mode === "login" || mode === "register")) router.replace("/dashboard");
+  }, [session, router, mode]);
   const hash = useSyncExternalStore(subscribeHash, readHash, emptyHash);
   const [consumedHash, setConsumedHash] = useState("");
   if (hash && consumedHash !== hash) {
@@ -81,6 +81,7 @@ export function AuthScreen({ mode = "login" }) {
           method: "POST",
           body: { token: token.trim(), password },
         });
+        forgetSession();
         setPassword("");
         setConfirmation("");
         setToken("");

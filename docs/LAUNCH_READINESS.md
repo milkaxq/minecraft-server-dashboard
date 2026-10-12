@@ -83,8 +83,9 @@ live charges. Keep an explicit capacity cap for the first launch.
   startup and joining with novice players and the correct Minecraft client.
 - Understandable queued/installing/failed states with a support reference; avoid
   fake progress percentages when the installer cannot report them accurately.
-- Reliable login persistence through a reviewed secure-session design. Sessions
-  currently live only in browser memory, so a reload requires signing in again.
+- Browser login persistence is implemented with HttpOnly cookies, fixed expiry
+  and CSRF checks. Verify it on your real HTTPS dashboard/API addresses; see
+  [SESSIONS.md](SESSIONS.md).
 - Backup reminders and visible backup results before world/mod changes.
 - Real inbox delivery, real external join tests and feedback from a handful of
   novice players before adding more infrastructure features. The private Feedback

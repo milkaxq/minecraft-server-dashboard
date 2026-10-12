@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -95,7 +96,7 @@ func run() error {
 		}
 	}
 	billingService := &billing.Service{DB: pool, Provider: payment}
-	api := &httpapi.API{DB: pool, Billing: billingService, Admin: &admin.Service{DB: pool}, Auth: authentication, Plans: plan.Service{DB: pool}, Servers: server.Service{DB: pool}, Jobs: jobs.Service{DB: pool}, Management: managementService, Control: controls, Console: liveConsole, Log: log, Origin: c.FrontendOrigin}
+	api := &httpapi.API{DB: pool, Billing: billingService, Admin: &admin.Service{DB: pool}, Auth: authentication, Plans: plan.Service{DB: pool}, Servers: server.Service{DB: pool}, Jobs: jobs.Service{DB: pool}, Management: managementService, Control: controls, Console: liveConsole, Log: log, Origin: c.FrontendOrigin, CookieSecure: c.Environment == "production" || strings.HasPrefix(c.FrontendOrigin, "https://")}
 	go billingService.RunReconciler(ctx, log)
 
 	httpServer := &http.Server{Addr: c.Address, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}

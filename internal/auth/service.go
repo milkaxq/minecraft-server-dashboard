@@ -228,16 +228,21 @@ func (s *Service) Login(ctx context.Context, email, password, requestID string) 
 	}
 	return LoginResult{Token: token, ExpiresAt: expires, User: u}, tx.Commit(ctx)
 }
-func (s *Service) Authenticate(ctx context.Context, token string) (user.User, error) {
+func (s *Service) Session(ctx context.Context, token string) (LoginResult, error) {
 	if len(token) != 43 {
-		return user.User{}, ErrCredentials
+		return LoginResult{}, ErrCredentials
 	}
-	var u user.User
-	err := s.DB.QueryRow(ctx, `SELECT u.id,u.email,u.name,u.verified_at,u.created_at,u.is_admin FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.verified_at IS NOT NULL`, tokenHash(token)).Scan(&u.ID, &u.Email, &u.Name, &u.VerifiedAt, &u.CreatedAt, &u.IsAdmin)
+	var result LoginResult
+	u := &result.User
+	err := s.DB.QueryRow(ctx, `SELECT u.id,u.email,u.name,u.verified_at,u.created_at,u.is_admin,s.expires_at FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.verified_at IS NOT NULL`, tokenHash(token)).Scan(&u.ID, &u.Email, &u.Name, &u.VerifiedAt, &u.CreatedAt, &u.IsAdmin, &result.ExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return user.User{}, ErrCredentials
+		return LoginResult{}, ErrCredentials
 	}
-	return u, err
+	return result, err
+}
+func (s *Service) Authenticate(ctx context.Context, token string) (user.User, error) {
+	result, err := s.Session(ctx, token)
+	return result.User, err
 }
 func (s *Service) Logout(ctx context.Context, token string) error {
 	_, err := s.DB.Exec(ctx, "DELETE FROM sessions WHERE token_hash=$1", tokenHash(token))

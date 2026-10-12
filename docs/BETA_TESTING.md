@@ -36,8 +36,8 @@ Complete the external hosting, HTTPS, email and recovery checks in
    private to the author and hosting admins, not to other server members. Replies
    appear in the dashboard; automatic email notifications are not implemented.
 
-Reloading still requires signing in again because browser sessions remain in
-memory. Feedback form drafts are not persisted. This inbox is for beta reports,
+Refreshing restores a valid browser session, up to its fixed 24-hour expiry.
+Logout and password changes revoke it; feedback form drafts are not persisted. This inbox is for beta reports,
 not an emergency support service; arrange any urgent contact separately.
 
 ## Host review

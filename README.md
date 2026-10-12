@@ -196,10 +196,12 @@ routes documented in its runbook; Phase 3 customer routes are documented in [its
 ## Security decisions and deployment boundaries
 
 Passwords use salted bcrypt cost 12, with a 12–72 byte password policy. Random
-256-bit bearer tokens expire after 24 hours; only SHA-256 digests are stored. Tokens
-are revocable, never cookies. Cookie authentication and its CSRF policy are not
-introduced in this phase. The dashboard keeps bearer tokens in memory;
-do not store them in localStorage. Use HTTPS for the public API in production.
+256-bit sessions expire after 24 hours; only SHA-256 digests are stored.
+The dashboard uses a host-only HttpOnly cookie and restores its session after
+refresh. Cookie-authenticated changes require the exact frontend origin and a
+session-bound CSRF header. Production requires HTTPS and Secure cookies.
+Bearer authentication remains available for API clients. Never store session
+credentials in localStorage. See [browser sessions](docs/SESSIONS.md).
 
 Authentication endpoints share an atomic database rate limit of 30 requests per
 15-minute window per direct peer IP. Forwarded headers are ignored. Login also permits at most 10 attempts per account per 15 minutes, keyed by an

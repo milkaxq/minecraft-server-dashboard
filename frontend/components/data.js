@@ -4,7 +4,7 @@ import { useAuth } from "./auth";
 
 export function useResource(path, interval = 0) {
   const { session, api } = useAuth();
-  const token = session?.token;
+  const token = session?.csrf_token;
   const [result, setResult] = useState(null);
   const [reload, setReload] = useState(0);
   // A response belongs to one session, path and explicit refresh generation.

@@ -51,6 +51,7 @@ type API struct {
 	Console            *console.Service
 	Log                *slog.Logger
 	Origin             string
+	CookieSecure       bool
 	uploadSlots        chan struct{}
 	requests, failures atomic.Uint64
 }
@@ -75,6 +76,8 @@ func (a *API) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /auth/register", a.limited(a.register))
 	mux.HandleFunc("POST /auth/login", a.limited(a.login))
+	mux.HandleFunc("POST /auth/session-login", a.limited(a.cookieLogin))
+	mux.HandleFunc("GET /auth/session", a.protected(a.session))
 	mux.HandleFunc("POST /auth/forgot-password", a.limited(a.forgotPassword))
 	mux.HandleFunc("POST /auth/reset-password", a.limited(a.resetPassword))
 	mux.HandleFunc("PUT /account/password", a.protected(a.changePassword))
@@ -121,8 +124,16 @@ func bearer(r *http.Request) string {
 }
 func (a *API) protected(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		u, err := a.Auth.Authenticate(r.Context(), bearer(r))
+		token, cookieAuth := a.sessionToken(r)
+		if cookieAuth && r.Method != "GET" && r.Method != "HEAD" && !a.validCSRF(r, token) {
+			write(w, 403, map[string]string{"error": "Session security check failed. Refresh the page and try again.", "request_id": requestID(r)})
+			return
+		}
+		u, err := a.Auth.Authenticate(r.Context(), token)
 		if err != nil {
+			if cookieAuth && errors.Is(err, auth.ErrCredentials) {
+				a.clearSessionCookie(w)
+			}
 			a.fail(w, r, err)
 			return
 		}
@@ -297,10 +308,12 @@ func (a *API) resend(w http.ResponseWriter, r *http.Request) {
 	write(w, 202, map[string]string{"message": "If an unverified account exists, a verification email has been sent."})
 }
 func (a *API) logout(w http.ResponseWriter, r *http.Request) {
-	if err := a.Auth.Logout(r.Context(), bearer(r)); err != nil {
+	token, _ := a.sessionToken(r)
+	if err := a.Auth.Logout(r.Context(), token); err != nil {
 		a.fail(w, r, err)
 		return
 	}
+	a.clearSessionCookie(w)
 	w.WriteHeader(204)
 }
 func (a *API) plans(w http.ResponseWriter, r *http.Request) {
@@ -405,12 +418,13 @@ func (a *API) middleware(next http.Handler) http.Handler {
 				return
 			}
 			rw.Header().Set("Access-Control-Allow-Origin", origin)
+			rw.Header().Set("Access-Control-Allow-Credentials", "true")
 			rw.Header().Set("Vary", "Origin")
 			rw.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		}
 		if r.Method == http.MethodOptions {
 			rw.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-			rw.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,Idempotency-Key")
+			rw.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type,Idempotency-Key,X-CSRF-Token")
 			rw.WriteHeader(204)
 			return
 		}

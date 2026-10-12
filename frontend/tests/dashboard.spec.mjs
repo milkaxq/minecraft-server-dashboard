@@ -73,6 +73,7 @@ async function mockAPI(
     inviteRequired = false,
   } = {},
 ) {
+  let loggedIn = false;
   let running = initiallyRunning;
   let safetyBackup = false;
   let worldGenerated = true;
@@ -118,12 +119,22 @@ async function mockAPI(
     });
     const reply = (data, status = 200) =>
       route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
-    if (path === "/auth/login")
+    if (path === "/auth/session")
+      return loggedIn
+        ? reply({
+            csrf_token: "c".repeat(43),
+            expires_at: new Date(Date.now() + 86400000).toISOString(),
+            user: authUser,
+          })
+        : reply({ error: "invalid credentials" }, 401);
+    if (path === "/auth/session-login") {
+      loggedIn = true;
       return reply({
-        token: "a".repeat(43),
+        csrf_token: "c".repeat(43),
         expires_at: new Date(Date.now() + 86400000).toISOString(),
         user: authUser,
       });
+    }
     if (path === "/auth/forgot-password")
       return reply(
         {
@@ -132,13 +143,18 @@ async function mockAPI(
         },
         202,
       );
-    if (path === "/auth/reset-password" || path === "/account/password")
+    if (path === "/auth/reset-password" || path === "/account/password") {
+      loggedIn = false;
       return route.fulfill({ status: 204 });
+    }
     if (path === "/auth/config") return reply({ invite_required: inviteRequired });
     if (path === "/admin/invitations") return reply([]);
     if (path === "/auth/register") return reply(user, 201);
-    if (path === "/auth/verify-email" || path === "/auth/logout")
+    if (path === "/auth/logout") {
+      loggedIn = false;
       return route.fulfill({ status: 204 });
+    }
+    if (path === "/auth/verify-email") return route.fulfill({ status: 204 });
     if (path === "/auth/resend-verification")
       return reply({ message: "Verification email sent." }, 202);
     if (path === "/plans") return reply([plan]);
@@ -386,7 +402,7 @@ async function login(page) {
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome back, Alex." })).toBeVisible();
 }
-test("authentication, database-backed plans and in-memory session", async ({ page }, testInfo) => {
+test("authentication, database-backed plans and cookie session", async ({ page }, testInfo) => {
   await mockAPI(page);
   await login(page);
   await expect(page.getByRole("heading", { name: baseServer.name })).toBeVisible();
@@ -1451,4 +1467,75 @@ test("feedback only offers accessible servers and paginates personal reports", a
   await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
   expect(offsets).toContain("50");
+});
+
+test("refresh restores the session on a server page without browser token storage", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.locator(`a[href="/servers/${serverID}"]`).first().click();
+  await expect(page.getByRole("heading", { name: baseServer.name, exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/servers/${serverID}$`));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: baseServer.name, exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/servers/${serverID}$`));
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.getByText("Online", { exact: true }).first()).toBeVisible();
+  const power = calls.find((c) => c.path === `/servers/${serverID}/start`);
+  expect(power.headers["x-csrf-token"]).toBe("c".repeat(43));
+  expect(power.headers.authorization).toBeUndefined();
+  expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0);
+});
+test("logout stays signed out after refresh", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out of this session" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Good to see you again." })).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+});
+test("session restoration outage offers retry without discarding the login", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  let unavailable = true;
+  await page.route("http://localhost:8080/auth/session", (route) =>
+    route.fulfill({
+      status: unavailable ? 503 : 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        unavailable
+          ? { error: "Hosting service temporarily unavailable" }
+          : {
+              user,
+              csrf_token: "c".repeat(43),
+              expires_at: new Date(Date.now() + 86400000).toISOString(),
+            },
+      ),
+    }),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Hosting service temporarily unavailable" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  unavailable = false;
+  await page.getByRole("button", { name: "Retry connection" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back, Alex." })).toBeVisible();
+});
+test("failed logout keeps the session and explains how to retry", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.route("http://localhost:8080/auth/logout", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Service unavailable" }),
+    }),
+  );
+  await page.getByRole("button", { name: "A Alex Sign out" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Could not sign out" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome back, Alex." })).toBeVisible();
 });

@@ -106,7 +106,7 @@ func (a *API) ticket(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, control.ErrNotConfigured)
 		return
 	}
-	t, err := a.Console.Mint(r.Context(), currentUser(r).ID, id, bearer(r))
+	t, err := a.Console.Mint(r.Context(), currentUser(r).ID, id, sessionCredential(a, r))
 	if err != nil {
 		a.fail(w, r, err)
 		return

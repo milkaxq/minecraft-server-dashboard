@@ -29,6 +29,7 @@ func (a *API) resetPassword(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
+	a.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 func (a *API) changePassword(w http.ResponseWriter, r *http.Request) {
@@ -40,9 +41,10 @@ func (a *API) changePassword(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	if err := a.Auth.ChangePassword(r.Context(), currentUser(r).ID, bearer(r), in.Current, in.Password, requestID(r)); err != nil {
+	if err := a.Auth.ChangePassword(r.Context(), currentUser(r).ID, sessionCredential(a, r), in.Current, in.Password, requestID(r)); err != nil {
 		a.fail(w, r, err)
 		return
 	}
+	a.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }

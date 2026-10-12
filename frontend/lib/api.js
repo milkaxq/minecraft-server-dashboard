@@ -11,10 +11,11 @@ export class APIError extends Error {
 }
 export async function request(
   path,
-  { token, method = "GET", body, key, signal, raw = false, download = false } = {},
+  { token, csrfToken, method = "GET", body, key, signal, raw = false, download = false } = {},
 ) {
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (csrfToken && !["GET", "HEAD"].includes(method)) headers["X-CSRF-Token"] = csrfToken;
   if (body !== undefined)
     headers["Content-Type"] = raw ? "application/octet-stream" : "application/json";
   if (key) headers["Idempotency-Key"] = key;
@@ -26,7 +27,7 @@ export async function request(
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
       signal,
       cache: "no-store",
-      credentials: "omit",
+      credentials: token ? "omit" : "include",
     });
   } catch (error) {
     if (error.name === "AbortError") throw error;

@@ -115,7 +115,7 @@ export function Brand() {
   );
 }
 export function Shell({ children }) {
-  const { session, logout } = useAuth();
+  const { session, logout, restoring, restoreError, restoreSession, authNotice } = useAuth();
   const router = useRouter();
   const path = usePathname();
   const menu = useRef(null);
@@ -128,8 +128,19 @@ export function Shell({ children }) {
     return () => wide.removeEventListener("change", closeOnResize);
   }, []);
   useEffect(() => {
-    if (!session) router.replace("/login");
-  }, [session, router]);
+    if (!session && !restoring && !restoreError) router.replace("/login");
+  }, [session, router, restoring, restoreError]);
+  if (!session && restoreError)
+    return (
+      <div className="loading-full">
+        <div>
+          <ErrorMessage error={restoreError} />
+          <button className="button primary" onClick={restoreSession} disabled={restoring}>
+            Retry connection
+          </button>
+        </div>
+      </div>
+    );
   if (!session) return <div className="loading-full">Opening your dashboard…</div>;
   const nav = [
     ["dashboard", "/dashboard", "Dashboard"],
@@ -258,6 +269,11 @@ export function Shell({ children }) {
           </span>
         </header>
         <main id="main-content" tabIndex={-1} className="main-content">
+          {authNotice && (
+            <p className="notice" role="alert">
+              {authNotice}
+            </p>
+          )}
           {children}
         </main>
         <footer className="footer">
