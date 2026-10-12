@@ -20,6 +20,8 @@ import (
 
 func (a *API) managementRoutes(mux *http.ServeMux) {
 	routes := map[string]http.HandlerFunc{
+		"GET /servers/{id}/backup-schedule":           a.backupSchedule,
+		"PUT /servers/{id}/backup-schedule":           a.saveBackupSchedule,
 		"GET /servers/{id}/whitelist":                 a.whitelist,
 		"POST /servers/{id}/whitelist":                a.changeWhitelist,
 		"GET /servers/{id}/world":                     a.world,

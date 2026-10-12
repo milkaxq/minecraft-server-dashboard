@@ -19,6 +19,7 @@ import (
 
 	"minecraft-hosting/internal/admin"
 	"minecraft-hosting/internal/auth"
+	"minecraft-hosting/internal/backups"
 	"minecraft-hosting/internal/billing"
 	"minecraft-hosting/internal/catalog"
 	"minecraft-hosting/internal/console"
@@ -48,6 +49,7 @@ type API struct {
 	Servers            server.Service
 	Jobs               jobs.Service
 	Control            *control.Service
+	BackupSchedules    *backups.Service
 	Management         *management.Service
 	Console            *console.Service
 	Log                *slog.Logger
@@ -179,6 +181,10 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, backups.ErrRevision):
+		status, message = 409, "Backup schedule changed. Refresh before saving again."
+	case errors.Is(err, backups.ErrAllowance):
+		status, message = 409, "Daily backups need at least two backup slots to preserve the last successful copy."
 	case errors.Is(err, feedback.ErrConflict):
 		status, message = 409, "Report changed or submission key was reused. Refresh the report before saving changes."
 	case errors.Is(err, auth.ErrInvitation):
