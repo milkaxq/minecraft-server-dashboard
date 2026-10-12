@@ -3,13 +3,27 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // Worker configuration is separate from the API: only the worker needs the Application key.
-type Worker struct{ Environment, DatabaseURL, PanelURL, ApplicationKey, InstallationKey string }
+type Worker struct {
+	Environment, DatabaseURL, PanelURL, ApplicationKey, InstallationKey, BackupClientKey string
+	BackupSchedulerEnabled                                                               bool
+}
 
 func LoadWorker() (Worker, error) {
 	c := Worker{Environment: env("APP_ENV", "development"), DatabaseURL: os.Getenv("DATABASE_URL"), PanelURL: os.Getenv("PTERODACTYL_URL"), ApplicationKey: os.Getenv("PTERODACTYL_APPLICATION_API_KEY"), InstallationKey: os.Getenv("PTERODACTYL_INSTALLATION_API_KEY")}
+	var err error
+	c.BackupSchedulerEnabled, err = backupSchedulerFlag()
+	if err != nil {
+		return c, err
+	}
+	c.BackupClientKey = os.Getenv("PTERODACTYL_BACKUP_CLIENT_API_KEY")
+	if c.BackupSchedulerEnabled && (c.BackupClientKey == "" || strings.HasPrefix(c.BackupClientKey, "ptla_")) {
+		return c, fmt.Errorf("enabled backups require PTERODACTYL_BACKUP_CLIENT_API_KEY containing a Client API credential")
+	}
 	if c.Environment != "development" && c.Environment != "production" {
 		return c, fmt.Errorf("invalid environment")
 	}
@@ -39,4 +53,12 @@ func OperatorDatabaseURL() (string, error) {
 		}
 	}
 	return value, nil
+}
+
+func backupSchedulerFlag() (bool, error) {
+	enabled, err := strconv.ParseBool(env("BACKUP_SCHEDULER_ENABLED", "false"))
+	if err != nil {
+		return false, fmt.Errorf("BACKUP_SCHEDULER_ENABLED must be a boolean")
+	}
+	return enabled, nil
 }

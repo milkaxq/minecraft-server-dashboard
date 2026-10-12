@@ -15,9 +15,17 @@ import (
 	"minecraft-hosting/internal/server"
 )
 
+// Client limits the scheduler to backup operations. Automatic deletion cannot
+// unlock a copy protected by the customer or another operator.
+type Client interface {
+	Ready(context.Context, string) error
+	ListBackups(context.Context, string) ([]pterodactyl.Backup, error)
+	CreateAutomaticBackup(context.Context, string, string) (pterodactyl.Backup, error)
+	DeleteAutomaticBackup(context.Context, string, string) error
+}
 type Worker struct {
 	DB      *pgxpool.Pool
-	Panel   pterodactyl.ManagementClient
+	Panel   Client
 	Control *control.Service
 	Log     *slog.Logger
 }
@@ -116,6 +124,7 @@ func (w *Worker) process(parent context.Context, r claimedRun) error {
 	if err != nil {
 		return err
 	}
+	r.Limit = limit
 	if identifier != r.Identifier {
 		return w.transition(ctx, conn, r, "NEEDS_INSPECTION", "server_identity_changed", nil)
 	}

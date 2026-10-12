@@ -33,6 +33,7 @@ type Run struct {
 	CompletedAt *time.Time `json:"completed_at"`
 }
 type View struct {
+	Available bool `json:"available"`
 	Update
 	CanManage   bool       `json:"can_manage"`
 	NextRun     *time.Time `json:"next_run"`
@@ -41,14 +42,15 @@ type View struct {
 	Warning     string     `json:"warning"`
 }
 type Service struct {
-	DB      *pgxpool.Pool
-	Control *control.Service
+	Available bool
+	DB        *pgxpool.Pool
+	Control   *control.Service
 }
 
 // Status access deliberately does not require a live Panel: owners must be
 // able to disable schedules and inspect failures on suspended servers.
 func (s *Service) Get(ctx context.Context, actor, id uuid.UUID) (View, error) {
-	v := View{Update: Update{Hour: 3, Timezone: "UTC"}, Runs: []Run{}}
+	v := View{Available: s.Available, Update: Update{Hour: 3, Timezone: "UTC"}, Runs: []Run{}}
 	var role server.Role
 	var state string
 	var limit int
@@ -130,6 +132,9 @@ func (s *Service) Put(ctx context.Context, actor, id uuid.UUID, in Update, rid s
 		return View{}, err
 	}
 	if in.Enabled {
+		if !s.Available {
+			return View{}, control.ErrNotConfigured
+		}
 		if limit < 2 {
 			return View{}, ErrAllowance
 		}

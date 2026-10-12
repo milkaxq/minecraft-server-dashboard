@@ -25,6 +25,8 @@ type backupPanel struct {
 	creates, deletes int
 	uncertain        bool
 	unavailable      bool
+	onList           func()
+	rejectAutoDelete bool
 }
 
 func (p *backupPanel) Ready(context.Context, string) error {
@@ -38,6 +40,11 @@ func (p *backupPanel) Ready(context.Context, string) error {
 func (p *backupPanel) ListBackups(context.Context, string) ([]pterodactyl.Backup, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.onList != nil {
+		fn := p.onList
+		p.onList = nil
+		fn()
+	}
 	return append([]pterodactyl.Backup(nil), p.items...), nil
 }
 func (p *backupPanel) CreateBackup(_ context.Context, _ string, name string) (pterodactyl.Backup, error) {
@@ -376,5 +383,147 @@ func TestWorkerUnavailableRetriesAreBounded(t *testing.T) {
 	v, _ := f.s.Get(ctx, f.owner, f.id)
 	if v.Runs[0].Status != "FAILED" || p.creates != 0 {
 		t.Fatalf("unbounded retry: %+v", v)
+	}
+}
+
+func TestWorkerUnknownDeleteBlocksFurtherMutation(t *testing.T) {
+	f := setup(t)
+	p := &backupPanel{}
+	now := due(t, f)
+	w := worker(f, p)
+	ctx := context.Background()
+	if err := w.enqueue(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := w.claim(ctx, now, []uuid.UUID{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := f.db.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	target := uuid.New()
+	op, err := w.intent(ctx, conn, r, "DELETE", &target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = w.unknown(ctx, conn, r, op, "delete_unconfirmed"); !errors.Is(err, control.ErrUnknown) {
+		t.Fatalf("workflow continued after uncertain delete: %v", err)
+	}
+	if err = w.Tick(ctx, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if p.creates != 0 || p.deletes != 0 {
+		t.Fatal("retried ambiguous mutation")
+	}
+}
+
+func TestWorkerRechecksAllowanceImmediatelyBeforeCreate(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	if _, err := f.db.Exec(ctx, "UPDATE servers SET backup_limit=3 WHERE id=$1", f.id); err != nil {
+		t.Fatal(err)
+	}
+	p := &backupPanel{items: []pterodactyl.Backup{{UUID: uuid.NewString()}, {UUID: uuid.NewString()}}, onList: func() {
+		if _, err := f.db.Exec(ctx, "UPDATE servers SET backup_limit=2 WHERE id=$1", f.id); err != nil {
+			t.Error(err)
+		}
+	}}
+	now := due(t, f)
+	if err := worker(f, p).Tick(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if p.creates != 0 {
+		t.Fatal("creation exceeded allowance reduced after capacity snapshot")
+	}
+}
+
+func TestEnqueueAuditsOnlyOneQueuedRun(t *testing.T) {
+	f := setup(t)
+	p := &backupPanel{}
+	now := due(t, f)
+	w := worker(f, p)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if err := w.enqueue(ctx, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int
+	if err := f.db.QueryRow(ctx, "SELECT count(*) FROM audit_logs WHERE server_id=$1 AND action='backup.automatic.QUEUED' AND metadata->>'automation'='true'", f.id).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("queued transition audits %d want 1", count)
+	}
+}
+
+func TestClaimDoesNotStarveNewRunsBehindUnfinishedBackups(t *testing.T) {
+	f := setup(t)
+	p := &backupPanel{}
+	now := due(t, f)
+	w := worker(f, p)
+	ctx := context.Background()
+	if err := w.enqueue(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(ctx, "UPDATE backup_runs SET status='CREATING',backup_uuid=$2 WHERE server_id=$1", f.id, uuid.New()); err != nil {
+		t.Fatal(err)
+	}
+	queued := uuid.New()
+	if _, err := f.db.Exec(ctx, `INSERT INTO backup_runs(id,server_id,schedule_revision,scheduled_at,owner_id,panel_identifier,status) VALUES($1,$2,1,$3,$4,'abcdef12','QUEUED')`, queued, f.id, now.Add(-time.Hour), f.owner); err != nil {
+		t.Fatal(err)
+	}
+	first, err := w.claim(ctx, now, []uuid.UUID{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == queued {
+		t.Fatal("fixture did not claim older unfinished backup")
+	}
+	w.release(first)
+	next, err := w.claim(ctx, time.Now(), []uuid.UUID{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID != queued {
+		t.Fatal("unfinished backup monopolized claims ahead of queued work")
+	}
+}
+
+func (p *backupPanel) CreateAutomaticBackup(ctx context.Context, id, name string) (pterodactyl.Backup, error) {
+	return p.CreateBackup(ctx, id, name)
+}
+func (p *backupPanel) DeleteAutomaticBackup(ctx context.Context, id, target string) error {
+	p.mu.Lock()
+	reject := p.rejectAutoDelete
+	p.mu.Unlock()
+	if reject {
+		return pterodactyl.ErrConflict
+	}
+	return p.DeleteBackup(ctx, id, target)
+}
+
+func TestWorkerAutomaticDeleteConflictIsKnownRejection(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	now := due(t, f)
+	old, last := uuid.New(), uuid.New()
+	older := now.Add(-48 * time.Hour).Format(time.RFC3339)
+	recent := now.Add(-time.Hour).Format(time.RFC3339)
+	p := &backupPanel{rejectAutoDelete: true, items: []pterodactyl.Backup{{UUID: old.String(), Successful: true, CompletedAt: &older}, {UUID: last.String(), Successful: true, CompletedAt: &recent}}}
+	for i, b := range []uuid.UUID{old, last} {
+		if _, err := f.db.Exec(ctx, `INSERT INTO backup_runs(id,server_id,schedule_revision,scheduled_at,owner_id,panel_identifier,status,backup_uuid) VALUES($1,$2,1,$3,$4,'abcdef12','COMPLETED',$5)`, uuid.New(), f.id, now.Add(time.Duration(-72+i)*time.Hour), f.owner, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := worker(f, p).Tick(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	v, err := f.s.Get(ctx, f.owner, f.id)
+	if err != nil || v.Runs[0].Status != "SKIPPED" || v.Warning == "needs_inspection" {
+		t.Fatalf("known no-mutation rejection became ambiguous: %+v %v", v, err)
 	}
 }

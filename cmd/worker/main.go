@@ -5,13 +5,16 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"minecraft-hosting/internal/backups"
 	"minecraft-hosting/internal/billing"
 	"minecraft-hosting/internal/config"
+	"minecraft-hosting/internal/control"
 	"minecraft-hosting/internal/provisioning"
 	"minecraft-hosting/internal/pterodactyl"
 )
@@ -53,7 +56,20 @@ func run(log *slog.Logger) error {
 		}
 		verifier = provisioning.ReceiptVerifier{Files: client}
 	}
-	go (&billing.Service{DB: db}).RunReconciler(ctx, log)
+	var background sync.WaitGroup
+	defer func() { stop(); background.Wait() }()
+	background.Add(1)
+	go func() { defer background.Done(); (&billing.Service{DB: db}).RunReconciler(ctx, log) }()
+	if c.BackupSchedulerEnabled {
+		backupClient, e := pterodactyl.NewServerClient(c.PanelURL, c.BackupClientKey, c.Environment == "development")
+		if e != nil {
+			return e
+		}
+		scheduler := &backups.Worker{DB: db, Panel: backupClient, Control: &control.Service{DB: db, Panel: backupClient}, Log: log}
+		background.Add(1)
+		go func() { defer background.Done(); _ = scheduler.Run(ctx) }()
+		log.Info("backup scheduler started")
+	}
 	log.Info("provisioning worker started")
 	return (&provisioning.Worker{DB: db, Panel: panel, Log: log, Verifier: verifier}).Run(ctx)
 }

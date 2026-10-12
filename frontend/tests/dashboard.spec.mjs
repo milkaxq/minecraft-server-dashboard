@@ -74,8 +74,26 @@ async function mockAPI(
     inviteRequired = false,
     holdStop = false,
     ignoreWhitelist = false,
+    backupSchedule = {},
+    scheduleConflict = false,
+    scheduleChangesAfterRead = false,
   } = {},
 ) {
+  let scheduleReads = 0;
+  let schedule = {
+    enabled: false,
+    hour: 3,
+    minute: 0,
+    timezone: "UTC",
+    revision: 0,
+    available: true,
+    can_manage: role === "OWNER",
+    next_run: null,
+    last_success: null,
+    runs: [],
+    warning: "",
+    ...backupSchedule,
+  };
   let loggedIn = false;
   let running = initiallyRunning;
   let deletionPending = false;
@@ -423,6 +441,25 @@ async function mockAPI(
       worldGenerated = path.endsWith("upload");
       safetyBackup = false;
       return reply({ status: "saved", restart_required: true });
+    }
+    if (path === `/servers/${serverID}/backup-schedule`) {
+      if (role === "MODERATOR") return reply({ error: "server not found" }, 404);
+      if (request.method() === "PUT") {
+        if (role !== "OWNER") return reply({ error: "server not found" }, 404);
+        if (scheduleConflict) {
+          schedule = { ...schedule, revision: 5 };
+          return reply({ error: "Backup schedule changed. Refresh before saving again." }, 409);
+        }
+        schedule = {
+          ...schedule,
+          ...request.postDataJSON(),
+          revision: schedule.revision + 1,
+          next_run: request.postDataJSON().enabled ? "2026-10-14T03:00:00Z" : null,
+        };
+      }
+      if (request.method() === "GET" && ++scheduleReads > 1 && scheduleChangesAfterRead)
+        schedule = { ...schedule, revision: 5 };
+      return reply(schedule);
     }
     if (path === `/servers/${serverID}/backups` && request.method() === "GET")
       return reply([
@@ -2090,3 +2127,165 @@ test("catalog failure offers retry instead of claiming no compatible projects", 
   await page.getByRole("button", { name: "Retry catalog load" }).click();
   await expect(page.getByText("No compatible projects found.", { exact: false })).toBeVisible();
 });
+
+test("daily backups enable and disable with time timezone and revision", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await expect(card.getByRole("checkbox", { name: "Enable daily backups" })).not.toBeChecked();
+  await card.getByRole("checkbox", { name: "Enable daily backups" }).check();
+  await card.getByLabel("Backup time").fill("04:15");
+  await card.getByLabel("Timezone").fill("Asia/Ashgabat");
+  await card.getByRole("button", { name: "Save schedule" }).click();
+  await expect(card.getByRole("status")).toContainText("Schedule saved");
+  const call = calls.find((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT");
+  expect(call.body).toEqual({
+    enabled: true,
+    hour: 4,
+    minute: 15,
+    timezone: "Asia/Ashgabat",
+    revision: 0,
+  });
+  await card.getByRole("checkbox", { name: "Enable daily backups" }).uncheck();
+  await card.getByRole("button", { name: "Save schedule" }).click();
+  await expect(card.getByRole("checkbox")).not.toBeChecked();
+  await expect(card).toContainText("Off");
+});
+test("daily backups stay readable for admins with no edit controls", async ({ page }) => {
+  await mockAPI(page, {
+    role: "ADMIN",
+    backupSchedule: {
+      enabled: true,
+      revision: 2,
+      next_run: "2026-10-14T03:00:00Z",
+      timezone: "Europe/Berlin",
+    },
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await expect(card).toContainText("Europe/Berlin");
+  await expect(card.getByRole("button", { name: "Save schedule" })).toHaveCount(0);
+});
+test("daily backups refresh conflicts without silently resubmitting", async ({ page }) => {
+  const calls = await mockAPI(page, { scheduleConflict: true });
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await card.getByRole("checkbox").check();
+  await card.getByRole("button", { name: "Save schedule" }).click();
+  await expect(card.getByRole("alert")).toContainText("changed");
+  await card.getByRole("button", { name: "Reload schedule" }).click();
+  await expect(card.getByRole("checkbox")).not.toBeChecked();
+  expect(
+    calls.filter((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT"),
+  ).toHaveLength(1);
+});
+for (const width of [390, 1366])
+  test(`daily backup warnings fit ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockAPI(page, {
+      backupSchedule: {
+        enabled: true,
+        revision: 3,
+        timezone: "Asia/Ashgabat",
+        last_success: "2026-10-12T03:00:00Z",
+        warning: "needs_inspection",
+        runs: [
+          {
+            id: "run",
+            status: "NEEDS_INSPECTION",
+            scheduled_at: "2026-10-13T03:00:00Z",
+            error_code: "create_unconfirmed",
+          },
+        ],
+      },
+    });
+    await openServer(page);
+    await page.getByRole("link", { name: "Backups", exact: true }).click();
+    const card = page.getByRole("region", { name: "Daily backups" });
+    await expect(card).toContainText("needs inspection");
+    await expect(card).toContainText("Last successful backup");
+    await expect(card).toContainText("Asia/Ashgabat");
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("daily-backups.png"), fullPage: true });
+  });
+test("daily backups require two slots and cannot enable without host support", async ({ page }) => {
+  await mockAPI(page, {
+    servers: [{ ...baseServer, backup_limit: 1 }],
+    backupSchedule: { available: false, warning: "insufficient_allowance" },
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await expect(card).toContainText("two backup slots");
+  await expect(card.getByRole("checkbox")).toBeDisabled();
+});
+
+test("daily backup polling preserves unsaved edits and their original revision", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, {
+    scheduleChangesAfterRead: true,
+    backupSchedule: { revision: 2 },
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await card.getByLabel("Backup time").fill("05:15");
+  await expect
+    .poll(
+      () => calls.filter((c) => c.path.endsWith("/backup-schedule") && c.method === "GET").length,
+      { timeout: 20000 },
+    )
+    .toBeGreaterThanOrEqual(2);
+  await expect(card.getByLabel("Backup time")).toHaveValue("05:15");
+  await card.getByRole("button", { name: "Save schedule" }).click();
+  const call = calls.find((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT");
+  expect(call.body.revision).toBe(2);
+});
+
+test("suspended owners can turn off daily backups", async ({ page }) => {
+  await mockAPI(page, {
+    serverState: "SUSPENDED",
+    backupSchedule: { enabled: true, revision: 2, warning: "server_unavailable" },
+  });
+  await openServer(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await expect(card).toContainText("unavailable");
+  await card.getByRole("checkbox").uncheck();
+  await card.getByRole("button", { name: "Save schedule" }).click();
+  await expect(card.getByRole("status").filter({ hasText: "Schedule saved" })).toContainText(
+    "Schedule saved",
+  );
+});
+test("moderators cannot see daily backup controls", async ({ page }) => {
+  const calls = await mockAPI(page, { role: "MODERATOR" });
+  await openServer(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  await expect(page.getByRole("region", { name: "Daily backups" })).toHaveCount(0);
+  await expect(page.getByText("Your server role does not allow this page.")).toBeVisible();
+  expect(calls.filter((c) => c.path.endsWith("/backup-schedule"))).toHaveLength(0);
+});
+for (const status of ["FAILED", "SKIPPED"])
+  test(`daily backup ${status.toLowerCase()} keeps last success visible`, async ({ page }) => {
+    await mockAPI(page, {
+      backupSchedule: {
+        enabled: true,
+        revision: 2,
+        last_success: "2026-10-12T03:00:00Z",
+        warning: status === "FAILED" ? "backup_failed" : "capacity_full",
+        runs: [{ id: "run", status, scheduled_at: "2026-10-13T03:00:00Z" }],
+      },
+    });
+    await openServer(page);
+    await page.getByRole("link", { name: "Backups", exact: true }).click();
+    const card = page.getByRole("region", { name: "Daily backups" });
+    await expect(card).toContainText("Last successful backup");
+    await expect(card).toContainText(status === "FAILED" ? "Failed" : "Skipped");
+    await expect(card).toContainText("preserved");
+  });

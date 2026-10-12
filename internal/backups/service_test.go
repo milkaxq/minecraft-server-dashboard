@@ -39,7 +39,7 @@ func setup(t *testing.T) fixture {
 	if _, err := db.Exec(ctx, "INSERT INTO server_members(server_id,user_id,role) VALUES($1,$2,'ADMIN'),($1,$3,'MODERATOR')", f.id, f.admin, f.mod); err != nil {
 		t.Fatal(err)
 	}
-	f.s = &Service{DB: db, Control: &control.Service{DB: db}}
+	f.s = &Service{Available: true, DB: db, Control: &control.Service{DB: db}}
 	return f
 }
 func TestSchedulePermissionsAndRevision(t *testing.T) {
@@ -95,5 +95,21 @@ func TestScheduleAllowanceAndValidation(t *testing.T) {
 	in.Timezone = "Local"
 	if _, err := f.s.Put(ctx, f.owner, f.id, in, "test"); !errors.Is(err, server.ErrInvalid) {
 		t.Fatalf("bad timezone: %v", err)
+	}
+}
+
+func TestScheduleCannotEnableWhenHostSchedulerDisabled(t *testing.T) {
+	f := setup(t)
+	f.s.Available = false
+	ctx := context.Background()
+	if _, err := f.s.Put(ctx, f.owner, f.id, Update{Enabled: true, Hour: 3, Timezone: "UTC"}, "test"); !errors.Is(err, control.ErrNotConfigured) {
+		t.Fatalf("silent disabled host scheduler: %v", err)
+	}
+	v, err := f.s.Get(ctx, f.owner, f.id)
+	if err != nil || v.Available {
+		t.Fatalf("disabled availability: %+v %v", v, err)
+	}
+	if _, err = f.s.Put(ctx, f.owner, f.id, Update{Hour: 3, Timezone: "UTC"}, "test"); err != nil {
+		t.Fatal("disable must remain available", err)
 	}
 }

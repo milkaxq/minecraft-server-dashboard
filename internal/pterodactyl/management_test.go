@@ -200,3 +200,46 @@ func TestReadyRejectsAnotherServersIdentity(t *testing.T) {
 		t.Fatalf("accepted readiness for another server: %v", err)
 	}
 }
+
+func TestAutomaticBackupProtocolNeverUnlocksLockedCopies(t *testing.T) {
+	id := uuid.NewString()
+	mutations := 0
+	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && r.URL.Path == "/api/client/servers/abcdef12" {
+			json.NewEncoder(w).Encode(map[string]any{"attributes": map[string]any{"feature_limits": map[string]int{"backups": 2}}})
+			return
+		}
+		if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/backups") {
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"attributes": map[string]any{"uuid": id, "is_locked": true, "is_successful": true, "completed_at": "2026-10-01T00:00:00Z"}}}})
+			return
+		}
+		mutations++
+		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/backups") {
+			var in map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+				t.Error(err)
+			}
+			if in["is_locked"] != false {
+				t.Error("scheduled backup locked, preventing safe rotation")
+			}
+			json.NewEncoder(w).Encode(map[string]any{"attributes": map[string]any{"uuid": uuid.NewString()}})
+			return
+		}
+		t.Error("automatic rotation attempted to unlock/delete a locked backup")
+		w.WriteHeader(204)
+	}))
+	defer panel.Close()
+	client, err := NewServerClient(panel.URL, "test-only", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.CreateAutomaticBackup(context.Background(), "abcdef12", "Daily"); err != nil {
+		t.Fatal(err)
+	}
+	if err = client.DeleteAutomaticBackup(context.Background(), "abcdef12", id); !errors.Is(err, ErrConflict) {
+		t.Fatalf("locked automatic delete: %v", err)
+	}
+	if mutations != 1 {
+		t.Fatalf("unexpected remote mutation count %d", mutations)
+	}
+}

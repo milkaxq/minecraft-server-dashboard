@@ -1,4 +1,5 @@
 "use client";
+import { BackupSchedule } from "./backup-schedule";
 import { ProjectIcon } from "./project-icon";
 import { supportsPlugins, supportsMods, softwareName } from "../lib/software";
 import { Players } from "./players";
@@ -139,6 +140,9 @@ export function ManagementPage({ id, section }) {
           <FeatureLinks id={id} server={server} advanced={section === "files"} active={section} />
           <ContextHelp topic={section} />
           <ErrorMessage error={info.error || error} />
+          {section === "backups" && server.permissions?.includes("backups") && (
+            <BackupSchedule key={id} id={id} limit={server.backup_limit} />
+          )}
           {!server.permissions?.includes(
             section === "mods" ? "files" : section === "players" ? "settings" : section,
           ) ? (
@@ -1174,6 +1178,7 @@ function Backups({ id, offline, limit }) {
                   <tr key={b.uuid}>
                     <td>
                       <strong>{b.name}</strong>
+                      <small>{b.automatic ? "Automatic" : "Manual"}</small>
                       <small>{new Date(b.created_at).toLocaleString()}</small>
                     </td>
                     <td>{!b.completed_at ? "Creating…" : b.is_successful ? "Ready" : "Failed"}</td>

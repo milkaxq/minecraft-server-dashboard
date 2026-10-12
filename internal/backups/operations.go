@@ -2,6 +2,7 @@ package backups
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -63,10 +64,10 @@ func (w *Worker) create(ctx context.Context, conn *pgxpool.Conn, r claimedRun) e
 		return w.rejectIntent(ctx, conn, r, op, "schedule_changed")
 	}
 	request, c := context.WithTimeout(ctx, 30*time.Second)
-	b, err := w.Panel.CreateBackup(request, r.Identifier, "Daily backup "+r.ID.String())
+	b, err := w.Panel.CreateAutomaticBackup(request, r.Identifier, "Daily backup "+r.ID.String())
 	c()
 	if err != nil {
-		if pterodactyl.Rejected(err) {
+		if pterodactyl.Rejected(err) || errors.Is(err, pterodactyl.ErrConflict) {
 			return w.rejectIntent(ctx, conn, r, op, "panel_rejected")
 		}
 		return w.unknown(ctx, conn, r, op, "create_unconfirmed")
@@ -103,7 +104,7 @@ func (w *Worker) revalidate(ctx context.Context, conn *pgxpool.Conn, r claimedRu
 	var valid bool
 	err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM backup_schedules sc JOIN servers s ON s.id=sc.server_id JOIN backup_runs br ON br.server_id=s.id
  WHERE br.id=$1 AND br.lease_token=$2 AND br.lease_expires_at>now()
- AND sc.enabled AND sc.revision=$3 AND s.owner_id=$4 AND s.pterodactyl_identifier=$5 AND s.backup_limit>=2)`, r.ID, r.Token, r.Revision, r.Owner, r.Identifier).Scan(&valid)
+ AND sc.enabled AND sc.revision=$3 AND s.owner_id=$4 AND s.pterodactyl_identifier=$5 AND s.backup_limit>=2 AND s.backup_limit=$6)`, r.ID, r.Token, r.Revision, r.Owner, r.Identifier, r.Limit).Scan(&valid)
 	if err != nil {
 		return err
 	}
@@ -163,9 +164,9 @@ func (w *Worker) rotate(ctx context.Context, conn *pgxpool.Conn, r claimedRun, t
 		return w.rejectIntent(ctx, conn, r, op, "capacity_full")
 	}
 	request, c := context.WithTimeout(ctx, 30*time.Second)
-	err = w.Panel.DeleteBackup(request, r.Identifier, target)
+	err = w.Panel.DeleteAutomaticBackup(request, r.Identifier, target)
 	c()
-	if err != nil && pterodactyl.Rejected(err) {
+	if err != nil && (pterodactyl.Rejected(err) || errors.Is(err, pterodactyl.ErrConflict)) {
 		return w.rejectIntent(ctx, conn, r, op, "panel_rejected")
 	}
 	// A successful HTTP response alone is not proof that a slot is free.

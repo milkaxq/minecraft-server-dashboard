@@ -40,7 +40,7 @@ func TestBackupScheduleHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &API{DB: db, Auth: authentication, Servers: server.Service{DB: db}, BackupSchedules: &backups.Service{DB: db, Control: &control.Service{DB: db}}, Origin: "http://localhost:3000", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	a := &API{DB: db, Auth: authentication, Servers: server.Service{DB: db}, BackupSchedules: &backups.Service{Available: true, DB: db, Control: &control.Service{DB: db}}, Origin: "http://localhost:3000", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	h := a.Handler()
 	call := func(method, token, body string, cookie bool) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, "/servers/"+id.String()+"/backup-schedule", strings.NewReader(body))

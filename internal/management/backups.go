@@ -12,7 +12,12 @@ import (
 	"minecraft-hosting/internal/server"
 )
 
-func (s *Service) Backups(ctx context.Context, user, id uuid.UUID) ([]pterodactyl.Backup, error) {
+type Backup struct {
+	pterodactyl.Backup
+	Automatic bool `json:"automatic"`
+}
+
+func (s *Service) Backups(ctx context.Context, user, id uuid.UUID) ([]Backup, error) {
 	t, err := s.access(ctx, user, id, server.Backups)
 	if err != nil {
 		return nil, err
@@ -21,7 +26,27 @@ func (s *Service) Backups(ctx context.Context, user, id uuid.UUID) ([]pterodacty
 	if err != nil {
 		return nil, control.ErrUnavailable
 	}
-	return list, nil
+	rows, err := s.DB.Query(ctx, "SELECT backup_uuid::text FROM backup_runs WHERE server_id=$1 AND panel_identifier=$2 AND backup_uuid IS NOT NULL", id, t.Identifier)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	owned := map[string]bool{}
+	for rows.Next() {
+		var bid string
+		if err = rows.Scan(&bid); err != nil {
+			return nil, err
+		}
+		owned[bid] = true
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]Backup, 0, len(list))
+	for _, b := range list {
+		out = append(out, Backup{Backup: b, Automatic: owned[b.UUID]})
+	}
+	return out, nil
 }
 func backupIn(list []pterodactyl.Backup, id string) (pterodactyl.Backup, error) {
 	for _, b := range list {

@@ -291,6 +291,14 @@ func (a *HTTPServerClient) ListBackups(ctx context.Context, id string) ([]Backup
 	return nil, ErrInvalid
 }
 func (a *HTTPServerClient) CreateBackup(ctx context.Context, id, name string) (Backup, error) {
+	return a.createBackup(ctx, id, name, true)
+}
+
+// CreateAutomaticBackup leaves scheduler-owned copies eligible for safe rotation.
+func (a *HTTPServerClient) CreateAutomaticBackup(ctx context.Context, id, name string) (Backup, error) {
+	return a.createBackup(ctx, id, name, false)
+}
+func (a *HTTPServerClient) createBackup(ctx context.Context, id, name string, locked bool) (Backup, error) {
 	if !safeIdentifier(id) {
 		return Backup{}, ErrInvalid
 	}
@@ -315,7 +323,7 @@ func (a *HTTPServerClient) CreateBackup(ctx context.Context, id, name string) (B
 	var r struct {
 		Attributes Backup `json:"attributes"`
 	}
-	err = a.request(ctx, "POST", prefix(id)+"/backups", map[string]any{"name": name, "is_locked": true}, &r)
+	err = a.request(ctx, "POST", prefix(id)+"/backups", map[string]any{"name": name, "is_locked": locked}, &r)
 	return r.Attributes, err
 }
 func (a *HTTPServerClient) RestoreBackup(ctx context.Context, id, backup string) error {
@@ -328,6 +336,15 @@ func (a *HTTPServerClient) RestoreBackup(ctx context.Context, id, backup string)
 	return a.request(ctx, "POST", prefix(id)+"/backups/"+url.PathEscape(backup)+"/restore", map[string]bool{"truncate": true}, nil)
 }
 func (a *HTTPServerClient) DeleteBackup(ctx context.Context, id, backup string) error {
+	return a.deleteBackup(ctx, id, backup, true)
+}
+
+// DeleteAutomaticBackup never changes lock state; a lock revokes automation's
+// deletion authority even if it changed after the scheduler's policy check.
+func (a *HTTPServerClient) DeleteAutomaticBackup(ctx context.Context, id, backup string) error {
+	return a.deleteBackup(ctx, id, backup, false)
+}
+func (a *HTTPServerClient) deleteBackup(ctx context.Context, id, backup string, unlock bool) error {
 	// Our backups are locked to prevent Panel's rotating retention from evicting
 	// another backup during creation. Explicit customer deletion unlocks first.
 	if !safeIdentifier(id) {
@@ -345,6 +362,9 @@ func (a *HTTPServerClient) DeleteBackup(ctx context.Context, id, backup string) 
 		if b.UUID == backup {
 			found = true
 			if b.Locked {
+				if !unlock {
+					return ErrConflict
+				}
 				if err := a.request(ctx, "POST", prefix(id)+"/backups/"+backup+"/lock", nil, nil); err != nil {
 					return err
 				}

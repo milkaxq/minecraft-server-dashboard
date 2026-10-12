@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"minecraft-hosting/internal/audit"
 )
 
 type claimedRun struct {
@@ -15,6 +17,7 @@ type claimedRun struct {
 	Identifier, Status         string
 	BackupUUID                 *uuid.UUID
 	Attempts                   int
+	Limit                      int
 }
 
 // enqueue commits at most one missed daily instant per schedule and advances to
@@ -57,9 +60,16 @@ func (w *Worker) enqueue(ctx context.Context, now time.Time) error {
 		if e != nil {
 			return e
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO backup_runs(id,server_id,schedule_revision,scheduled_at,owner_id,panel_identifier,status)
- VALUES($1,$2,$3,$4,$5,$6,'QUEUED') ON CONFLICT(server_id,scheduled_at) DO NOTHING`, uuid.New(), d.id, d.revision, d.at, d.owner, d.identifier); err != nil {
-			return err
+		runID := uuid.New()
+		tag, e := tx.Exec(ctx, `INSERT INTO backup_runs(id,server_id,schedule_revision,scheduled_at,owner_id,panel_identifier,status)
+ VALUES($1,$2,$3,$4,$5,$6,'QUEUED') ON CONFLICT(server_id,scheduled_at) DO NOTHING`, runID, d.id, d.revision, d.at, d.owner, d.identifier)
+		if e != nil {
+			return e
+		}
+		if tag.RowsAffected() == 1 {
+			if err = audit.Record(ctx, tx, d.owner, d.id, "backup.automatic.QUEUED", "backup:"+runID.String(), map[string]any{"automation": true, "run_id": runID, "scheduled_at": d.at}); err != nil {
+				return err
+			}
 		}
 		if _, err = tx.Exec(ctx, "UPDATE backup_schedules SET next_run=$2,updated_at=now() WHERE server_id=$1", d.id, next); err != nil {
 			return err
@@ -78,7 +88,7 @@ func (w *Worker) claim(ctx context.Context, now time.Time, seen []uuid.UUID) (cl
  FROM backup_runs WHERE status IN ('QUEUED','CREATING')
  AND (lease_expires_at IS NULL OR lease_expires_at<$1)
  AND (retry_at IS NULL OR retry_at<=$1) AND NOT(id=ANY($2::uuid[]))
- ORDER BY scheduled_at LIMIT 1 FOR UPDATE SKIP LOCKED`, now, seen).Scan(&r.ID, &r.ServerID, &r.Owner, &r.Revision, &r.Identifier, &r.Status, &r.BackupUUID, &r.Attempts)
+ ORDER BY COALESCE(retry_at,scheduled_at),scheduled_at LIMIT 1 FOR UPDATE SKIP LOCKED`, now, seen).Scan(&r.ID, &r.ServerID, &r.Owner, &r.Revision, &r.Identifier, &r.Status, &r.BackupUUID, &r.Attempts)
 	if err != nil {
 		return r, err
 	}
@@ -91,7 +101,7 @@ func (w *Worker) claim(ctx context.Context, now time.Time, seen []uuid.UUID) (cl
 func (w *Worker) release(r claimedRun) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := w.DB.Exec(ctx, "UPDATE backup_runs SET lease_token=NULL,lease_expires_at=NULL WHERE id=$1 AND lease_token=$2", r.ID, r.Token)
+	_, err := w.DB.Exec(ctx, "UPDATE backup_runs SET lease_token=NULL,lease_expires_at=NULL,retry_at=CASE WHEN status='CREATING' THEN now()+interval '15 seconds' ELSE retry_at END WHERE id=$1 AND lease_token=$2", r.ID, r.Token)
 	if err != nil {
 		w.Log.Warn("backup lease release failed", "run_id", r.ID, "category", "database")
 	}
