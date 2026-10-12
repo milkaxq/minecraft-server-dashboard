@@ -680,7 +680,7 @@ function Settings({ id, offline }) {
                   [
                     "online_mode",
                     "Verify Minecraft accounts",
-                    "Require players to sign in with their Minecraft accounts.",
+                    "Require a Microsoft account that owns Java Edition. No server password is needed unless a login plugin is installed.",
                   ],
                 ].map(([key, label, help]) => (
                   <label key={key} className="setting-toggle">
@@ -699,7 +699,8 @@ function Settings({ id, offline }) {
               {!form.online_mode && (
                 <p className="notice">
                   Account verification is off. Players may join using another player&apos;s name.
-                  Enable it unless you use a trusted proxy with its own authentication.
+                  Keep it enabled unless you have configured an authentication plugin such as AuthMe
+                  or a trusted proxy with its own authentication.
                 </p>
               )}
               <p className="field-help">

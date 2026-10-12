@@ -475,6 +475,12 @@ test("order request sends approved choices without resource or price fields", as
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
   await page.getByLabel("Server name", { exact: true }).fill("A new adventure");
+  await expect(
+    page.getByRole("heading", { name: "Which software should I choose?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("New servers require Microsoft accounts", { exact: false }),
+  ).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Minecraft version", exact: true })).toHaveValue(
     "26.3",
   );
@@ -1751,4 +1757,49 @@ test("players page does not claim success when Minecraft has not confirmed a com
   await page.getByRole("button", { name: "Add player" }).click();
   await expect(page.getByRole("status")).toContainText("Minecraft has not confirmed");
   await expect(page.getByText("NotResolved", { exact: true })).not.toBeVisible();
+});
+
+for (const width of [320, 1366]) {
+  test(`joining instructions fit ${width}px and use saved login settings`, async ({ page }) => {
+    await mockAPI(page, { initiallyRunning: true });
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await page.goto(`/servers/${serverID}`);
+    const card = page.getByRole("region", { name: "How to join" });
+    await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
+    await expect(card.getByText("Whitelist is disabled.", { exact: false })).toBeVisible();
+    await expect(card.getByText("play.example.com:25565", { exact: true })).toBeVisible();
+    await card.getByText("Having trouble connecting?", { exact: true }).click();
+    await expect(card.getByText("Invalid session:", { exact: false })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}
+test("moderator joining help does not request privileged settings", async ({ page }) => {
+  const calls = await mockAPI(page, { role: "MODERATOR", initiallyRunning: true });
+  await login(page);
+  await page.goto(`/servers/${serverID}`);
+  const card = page.getByRole("region", { name: "How to join" });
+  await expect(card.getByText("Check which account you need", { exact: true })).toBeVisible();
+  await expect(card.getByRole("link", { name: "Manage allowed players →" })).toHaveCount(0);
+  expect(calls.some((c) => c.path.endsWith("/settings"))).toBe(false);
+});
+test("offline joining guidance does not assume an authentication plugin is installed", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  await page.route(`http://localhost:8080/servers/${serverID}/settings`, (route) =>
+    route.fulfill({ json: { online_mode: false, whitelist: true } }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}`);
+  const card = page.getByRole("region", { name: "How to join" });
+  await expect(
+    card.getByText("Check the server’s login instructions", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    card.getByText("plugins are not installed automatically.", { exact: false }),
+  ).toBeVisible();
+  await expect(card.getByText("Whitelist is enabled.", { exact: false })).toBeVisible();
 });

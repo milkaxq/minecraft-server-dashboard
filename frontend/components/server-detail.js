@@ -1,5 +1,6 @@
 "use client";
 import { softwareName } from "../lib/software";
+import { JoinServer } from "./join-server";
 import { FirstServerChecklist } from "./first-server";
 import { FeatureLinks } from "./management";
 import { ContextHelp } from "./context-help";
@@ -470,11 +471,27 @@ export function ServerDetail({ id, advanced = false }) {
                 server={server}
                 ready={ready}
                 eula={eula.data?.accepted}
-                powerState={usage?.power_state}
+                powerState={displayPowerState}
                 address={address}
                 addressCopied={addressCopied}
                 onCopy={copy}
               />
+            )}
+            {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
+              <JoinServer
+                server={server}
+                ready={ready}
+                powerState={displayPowerState}
+                address={address}
+                onCopy={copy}
+              />
+            )}
+            {ready && !notice && ["starting", "stopping"].includes(displayPowerState) && (
+              <p className="notice" role="status">
+                {displayPowerState === "starting"
+                  ? "Starting Minecraft. The world and plugins are loading; this page updates automatically."
+                  : "Saving your world and shutting down. Wait for Offline before starting again."}
+              </p>
             )}
             <ContextHelp topic={advanced ? "console" : "overview"} />
             {advanced ? (

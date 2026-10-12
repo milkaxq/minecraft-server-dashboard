@@ -182,6 +182,29 @@ export function NewServer({ initialPlan = "" }) {
                 {supportsMods(type) &&
                   "Players usually need matching mods and the same loader. Upload server mods on the Mods page after stopping the server."}
               </p>
+              <div className="creation-guidance">
+                <h3>Which software should I choose?</h3>
+                <p>
+                  <strong>Vanilla:</strong> original Minecraft. <strong>Paper:</strong> survival
+                  with optional server plugins. <strong>Fabric, Forge and NeoForge:</strong> mods
+                  and modpacks; choose the loader required by your pack.
+                </p>
+                <p>
+                  Only versions supported by the selected software are listed. Players should use
+                  the same Minecraft version. Plugins and mods are not installed automatically.
+                </p>
+                <h3>Who can join?</h3>
+                <p>
+                  New servers require Microsoft accounts that own Java Edition. No separate server
+                  password is needed. To support offline accounts, install and configure a
+                  compatible authentication plugin before disabling account verification in
+                  Settings. Offline support is configured after installation.
+                </p>
+                <p>
+                  After setup: review the EULA → start → add allowed players if the whitelist is
+                  enabled → copy the address and join.
+                </p>
+              </div>
               <Link href="/guide" className="button secondary">
                 Help me choose · Setup guide
               </Link>

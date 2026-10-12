@@ -3805,3 +3805,51 @@ textarea {
     padding-inline: 12px;
   }
 }
+
+.join-server {
+  margin-block: 24px;
+  padding: 28px;
+}
+.join-server p,
+.creation-guidance p {
+  color: var(--text-muted, #637066);
+  line-height: 1.65;
+}
+.join-steps {
+  padding-left: 24px;
+}
+.join-steps > li {
+  padding: 12px 0 12px 8px;
+}
+.join-address {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.join-address code {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.join-server summary {
+  cursor: pointer;
+  padding-block: 12px;
+  font-weight: 600;
+}
+.creation-guidance {
+  margin-block: 20px;
+  padding: 20px;
+  border: 1px solid #dce5dc;
+  border-radius: 12px;
+}
+@media (max-width: 600px) {
+  .join-server {
+    padding: 20px;
+  }
+  .creation-guidance {
+    padding: 16px;
+  }
+  .join-address .button {
+    width: 100%;
+  }
+}
