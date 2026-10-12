@@ -77,6 +77,7 @@ async function mockAPI(
 ) {
   let loggedIn = false;
   let running = initiallyRunning;
+  let deletionPending = false;
   let safetyBackup = false;
   let worldGenerated = true;
   let sharedMembers = [{ user_id: user.id, name: user.name, email: user.email, role: "OWNER" }];
@@ -258,7 +259,13 @@ async function mockAPI(
         })),
       ]);
     if (path === "/servers" && request.method() === "GET")
-      return errorList ? reply({ error: "Service temporarily unavailable" }, 503) : reply(servers);
+      return errorList
+        ? reply({ error: "Service temporarily unavailable" }, 503)
+        : reply(
+            servers.map((s) =>
+              s.id === serverID ? { ...s, deletion_pending: deletionPending } : s,
+            ),
+          );
     if (path === "/servers" && request.method() === "POST")
       return reply({ ...server, ...body, status: "PENDING_PAYMENT" }, 201);
     if (path === `/servers/${serverID}`) return reply(server);
@@ -412,7 +419,10 @@ async function mockAPI(
     if (path === `/servers/${serverID}/commands`) return reply({ status: "accepted" }, 202);
     if (path.startsWith(`/servers/${serverID}/`)) {
       const action = path.split("/").at(-1);
-      if (action === "terminate") return reply({ id: orderID, status: "PENDING" }, 202);
+      if (action === "terminate") {
+        deletionPending = true;
+        return reply({ id: orderID, status: "PENDING" }, 202);
+      }
       if (!(action === "stop" && holdStop)) running = ["start", "restart"].includes(action);
       return reply({ status: "accepted" }, 202);
     }
@@ -775,6 +785,13 @@ test("owner must type the server name before deletion is queued", async ({ page 
   await expect(page).toHaveURL(/\/servers$/);
   const deletion = calls.find((call) => call.path === `/servers/${serverID}/terminate`);
   expect(deletion.body.confirmation).toBe(serverID);
+  await expect(page.getByRole("status")).toContainText("being deleted");
+  await expect(page.locator(`a.server-card[href="/servers/${serverID}"]`)).toHaveCount(0);
+  await page.getByLabel("Server view").selectOption("all");
+  await expect(page.getByText("Deleting", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByLabel("Server view").selectOption("all");
+  await expect(page.getByText("Deleting", { exact: true })).toBeVisible();
 });
 
 test("first start requires an explicit owner agreement", async ({ page }) => {

@@ -44,6 +44,7 @@ export function Guide() {
         <nav className="guide-topics" aria-label="Guide topics">
           <a href="#choose-software">Choose software</a>
           <a href="#start-and-join">Start and join</a>
+          <a href="#server-login">Server login</a>
           <a href="#add-extras">Plugins and mods</a>
           <a href="#worlds-and-backups">Worlds and backups</a>
           <a href="#server-errors">Fix startup problems</a>
@@ -126,6 +127,38 @@ export function Guide() {
               including the port. Use the matching Minecraft version.
             </li>
           </ol>
+        </section>
+        <section id="server-login" className="panel management-panel">
+          <h2>Signing in to Minecraft servers</h2>
+          <p>
+            Most servers require a Microsoft account that owns Minecraft Java Edition. In
+            SKlauncher, choose Microsoft login for those servers. An offline username cannot join a
+            server with Minecraft account verification enabled. If Microsoft login reports an
+            invalid session, sign out of the launcher account and sign back in before launching the
+            game again.
+          </p>
+          <p>
+            Some Paper servers use AuthMe for separate server accounts. Both Microsoft and offline
+            players can connect when the host has configured this mode. After joining in Minecraft,
+            follow the registration dialog on your first visit, or use{" "}
+            <code>/register yourPassword yourPassword</code>. On later visits, use the login dialog
+            or <code>/login yourPassword</code>.
+          </p>
+          <p>
+            Choose a unique password of at least 10 characters. Do not reuse your Microsoft or
+            Blockyard password. Registration belongs to that Minecraft server; your website login is
+            separate. A whitelist may still require your host to allow your exact Minecraft
+            username.
+          </p>
+          <p>
+            Hosts: install and verify the login plugin before disabling Minecraft account
+            verification. Keep backups before switching modes: Minecraft player identities can
+            change, which affects inventories, permissions and whitelists. AuthMe is a Paper plugin;
+            modded servers need a login solution compatible with their loader.
+          </p>
+          <a href="https://docs.skmedix.pl/getting-started/login" target="_blank" rel="noreferrer">
+            SKlauncher login instructions
+          </a>
         </section>
         <section id="add-extras" className="panel management-panel">
           <h2>3. Add plugins or mods</h2>

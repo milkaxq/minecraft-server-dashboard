@@ -83,7 +83,7 @@ export function FirstServerChecklist({
   );
 }
 export function BetaGettingStarted({ servers }) {
-  const current = servers?.find((s) => s.status !== "CANCELLED");
+  const current = servers?.find((s) => s.status !== "CANCELLED" && !s.deletion_pending);
   return (
     <section className="panel beta-getting-started" aria-labelledby="beta-start-title">
       <h2 id="beta-start-title">Welcome to the private beta</h2>

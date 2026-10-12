@@ -111,6 +111,7 @@ type Server struct {
 	PlanID           uuid.UUID `json:"plan_id"`
 	Name             string    `json:"name"`
 	Status           State     `json:"status"`
+	DeletionPending  bool      `json:"deletion_pending"`
 	MinecraftVersion string    `json:"minecraft_version"`
 	ServerType       string    `json:"server_type"`
 	LoaderVersion    string    `json:"loader_version,omitempty"`

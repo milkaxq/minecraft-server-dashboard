@@ -152,7 +152,7 @@ function LiveResourceChart({ usage, cpuLimit }) {
 }
 
 export function ServerDetail({ id, advanced = false }) {
-  const { api } = useAuth();
+  const { api, refreshServers } = useAuth();
   const router = useRouter();
   const { data: server, error, loading } = useResource(`/servers/${id}`, 10000);
   const {
@@ -160,7 +160,9 @@ export function ServerDetail({ id, advanced = false }) {
     error: usageError,
     refresh: refreshUsage,
   } = useResource(
-    server?.status === "RUNNING" && server.management_available ? `/servers/${id}/usage` : null,
+    server?.status === "RUNNING" && server.management_available && !server.deletion_pending
+      ? `/servers/${id}/usage`
+      : null,
     5000,
   );
   const [busy, setBusy] = useState("");
@@ -172,7 +174,8 @@ export function ServerDetail({ id, advanced = false }) {
   const [deleteKey, setDeleteKey] = useState("");
   const [copied, setCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
-  const ready = server?.status === "RUNNING" && server.management_available;
+  const ready =
+    server?.status === "RUNNING" && server.management_available && !server.deletion_pending;
   const eula = useResource(ready ? `/servers/${id}/eula` : null, 10000);
   const [agreementChecked, setAgreementChecked] = useState(false);
   const canStart = ready && eula.data?.accepted === true && !eula.error;
@@ -255,7 +258,8 @@ export function ServerDetail({ id, advanced = false }) {
         body: { reason: "Owner requested deletion", confirmation: id },
         key: deleteKey,
       });
-      router.push("/servers");
+      refreshServers();
+      router.replace("/servers");
     } catch (err) {
       setActionError(err);
       setBusy("");
@@ -285,9 +289,11 @@ export function ServerDetail({ id, advanced = false }) {
               action={
                 <Badge
                   state={
-                    ready && eula.data?.accepted === false
-                      ? "ACCEPTANCE_REQUIRED"
-                      : displayPowerState || server.status
+                    server.deletion_pending
+                      ? "DELETING"
+                      : ready && eula.data?.accepted === false
+                        ? "ACCEPTANCE_REQUIRED"
+                        : displayPowerState || server.status
                   }
                 />
               }
@@ -357,6 +363,12 @@ export function ServerDetail({ id, advanced = false }) {
                 )}
               </div>
             </div>
+            {server.deletion_pending && (
+              <p className="notice" role="status">
+                This server is being deleted. Its controls are disabled while files and hosting
+                resources are removed.
+              </p>
+            )}
             <ErrorMessage error={error || actionError} />
             {ready && <ErrorMessage error={eula.error} />}
             {ready && eula.loading && !eula.data && (
@@ -637,7 +649,7 @@ export function ServerDetail({ id, advanced = false }) {
                     </div>
                   </dl>
                 </section>
-                {has("delete") && server.status !== "CANCELLED" && (
+                {has("delete") && server.status !== "CANCELLED" && !server.deletion_pending && (
                   <section className="panel details-panel">
                     <div>
                       <h2>Change Minecraft version</h2>

@@ -72,6 +72,7 @@ export const STATE_LABELS = {
   SUSPENDED: "Suspended",
   FAILED: "Needs attention",
   CANCELLED: "Cancelled",
+  DELETING: "Deleting",
   running: "Online",
   offline: "Ready to start",
   ACCEPTANCE_REQUIRED: "Review agreement",

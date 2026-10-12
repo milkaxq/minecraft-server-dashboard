@@ -99,6 +99,23 @@ func TestBetaCreationAndOwnerDeletion(t *testing.T) {
 	if w.Code != 202 {
 		t.Fatal("owner deletion", w.Code, w.Body.String())
 	}
+	// Deletion intent must be visible immediately, before a worker runs.
+	for _, endpoint := range []string{"/servers", "/servers/" + owned.ID.String()} {
+		response := call("GET", endpoint, owner, uuid.Nil, "")
+		if response.Code != 200 {
+			t.Fatal(response.Code, response.Body.String())
+		}
+		if !strings.Contains(response.Body.String(), `"deletion_pending":true`) {
+			t.Fatal("queued deletion missing from read model", response.Body.String())
+		}
+	}
+	if _, err = db.Exec(ctx, "UPDATE jobs SET status='FAILED' WHERE server_id=$1 AND action='TERMINATE'", owned.ID); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := a.Servers.Get(ctx, owner, owned.ID)
+	if err != nil || recovered.DeletionPending {
+		t.Fatal("failed deletion must remain visible for recovery", recovered, err)
+	}
 	if err = db.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE server_id=$1 AND action='TERMINATE'", owned.ID).Scan(&count); err != nil || count != 1 {
 		t.Fatal("termination job missing", count, err)
 	}

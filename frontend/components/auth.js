@@ -5,6 +5,8 @@ import { request } from "../lib/api";
 const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
+  const [serverRevision, setServerRevision] = useState(0);
+  const refreshServers = useCallback(() => setServerRevision((value) => value + 1), []);
   const [restoring, setRestoring] = useState(true);
   const [restoreError, setRestoreError] = useState(null);
   const [authNotice, setAuthNotice] = useState("");
@@ -113,6 +115,8 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         session,
+        serverRevision,
+        refreshServers,
         api,
         login,
         logout,

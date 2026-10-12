@@ -9,15 +9,19 @@ import { Badge, Empty, ErrorMessage, Icon, Loading, PageHeading, Shell } from ".
 import { formatBytes, price } from "../lib/api";
 export function ServerCard({ server }) {
   const { data: usage, error } = useResource(
-    server.status === "RUNNING" ? `/servers/${server.id}/usage` : null,
+    server.status === "RUNNING" && !server.deletion_pending ? `/servers/${server.id}/usage` : null,
     10000,
   );
   const address =
     server.hostname && server.port
       ? `${server.hostname}:${server.port}`
       : "Address assigned on activation";
+  const Card = server.deletion_pending ? "article" : Link;
   return (
-    <Link href={`/servers/${server.id}`} className="server-card">
+    <Card
+      href={server.deletion_pending ? undefined : `/servers/${server.id}`}
+      className="server-card"
+    >
       <div className={`server-art art-${server.server_type.toLowerCase()}`}>
         <span className="art-grid" />
         <span className="pixel-tree tree-one" />
@@ -25,7 +29,9 @@ export function ServerCard({ server }) {
         <span className="pixel-terrain" />
         <div className="art-overlay">
           <span className="software-tag">{softwareName(server.server_type)}</span>
-          <Badge state={usage?.power_state || server.status} />
+          <Badge
+            state={server.deletion_pending ? "DELETING" : usage?.power_state || server.status}
+          />
         </div>
       </div>
       <div className="server-card-body">
@@ -47,16 +53,18 @@ export function ServerCard({ server }) {
         <div className="server-card-footer">
           <span className="address-truncated">{address}</span>
           <span>
-            {usage?.players_online != null
-              ? `${usage.players_online} playing`
-              : error
-                ? "Status unavailable"
-                : "Manage"}{" "}
+            {server.deletion_pending
+              ? "Deleting…"
+              : usage?.players_online != null
+                ? `${usage.players_online} playing`
+                : error
+                  ? "Status unavailable"
+                  : "Manage"}{" "}
             <span aria-hidden="true">↗</span>
           </span>
         </div>
       </div>
-    </Link>
+    </Card>
   );
 }
 export function Dashboard({ serversOnly = false }) {
@@ -69,12 +77,15 @@ export function Dashboard({ serversOnly = false }) {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("active");
   const visible = (servers || [])
-    .filter((server) => view === "all" || server.status !== "CANCELLED")
+    .filter(
+      (server) => view === "all" || (server.status !== "CANCELLED" && !server.deletion_pending),
+    )
     .filter((server) =>
       `${server.name} ${server.server_type}`.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) => Number(b.status === "RUNNING") - Number(a.status === "RUNNING"));
-  const ready = servers?.filter((s) => s.status === "RUNNING").length || 0;
+  const ready = servers?.filter((s) => s.status === "RUNNING" && !s.deletion_pending).length || 0;
+  const deleting = servers?.filter((s) => s.deletion_pending).length || 0;
   return (
     <Shell>
       <PageHeading
@@ -140,7 +151,9 @@ export function Dashboard({ serversOnly = false }) {
               <div>
                 <span>Total servers</span>
                 <strong>
-                  {servers ? servers.length : "—"}
+                  {servers
+                    ? servers.filter((s) => s.status !== "CANCELLED" && !s.deletion_pending).length
+                    : "—"}
                   <small>in your workspace</small>
                 </strong>
               </div>
@@ -203,6 +216,14 @@ export function Dashboard({ serversOnly = false }) {
           </label>
         </div>
       </div>
+      {!!deleting && (
+        <p role="status">
+          {deleting === 1
+            ? "Your server is being deleted."
+            : `${deleting} servers are being deleted.`}{" "}
+          It has been removed from active servers. This list updates automatically.
+        </p>
+      )}
       <ErrorMessage error={error} />
       {error && (
         <button className="button secondary" onClick={refresh}>
