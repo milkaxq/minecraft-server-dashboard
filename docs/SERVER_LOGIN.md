@@ -4,6 +4,10 @@ Blockyard website accounts and Minecraft player accounts are separate.
 
 ## Join an AuthMe-enabled server
 
+Hosts can manage the whitelist under **Servers → their server → Players**. Add exact Minecraft usernames, search the saved list, remove entries with confirmation, and turn the whitelist on or off. Start Minecraft before making changes; no restart is required. Removing an entry blocks future joins while the whitelist is on; it does not delete player inventory or world progress. Minecraft operators can bypass the whitelist. Website Members are separate from game players.
+
+The dashboard uses `GET /servers/{id}/whitelist` and idempotent `POST /servers/{id}/whitelist`. Only owners/admins with Settings permission can access these routes. Reads use Pterodactyl's sandboxed files API, with symlink checks. Writes send a fixed `minecraft:whitelist` command through Pterodactyl, using validated usernames and a snapshot revision. UUID resolution stays inside Minecraft. Changes share the server operation lock and audit log; the backend checks saved state before claiming success. Command delivery without an observed result is shown as unconfirmed.
+
 Use the exact username allowed by the host. Connect to the server in Minecraft Java with the server's version (or a compatible version supported by its plugins).
 
 On your first visit, complete the AuthMe registration dialog, or enter `/register yourPassword yourPassword` in Minecraft. On later visits, use the login dialog or `/login yourPassword`. Use a unique password of at least 10 characters; never reuse your Microsoft or hosting-dashboard password. Do not send passwords in dashboard support tickets or the web console.

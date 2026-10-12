@@ -131,6 +131,13 @@ export function Guide() {
         <section id="server-login" className="panel management-panel">
           <h2>Signing in to Minecraft servers</h2>
           <p>
+            To invite friends, open your server’s Players page. Add your own Minecraft username and
+            your friends’ exact usernames, then turn the whitelist on. Start the server before
+            changing the list; changes apply without a restart. Removing someone affects future
+            joins, and does not delete their progress. Website Members manage dashboard access
+            separately.
+          </p>
+          <p>
             Most servers require a Microsoft account that owns Minecraft Java Edition. In
             SKlauncher, choose Microsoft login for those servers. An offline username cannot join a
             server with Minecraft account verification enabled. If Microsoft login reports an

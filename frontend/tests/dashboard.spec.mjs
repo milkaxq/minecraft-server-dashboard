@@ -73,11 +73,14 @@ async function mockAPI(
     initiallyRunning = false,
     inviteRequired = false,
     holdStop = false,
+    ignoreWhitelist = false,
   } = {},
 ) {
   let loggedIn = false;
   let running = initiallyRunning;
   let deletionPending = false;
+  let whitelistEnabled = true;
+  let whitelistPlayers = [{ name: "milkaxq", uuid: "60000000-0000-4000-8000-000000000001" }];
   let safetyBackup = false;
   let worldGenerated = true;
   let sharedMembers = [{ user_id: user.id, name: user.name, email: user.email, role: "OWNER" }];
@@ -304,6 +307,22 @@ async function mockAPI(
         spawn_protection: 16,
         revision: "a".repeat(64),
       });
+    if (path === `/servers/${serverID}/whitelist`) {
+      if (request.method() === "GET")
+        return reply({
+          enabled: whitelistEnabled,
+          players: whitelistPlayers,
+          revision: "d".repeat(64),
+        });
+      if (!ignoreWhitelist) {
+        if (body.action === "add")
+          whitelistPlayers.push({ name: body.name, uuid: "60000000-0000-4000-8000-000000000002" });
+        if (body.action === "remove")
+          whitelistPlayers = whitelistPlayers.filter((p) => p.name !== body.name);
+        if (body.action === "on" || body.action === "off") whitelistEnabled = body.action === "on";
+      }
+      return reply({ confirmed: !ignoreWhitelist });
+    }
     if (path === `/servers/${serverID}/settings`)
       return reply({ status: "saved", restart_required: true });
     if (path === `/servers/${serverID}/files` && request.method() === "GET")
@@ -1658,4 +1677,78 @@ test("catalog search and review fit a narrow mobile screen", async ({ page }) =>
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
+});
+
+for (const width of [320, 1366]) {
+  test(`players whitelist controls fit ${width}px and confirm access changes`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await mockAPI(page, { initiallyRunning: true });
+    await openServer(page);
+    await page.getByRole("link", { name: "Players", exact: true }).click();
+    await expect(page.getByText(/Stop your server before changing players/)).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Players", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByRole("link", { name: "Settings", exact: true })).not.toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(page.getByText("milkaxq", { exact: true })).toBeVisible();
+    await page.getByLabel("Minecraft username", { exact: true }).fill("@a");
+    await expect(page.getByRole("button", { name: "Add player", exact: true })).toBeDisabled();
+    await page.getByLabel("Minecraft username", { exact: true }).fill("Friend_123");
+    await page.getByRole("button", { name: "Add player", exact: true }).click();
+    await expect(page.getByText("Friend_123", { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`players-${width}.png`), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.getByLabel("Find a player", { exact: true }).fill("Friend");
+    await expect(page.getByText("milkaxq", { exact: true })).not.toBeVisible();
+    await page.getByRole("button", { name: "Remove Friend_123", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Remove Friend_123?" })).toBeVisible();
+    expect(calls.filter((c) => c.body?.action === "remove")).toHaveLength(0);
+    await page.getByRole("button", { name: "Remove player", exact: true }).click();
+    await expect(page.getByText("Friend_123", { exact: true })).not.toBeVisible();
+    await page.getByRole("button", { name: "Turn whitelist off", exact: true }).click();
+    expect(calls.filter((c) => c.body?.action === "off")).toHaveLength(0);
+    await page.getByRole("dialog").getByRole("button", { name: "Turn whitelist off" }).click();
+    await expect(page.getByRole("button", { name: "Turn whitelist on" })).toBeVisible();
+    await page.getByRole("button", { name: "Turn whitelist on" }).click();
+    await expect(page.getByRole("button", { name: "Turn whitelist off" })).toBeVisible();
+    for (const call of calls.filter((c) => c.path.endsWith("/whitelist") && c.method === "POST")) {
+      expect(call.headers["idempotency-key"]).toMatch(/^[a-f0-9-]{36}$/);
+      expect(call.body.revision).toHaveLength(64);
+      expect(call.body.uuid).toBeUndefined();
+      if (["remove", "off"].includes(call.body.action)) expect(call.body.confirmed).toBe(true);
+    }
+  });
+}
+test("players page is read-only while stopped and hidden from moderators", async ({ page }) => {
+  await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Players", exact: true }).click();
+  await expect(page.getByText("milkaxq", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove milkaxq" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Turn whitelist off" })).toBeDisabled();
+  await mockAPI(page, { role: "MODERATOR" });
+  await login(page);
+  await page.goto(`/servers/${serverID}`);
+  await expect(page.getByRole("link", { name: "Players", exact: true })).toHaveCount(0);
+  await page.goto(`/servers/${serverID}/players`);
+  await expect(page.getByText("Your server role does not allow this page.")).toBeVisible();
+});
+test("players page does not claim success when Minecraft has not confirmed a command", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true, ignoreWhitelist: true });
+  await openServer(page);
+  await page.getByRole("link", { name: "Players", exact: true }).click();
+  await page.getByLabel("Minecraft username", { exact: true }).fill("NotResolved");
+  await page.getByRole("button", { name: "Add player" }).click();
+  await expect(page.getByRole("status")).toContainText("Minecraft has not confirmed");
+  await expect(page.getByText("NotResolved", { exact: true })).not.toBeVisible();
 });

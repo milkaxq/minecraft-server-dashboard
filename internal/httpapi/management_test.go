@@ -79,6 +79,7 @@ func TestManagementHTTPAuthorizationCORSAndStrictInput(t *testing.T) {
 	}
 	backup := uuid.NewString()
 	for _, route := range []struct{ method, path, body, kind string }{
+		{"GET", "/whitelist", "", "application/json"}, {"POST", "/whitelist", `{"action":"add","name":"Steve","revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"},
 		{"GET", "/members", "", "application/json"}, {"POST", "/members", `{"email":"friend@example.com","role":"ADMIN"}`, "application/json"}, {"PUT", "/members/" + other.String(), `{"role":"ADMIN"}`, "application/json"}, {"DELETE", "/members/" + other.String(), `{"confirmation":"` + other.String() + `"}`, "application/json"},
 		{"GET", "/world", "", "application/json"}, {"GET", "/world/download", "", "application/json"}, {"POST", "/world/backup", "{}", "application/json"}, {"POST", "/world/reset", `{"backup":"` + backup + `","confirmation":"world","revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"}, {"POST", "/world/upload?backup=" + backup + "&confirmation=world&revision=" + strings.Repeat("a", 64), "invalid zip", "application/octet-stream"},
 		{"GET", "/files?path=/", "", "application/json"}, {"GET", "/files/text?path=/server.properties", "", "application/json"}, {"GET", "/files/download?path=/server.properties", "", "application/json"}, {"GET", "/settings", "", "application/json"}, {"GET", "/plugins", "", "application/json"}, {"GET", "/mods", "", "application/json"}, {"POST", "/mods/upload?name=test.jar", "abc", "application/octet-stream"}, {"DELETE", "/mods", `{"name":"Test.jar","confirmation":"Test.jar"}`, "application/json"}, {"GET", "/backups", "", "application/json"}, {"GET", "/backups/" + backup + "/download", "", "application/json"},
@@ -99,6 +100,11 @@ func TestManagementHTTPAuthorizationCORSAndStrictInput(t *testing.T) {
 	for _, body := range []string{`{"action":"create","path":"/new","ram_mb":999999}`, `{"action":"delete","path":"/"}`, `{"action":"create","path":"/../host"}`} {
 		if w := call("POST", "/files", tokens[owner], body, "application/json"); w.Code != 400 {
 			t.Fatal("unsafe input accepted", w.Code, w.Body.String())
+		}
+	}
+	for _, body := range []string{`{"action":"add","name":"Steve","revision":"` + strings.Repeat("a", 64) + `","uuid":"` + owner.String() + `"}`, `{"action":"add","name":"Steve\nstop","revision":"` + strings.Repeat("a", 64) + `"}`, `{"action":"off","revision":"` + strings.Repeat("a", 64) + `"}`} {
+		if w := call("POST", "/whitelist", tokens[owner], body, "application/json"); w.Code != 400 {
+			t.Fatal("unsafe whitelist input accepted", w.Code, w.Body.String())
 		}
 	}
 	if w := call("GET", "/files?path=/", tokens[owner], "", "application/json"); w.Code != 200 {

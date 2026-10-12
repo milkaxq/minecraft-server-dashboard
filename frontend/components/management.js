@@ -1,5 +1,6 @@
 "use client";
 import { supportsPlugins, supportsMods } from "../lib/software";
+import { Players } from "./players";
 import Link from "next/link";
 import { ContextHelp } from "./context-help";
 import { useEffect, useRef, useState } from "react";
@@ -17,6 +18,7 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
       ]
     : [
         ["view", "Overview", `/servers/${id}`],
+        ["settings", "Players", `/servers/${id}/players`],
         ["worlds", "World", `/servers/${id}/worlds`],
         ["settings", "Settings", `/servers/${id}/settings`],
         ["backups", "Backups", `/servers/${id}/backups`],
@@ -33,9 +35,9 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
         .map(([key, label, href]) => (
           <Link
             href={href}
-            key={key}
+            key={href}
             aria-current={
-              active === key ||
+              (label === "Players" ? active === "players" : active === key) ||
               (label === "Mods" && active === "mods") ||
               (!active && (advanced ? key === "console" : key === "view"))
                 ? "page"
@@ -136,7 +138,9 @@ export function ManagementPage({ id, section }) {
           <FeatureLinks id={id} server={server} advanced={section === "files"} active={section} />
           <ContextHelp topic={section} />
           <ErrorMessage error={info.error || error} />
-          {!server.permissions?.includes(section === "mods" ? "files" : section) ? (
+          {!server.permissions?.includes(
+            section === "mods" ? "files" : section === "players" ? "settings" : section,
+          ) ? (
             <div className="notice">Your server role does not allow this page.</div>
           ) : !ready ? (
             <div className="notice">
@@ -145,7 +149,7 @@ export function ManagementPage({ id, section }) {
           ) : (
             <>
               <ErrorMessage error={usage.error} />
-              {!offline && section !== "backups" && (
+              {!offline && section !== "backups" && section !== "players" && (
                 <p className="notice">
                   Stop your server before changing {section}. You can browse while it is online.
                 </p>
@@ -154,6 +158,8 @@ export function ManagementPage({ id, section }) {
                 <Files id={id} offline={offline} />
               ) : section === "worlds" ? (
                 <Worlds id={id} offline={offline} limit={server.backup_limit} />
+              ) : section === "players" ? (
+                <Players id={id} running={usage.data?.power_state === "running"} />
               ) : section === "settings" ? (
                 <Settings id={id} offline={offline} />
               ) : section === "mods" ? (

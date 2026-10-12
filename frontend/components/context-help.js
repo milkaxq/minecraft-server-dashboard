@@ -1,6 +1,16 @@
 import Link from "next/link";
 
 const topics = {
+  players: {
+    title: "How do I invite friends to my world?",
+    text: "Add their exact Minecraft usernames, then turn the whitelist on. Only allowed players can join, apart from game operators.",
+    steps: [
+      "Add yourself before enabling the whitelist.",
+      "Start the server to make changes; no restart is needed.",
+      "Minecraft login and AuthMe passwords still protect player identities. Website Members control the dashboard instead.",
+    ],
+    anchor: "server-login",
+  },
   software: {
     title: "Which software should I choose?",
     text: "Vanilla is original Minecraft. Paper, Spigot and Purpur use plugins. Fabric, Forge and NeoForge use mods made for that exact loader.",
