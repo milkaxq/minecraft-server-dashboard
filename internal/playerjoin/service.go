@@ -64,6 +64,7 @@ type Snapshot struct {
 	Addons        []Addon    `json:"addons"`
 	PackReady     bool       `json:"pack_ready"`
 	PackReason    string     `json:"pack_reason,omitempty"`
+	Notes         []string   `json:"notes,omitempty"`
 	Files         []PackFile `json:"-"`
 	PublishedAt   time.Time  `json:"published_at"`
 }
@@ -137,11 +138,12 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 	}
 	out := Snapshot{Name: v.Name, Address: net.JoinHostPort(*v.Hostname, strconv.Itoa(*v.Port)), Version: v.MinecraftVersion, VerifiedLogin: settings.OnlineMode, Whitelist: settings.Whitelist, Addons: []Addon{}, PublishedAt: time.Now().UTC(), Files: []PackFile{}}
 	roots := []management.ClientAddon{}
-	unknown := false
+	unverified := []string{}
 	for _, addon := range requirements.Addons {
 		if addon.ConfigurationID == management.VoiceAddon {
 			if addon.VoiceRequired == nil {
-				unknown = true
+				out.PackReason = "Simple Voice Chat settings could not be read. Refresh the setup after checking its configuration."
+				return out, nil
 			}
 			out.Addons = append(out.Addons, Addon{Title: "Simple Voice Chat", Project: addon.ProjectID, Required: addon.VoiceRequired != nil && *addon.VoiceRequired})
 			roots = append(roots, addon)
@@ -154,11 +156,15 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 			out.Addons = append(out.Addons, Addon{Title: addon.Title, Project: addon.ProjectID, Required: addon.ClientSide == "required"})
 			roots = append(roots, addon)
 		default:
-			unknown = true
+			if addon.ProjectID == "" {
+				unverified = append(unverified, addon.Title)
+			} else {
+				out.Notes = append(out.Notes, addon.Title+": Modrinth does not specify a client requirement. It stays installed on the server and is not added to the player download.")
+			}
 		}
 	}
-	if unknown {
-		out.PackReason = "Your host needs to check an unverified addon before automatic setup can be offered."
+	if len(unverified) > 0 {
+		out.PackReason = "These uploaded addons have no catalog record: " + strings.Join(unverified, ", ") + ". Ask your host to check their player requirements."
 		return out, nil
 	}
 	if len(roots) == 0 {
@@ -184,8 +190,19 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 	for _, root := range roots {
 		files, e := s.client().ResolveClient(ctx, root.ProjectID, root.VersionID, out.Loader, out.Version)
 		if e != nil {
+			required := root.ClientSide == "required" || root.VoiceRequired != nil && *root.VoiceRequired
+			if !required {
+				out.Notes = append(out.Notes, root.Title+": no matching client download was found. This optional addon stays on the server and is omitted from the player pack.")
+				for i, addon := range out.Addons {
+					if addon.Project == root.ProjectID {
+						out.Addons = append(out.Addons[:i], out.Addons[i+1:]...)
+						break
+					}
+				}
+				continue
+			}
 			out.Files = nil
-			out.PackReason = "A matching client release or dependency could not be verified. Ask your host to review the addon setup."
+			out.PackReason = root.Title + ": a required matching client release or dependency could not be verified. Ask your host to review this addon."
 			return out, nil
 		}
 		for _, file := range files {
@@ -215,7 +232,7 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 			out.Files = append(out.Files, PackFile{Path: "mods/" + file.Filename, Hashes: map[string]string{"sha1": file.SHA1, "sha512": file.SHA512}, Downloads: []string{file.URL}, Size: file.Size, Environment: map[string]string{"client": "required", "server": "unsupported"}})
 		}
 	}
-	out.PackReady = true
+	out.PackReady = len(out.Files) > 0
 	return out, nil
 }
 

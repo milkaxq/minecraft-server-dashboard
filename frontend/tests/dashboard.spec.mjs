@@ -2864,7 +2864,7 @@ for (const [width, voiceRequired] of [
         exact: true,
       }),
     ).toBeVisible();
-    await expect(notice.getByText("Client requirement unknown", { exact: true })).toBeVisible();
+    await expect(notice.getByText("Client details not provided", { exact: true })).toBeVisible();
     await notice.scrollIntoViewIfNeeded();
     await page.screenshot({
       path: testInfo.outputPath(`client-requirements-${width}.png`),
@@ -2923,7 +2923,7 @@ test("catalog and installation preview show client requirements", async ({ page 
   ).toBeVisible();
   await expect(row("Server addon").getByText("Server only", { exact: true })).toBeVisible();
   await expect(
-    row("Unknown addon").getByText("Client requirement unknown", { exact: true }),
+    row("Unknown addon").getByText("Client details not provided", { exact: true }),
   ).toBeVisible();
   await expect(
     row("Simple Voice Chat").getByText("Client mod for voice · check join rules", { exact: true }),
@@ -3002,7 +3002,7 @@ for (const width of [390, 1366]) {
     expect(text).toContain("Minecraft Java 1.21.1");
     expect(text).toContain("play.example.com:25565");
     expect(text).toContain("Client mod required to join");
-    expect(text).toContain("Client requirement unknown");
+    expect(text).toContain("Client details not provided");
     expect(text).toContain("Sign in through Microsoft");
     expect(text).toContain("Whitelist is enabled");
     expect(text).not.toContain("csrf");
@@ -3521,6 +3521,9 @@ const playerSetup = {
   whitelist: false,
   addons: [{ title: "Simple Voice Chat", project: "9eGKb6K1", required: true }],
   pack_ready: true,
+  notes: [
+    "VeinMiner: Modrinth does not specify a client requirement. It stays installed on the server and is not added to the player download.",
+  ],
   published_at: "2026-10-13T12:00:00Z",
 };
 
@@ -3540,6 +3543,8 @@ for (const width of [390, 1366])
       }),
     );
     await page.goto(`/join/${playerSlug}`);
+    await page.getByText("What will be installed?", { exact: true }).click();
+    await expect(page.getByText(playerSetup.notes[0], { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Join The Lantern Lodge" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Import and launch" })).toBeVisible();
     const downloadPromise = page.waitForEvent("download");

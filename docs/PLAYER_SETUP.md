@@ -25,7 +25,7 @@ The catalog resolver pins client releases to installed server releases and check
 required dependencies, loaders, Minecraft versions, official download URLs, and
 SHA-1/SHA-512 hashes. The generated ZIP contains `modrinth.index.json`; it does not
 redistribute uploaded JARs, server configuration, credentials, or private files.
-Unknown files or unavailable compatible releases disable automatic pack download.
+Uploaded files without catalog records and unavailable required client releases disable automatic pack download. Catalog addons with missing client metadata do not block publication: they stay on the server and are omitted from the client manifest with a named note. Optional addons without a compatible client release are omitted the same way. This is not a claim that unknown addons support vanilla clients.
 
 Routes:
 
@@ -70,3 +70,5 @@ Private Beta succeeded. Its automatic pack remains disabled because a legacy or
 uploaded addon has no verified catalog record. No plugins were removed or game
 settings changed. Local fixture tests validate ready-pack generation; the live
 server still needs its unverified addon reconciled before testing launcher import.
+
+The client-metadata follow-up removes the blanket unknown-metadata block. Modrinth project/version environment fields describe required, optional, and server-only use; absent or conflicting metadata remains unspecified. Catalog provenance and client compatibility are separate checks.

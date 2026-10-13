@@ -43,8 +43,10 @@ export function clientCompatibility(addon) {
     };
   return {
     kind: "unknown",
-    label: "Client requirement unknown",
-    help: "No client requirement metadata is available. Check the author's instructions before inviting players.",
+    label: "Client details not provided",
+    help: addon.project_id
+      ? "Modrinth does not specify whether players need a client mod. This does not block installation or the player pack; we leave it out of the client download. Check the project instructions if a feature does not work."
+      : "This uploaded file has no catalog record. Check the author's instructions for player requirements.",
   };
 }
 

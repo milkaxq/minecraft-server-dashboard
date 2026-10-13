@@ -104,11 +104,24 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	p.files["/plugins/unknown.jar"] = []byte("catalog bytes")
+	p.files["/plugins/optional.jar"] = []byte("catalog bytes")
+	extras, _ := json.Marshal(map[string]any{"collection": "plugins", "identifier": remote.Identifier, "files": []catalog.Package{
+		{Filename: "unknown.jar", Title: "VeinMiner", Size: 13, ProjectID: "known-unknown", VersionID: "unknown-version", SHA512: func() string { h := sha512.Sum512([]byte("catalog bytes")); return hex.EncodeToString(h[:]) }(), ClientSide: "unknown"},
+		{Filename: "optional.jar", Title: "Optional plugin", Size: 13, ProjectID: "optional-project", VersionID: "optional-version", SHA512: func() string { h := sha512.Sum512([]byte("catalog bytes")); return hex.EncodeToString(h[:]) }(), ClientSide: "optional"},
+	}})
+	_, err = db.Exec(ctx, `INSERT INTO management_operations(id,server_id,user_id,idempotency_key,action,fingerprint,status,result,request_id) VALUES($1,$2,$3,$4,'catalog.install','test','SUCCEEDED',$5,'test')`, uuid.New(), id, owner, uuid.New(), extras)
+	if err != nil {
+		t.Fatal(err)
+	}
 	c := catalog.New()
 	c.HTTP.Transport = transport(func(r *http.Request) (*http.Response, error) {
 		var result any
 		v := catalog.Version{ID: "client-release", ProjectID: "9eGKb6K1", Number: "fabric-2.6.24+1.21.1", Type: "release", Loaders: []string{"fabric"}, Games: []string{"1.21.1"}, Files: []catalog.File{{Filename: "client-voice.jar", URL: "https://cdn.modrinth.com/client.jar", Size: 10, Primary: true, Hashes: map[string]string{"sha512": strings.Repeat("a", 128), "sha1": strings.Repeat("b", 40)}}}}
 		switch r.URL.Path {
+		case "/v2/version/optional-version":
+			return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 		case "/v2/version/server-release":
 			v.ID = "server-release"
 			v.Number = "bukkit-2.6.24"
@@ -139,6 +152,10 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	invite, err := s.Publish(ctx, owner, id, "test")
 	if err != nil || !invite.Snapshot.PackReady {
 		t.Fatal(invite, err)
+	}
+
+	if len(invite.Snapshot.Notes) != 2 || !strings.Contains(strings.Join(invite.Snapshot.Notes, " "), "VeinMiner") || len(invite.Snapshot.Addons) != 1 {
+		t.Fatal("unknown catalog metadata or unavailable optional plugin blocked or polluted pack", invite.Snapshot)
 	}
 	public, err := s.Public(ctx, invite.Slug)
 	if err != nil {
@@ -208,6 +225,20 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	if _, err = s.Public(ctx, invite.Slug); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal("revoked invite still public", err)
 	}
+
+	if _, err = db.Exec(ctx, `UPDATE management_operations SET result=jsonb_set(result,'{files,1,client_side}','"required"') WHERE server_id=$1 AND result->'files'->1->>'project_id'='optional-project'`, id); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err := s.Publish(ctx, owner, id, "test")
+	if err != nil || blocked.Snapshot.PackReady || !strings.Contains(blocked.Snapshot.PackReason, "Optional plugin") {
+		t.Fatal("missing required client silently skipped", blocked, err)
+	}
+	p.files["/plugins/uploaded.jar"] = []byte("manual upload")
+	blocked, err = s.Publish(ctx, owner, id, "test")
+	if err != nil || blocked.Snapshot.PackReady || !strings.Contains(blocked.Snapshot.PackReason, "uploaded.jar") {
+		t.Fatal("manual upload incorrectly treated as catalog addon", blocked, err)
+	}
+	delete(p.files, "/plugins/uploaded.jar")
 	p.files["/plugins/voice.jar"] = []byte("modified bytes")
 	if _, err = s.Publish(ctx, owner, id, "test"); !errors.Is(err, management.ErrChanged) {
 		t.Fatal("modified JAR trusted", err)

@@ -78,6 +78,9 @@ export function PlayerInvite({ server, ready }) {
                 ? "Their launcher can download the verified client mods."
                 : "Friends get the address, version and join steps.")}
           </p>
+          {invite.setup?.notes?.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
           <small>
             Published {new Date(invite.setup?.published_at).toLocaleString()}. Refresh after
             changing addons or access settings.
@@ -313,6 +316,9 @@ export function PublicPlayerJoin({ slug }) {
           </section>
           <details className="panel">
             <summary>What will be installed?</summary>
+            {setup.notes?.map((note) => (
+              <p key={note}>{note}</p>
+            ))}
             <ul>
               {setup.addons?.map((addon) => (
                 <li key={addon.project || addon.title}>
