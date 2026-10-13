@@ -28,14 +28,15 @@ func New() *Client {
 }
 
 type Project struct {
-	ID             string `json:"project_id"`
-	Slug           string `json:"slug"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	ServerSide     string `json:"server_side"`
-	IconURL        string `json:"icon_url,omitempty"`
-	Downloads      int64  `json:"downloads"`
-	ReleaseVersion string `json:"release_version,omitempty"`
+	ConfigurationID string `json:"configuration_id,omitempty"`
+	ID              string `json:"project_id"`
+	Slug            string `json:"slug"`
+	Title           string `json:"title"`
+	Description     string `json:"description"`
+	ServerSide      string `json:"server_side"`
+	IconURL         string `json:"icon_url,omitempty"`
+	Downloads       int64  `json:"downloads"`
+	ReleaseVersion  string `json:"release_version,omitempty"`
 }
 type File struct {
 	URL      string            `json:"url"`

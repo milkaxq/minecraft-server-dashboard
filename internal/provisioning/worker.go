@@ -19,6 +19,7 @@ import (
 	"minecraft-hosting/internal/server"
 )
 
+var ErrAllocation = errors.New("panel_allocation_outcome_unknown")
 var ErrAmbiguous = errors.New("panel_create_outcome_unknown")
 var ErrInstallation = errors.New("panel_installation_failed")
 var ErrInstalling = errors.New("panel_installation_pending")
@@ -67,6 +68,8 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	defer cancel()
 	if j.Action == jobs.Provision {
 		err = w.provision(jobCtx, lease)
+	} else if j.Action == jobs.VoicePort {
+		err = w.voicePort(jobCtx, lease)
 	} else {
 		err = w.lifecycle(jobCtx, lease)
 	}
@@ -79,7 +82,7 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	}
 	// Persist only controlled error codes, never Panel response bodies or secrets.
 	code := errorCode(err)
-	terminal := errors.Is(err, ErrAmbiguous) || errors.Is(err, ErrMismatch) || errors.Is(err, ErrSoftware) || errors.Is(err, ErrInstallation) || errors.Is(err, node.ErrInvariant) || pterodactyl.Rejected(err) || j.Attempts >= j.MaxAttempts
+	terminal := errors.Is(err, ErrAllocation) || (j.Action == jobs.VoicePort && errors.Is(err, node.ErrCapacity)) || errors.Is(err, ErrAmbiguous) || errors.Is(err, ErrMismatch) || errors.Is(err, ErrSoftware) || errors.Is(err, ErrInstallation) || errors.Is(err, node.ErrInvariant) || pterodactyl.Rejected(err) || j.Attempts >= j.MaxAttempts
 	w.Log.Warn("job attempt failed", "job_id", j.ID, "server_id", j.ServerID, "request_id", j.RequestID, "error_code", code, "terminal", terminal)
 	finishCtx, finishCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer finishCancel()
@@ -89,6 +92,11 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	}
 	defer tx.Rollback(context.Background())
 	if terminal {
+		if j.Action == jobs.VoicePort {
+			if _, e = tx.Exec(finishCtx, "UPDATE server_addon_ports SET status='FAILED',updated_at=now() WHERE server_id=$1", j.ServerID); e != nil {
+				return true, e
+			}
+		}
 		if _, e = tx.Exec(finishCtx, "UPDATE jobs SET status='FAILED',last_error=$2,updated_at=now() WHERE id=$1", j.ID, code); e != nil {
 			return true, e
 		}
@@ -110,6 +118,8 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 }
 func errorCode(err error) string {
 	switch {
+	case errors.Is(err, ErrAllocation):
+		return "panel_allocation_outcome_unknown"
 	case errors.Is(err, ErrAmbiguous):
 		return "panel_create_outcome_unknown"
 	case errors.Is(err, ErrMismatch):

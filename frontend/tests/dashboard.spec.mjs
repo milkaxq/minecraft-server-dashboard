@@ -62,6 +62,67 @@ const baseServer = {
   management_available: true,
   console_available: true,
 };
+const voiceDefaults = {
+  max_voice_distance: 48,
+  whisper_distance: 24,
+  enable_groups: true,
+  force_voice_chat: false,
+  allow_recording: true,
+  spectator_interaction: false,
+};
+const voiceFixture = {
+  id: "simple-voice-chat",
+  name: "Simple Voice Chat",
+  installed: true,
+  config_exists: true,
+  configured: true,
+  revision: "v".repeat(64),
+  network: { status: "READY", hostname: "play.example.com", port: 24454 },
+  defaults: voiceDefaults,
+  values: { ...voiceDefaults, max_voice_distance: 72 },
+  fields: [
+    {
+      key: "max_voice_distance",
+      label: "Voice distance",
+      help: "Nearby voice range in blocks.",
+      kind: "number",
+      min: 1,
+      max: 256,
+    },
+    {
+      key: "whisper_distance",
+      label: "Whisper distance",
+      help: "No greater than the voice distance.",
+      kind: "number",
+      min: 1,
+      max: 256,
+    },
+    {
+      key: "enable_groups",
+      label: "Group chats",
+      help: "Let players create groups.",
+      kind: "boolean",
+    },
+    {
+      key: "force_voice_chat",
+      label: "Require the client mod",
+      help: "Players without the mod will be disconnected.",
+      kind: "boolean",
+    },
+    {
+      key: "allow_recording",
+      label: "Allow recording",
+      help: "Allow built-in recording.",
+      kind: "boolean",
+    },
+    {
+      key: "spectator_interaction",
+      label: "Spectators can talk",
+      help: "Spectators can talk to players.",
+      kind: "boolean",
+    },
+  ],
+};
 async function mockAPI(
   page,
   {
@@ -347,6 +408,17 @@ async function mockAPI(
       }
       return reply({ confirmed: !ignoreWhitelist });
     }
+    if (path === `/servers/${serverID}/addons/simple-voice-chat` && request.method() === "GET")
+      return reply(voiceFixture);
+    if (path === `/servers/${serverID}/addons/simple-voice-chat`)
+      return reply({ status: "saved", restart_required: true });
+    if (
+      path === `/servers/${serverID}/addons/simple-voice-chat/network` &&
+      request.method() === "GET"
+    )
+      return reply(voiceFixture.network);
+    if (path === `/servers/${serverID}/addons/simple-voice-chat/network`)
+      return reply({ id: orderID, status: "PENDING" }, 202);
     if (path === `/servers/${serverID}/settings`)
       return reply({ status: "saved", restart_required: true });
     if (path === `/servers/${serverID}/files` && request.method() === "GET")
@@ -2350,6 +2422,7 @@ for (const viewport of [
       "/feedback",
       "/admin",
       `/servers/${serverID}`,
+      `/servers/${serverID}/addons/simple-voice-chat`,
       ...["console", "files", "members", "worlds", "players", "plugins", "settings", "backups"].map(
         (section) => `/servers/${serverID}/${section}`,
       ),
@@ -2471,4 +2544,179 @@ test("catalog shows actual installation progress and a durable installed badge",
   installed = false;
   await page.reload();
   await expect(page.getByRole("button", { name: "Review install" })).toBeEnabled();
+});
+
+for (const width of [390, 1366]) {
+  test(`guided voice settings load real values, reset defaults, and preserve server-owned networking at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+    await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("72");
+    await expect(page.getByText("play.example.com:24454", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Reset to defaults" }).click();
+    await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("48");
+    await expect(page.getByLabel("Require the client mod", { exact: true })).not.toBeChecked();
+    await page.getByLabel("Voice distance", { exact: true }).fill("80");
+    await page.getByLabel("Group chats", { exact: true }).uncheck();
+    await page.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Settings saved" })).toBeVisible();
+    const save = calls.find(
+      (call) => call.path.endsWith("/addons/simple-voice-chat") && call.method === "PUT",
+    );
+    expect(save.body).toEqual({
+      ...voiceDefaults,
+      max_voice_distance: 80,
+      enable_groups: false,
+      revision: "v".repeat(64),
+    });
+    await selectValue(page, page.getByRole("combobox", { name: "Client loader" }), "neoforge");
+    await expect(page.getByRole("link", { name: "Find client download" })).toHaveAttribute(
+      "href",
+      /g=1.21.1&l=neoforge$/,
+    );
+    await page.getByLabel("Player’s Minecraft version", { exact: true }).fill("26.3");
+    await expect(page.getByRole("link", { name: "Find client download" })).toHaveAttribute(
+      "href",
+      /g=26.3&l=neoforge$/,
+    );
+    await expect(
+      page.getByText("Minecraft’s built-in download prompt", { exact: false }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`voice-settings-${width}.png`),
+      fullPage: true,
+    });
+  });
+}
+
+test("voice settings preserve dirty edits and block stale or online saves", async ({ page }) => {
+  await mockAPI(page, { initiallyRunning: true });
+  let revision = "v".repeat(64);
+  await page.route(`http://localhost:8080/servers/${serverID}/addons/simple-voice-chat`, (route) =>
+    route.fulfill({ json: { ...voiceFixture, revision } }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await page.getByLabel("Voice distance", { exact: true }).fill("100");
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  revision = "z".repeat(64);
+  await expect(
+    page.getByText("The configuration changed while you were editing", { exact: false }),
+  ).toBeVisible({ timeout: 20000 });
+  await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("100");
+  await page.getByRole("button", { name: "Reload settings" }).click();
+  await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("72");
+});
+
+test("voice networking is prepared by a job and configured pages exclude moderators", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let state = "NONE";
+  await page.route(`http://localhost:8080/servers/${serverID}/addons/simple-voice-chat`, (route) =>
+    route.fulfill({
+      json: {
+        ...voiceFixture,
+        network: {
+          status: state,
+          ...(state === "READY" ? { hostname: "play.example.com", port: 24454 } : {}),
+        },
+      },
+    }),
+  );
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/addons/simple-voice-chat/network`,
+    (route) => {
+      if (route.request().method() === "GET")
+        return route.fulfill({
+          json: {
+            status: state,
+            ...(state === "READY" ? { hostname: "play.example.com", port: 24454 } : {}),
+          },
+        });
+      state = "PREPARING";
+      return route.fulfill({ json: { id: orderID, status: "PENDING" }, status: 202 });
+    },
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Prepare voice connection" }).click();
+  await expect(page.getByText("Preparing your voice connection", { exact: false })).toBeVisible();
+  state = "READY";
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled({
+    timeout: 6000,
+  });
+  expect(calls.some((call) => call.body?.port || call.body?.pterodactyl_allocation_id)).toBe(false);
+});
+
+test("moderators cannot load addon configurations", async ({ page }) => {
+  const calls = await mockAPI(page, { role: "MODERATOR" });
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await expect(page.getByText("An owner or administrator can configure this addon.")).toBeVisible();
+  expect(calls.some((call) => call.path.includes("/addons/"))).toBe(false);
+});
+
+test("installed supported catalog addons lead directly to guided configuration", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const project = {
+    project_id: "9eGKb6K1",
+    title: "Simple Voice Chat",
+    description: "Proximity voice chat",
+    downloads: 100000,
+    configuration_id: "simple-voice-chat",
+  };
+  let installed = false;
+  const file = {
+    project_id: project.project_id,
+    version_id: "voice-release",
+    filename: "voicechat-bukkit-2.6.jar",
+    size: 10000,
+  };
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog?**`, (route) =>
+    route.fulfill({ json: { projects: [project], has_more: false } }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog/installed`, (route) =>
+    route.fulfill({ json: { projects: installed ? [project.project_id] : [] } }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({
+      json: installed ? [{ name: file.filename, is_file: true, size: file.size }] : [],
+    }),
+  );
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/${project.project_id}`,
+    (route) => {
+      if (route.request().method() === "GET")
+        return route.fulfill({
+          json: {
+            project: project.project_id,
+            software: "PAPER",
+            minecraft_version: "1.21.1",
+            revision: "v".repeat(64),
+            files: [file],
+          },
+        });
+      installed = true;
+      return route.fulfill({
+        json: { status: "installed", files: [file], restart_required: true },
+      });
+    },
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Review install" }).click();
+  await page.getByRole("button", { name: "Install now" }).click();
+  await page.getByRole("link", { name: "Configure", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/servers/${serverID}/addons/simple-voice-chat$`));
+  await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("72");
 });

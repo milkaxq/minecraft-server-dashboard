@@ -181,6 +181,10 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, management.ErrAddonConfig):
+		status, message = 409, "This addon uses settings outside the guided form's supported values. Review its configuration in Files."
+	case errors.Is(err, management.ErrAddonPort):
+		status, message = 409, "Prepare an assigned voice chat port before saving settings."
 	case errors.Is(err, backups.ErrRevision):
 		status, message = 409, "Backup schedule changed. Refresh before saving again."
 	case errors.Is(err, backups.ErrAllowance):

@@ -4494,3 +4494,128 @@ input {
     line-height: 1.6;
   }
 }
+.addon-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.addon-state {
+  padding: 7px 12px;
+  background: #edf4ea;
+  color: var(--green-dark);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.addon-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block: 16px;
+}
+.addon-endpoint code {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+}
+.addon-endpoint span {
+  font-size: 13px;
+  color: var(--muted);
+}
+.addon-save-actions {
+  margin-top: 20px;
+}
+.addon-client-guide {
+  position: sticky;
+  top: 24px;
+}
+.addon-client-guide h2 {
+  margin-block: 12px;
+}
+.addon-client-guide p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.addon-client-guide .field {
+  margin-top: 24px;
+}
+.addon-setup-steps {
+  padding-left: 22px;
+  margin: 24px 0;
+  line-height: 1.65;
+  color: var(--muted);
+  font-size: 14px;
+}
+.addon-setup-steps li + li {
+  margin-top: 12px;
+}
+.addon-client-guide > .button {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+}
+.addon-client-note {
+  margin-block: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.addon-client-note h3 {
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+.addon-client-guide kbd {
+  background: #edf4ea;
+  border: 1px solid #d8e1d9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--ink);
+}
+.addon-setup-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.addon-setup-card h2 {
+  margin: 8px 0;
+}
+.addon-setup-card p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.addon-setup-card .button {
+  flex-shrink: 0;
+}
+@media (max-width: 1100px) {
+  .addon-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .addon-client-guide {
+    position: static;
+  }
+}
+@media (max-width: 640px) {
+  .addon-setup-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .addon-save-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+.catalog-project-actions {
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  .catalog-project-actions {
+    width: 100%;
+  }
+  .catalog-project-actions .button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

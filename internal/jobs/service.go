@@ -29,6 +29,7 @@ const (
 	Suspend   Action = "SUSPEND"
 	Unsuspend Action = "UNSUSPEND"
 	Terminate Action = "TERMINATE"
+	VoicePort Action = "VOICE_PORT"
 )
 
 type Input struct {
@@ -98,7 +99,7 @@ func (s Service) EnqueueTx(ctx context.Context, tx pgx.Tx, actor, id, key uuid.U
 	if len(input.Reason) < 3 || len(input.Reason) > 500 {
 		return Job{}, ErrInvalid
 	}
-	if action != Provision && action != Suspend && action != Unsuspend && action != Terminate {
+	if action != Provision && action != Suspend && action != Unsuspend && action != Terminate && action != VoicePort {
 		return Job{}, ErrInvalid
 	}
 	if action == Terminate && input.Confirmation != id.String() {
@@ -123,7 +124,20 @@ func (s Service) EnqueueTx(ctx context.Context, tx pgx.Tx, actor, id, key uuid.U
 	if err != nil {
 		return Job{}, err
 	}
-	if !admin {
+	if action == VoicePort {
+		var role server.Role
+		var kind string
+		err = tx.QueryRow(ctx, `SELECT CASE WHEN s.owner_id=$1 THEN 'OWNER' ELSE COALESCE(m.role,'') END,s.server_type FROM servers s LEFT JOIN server_members m ON m.server_id=s.id AND m.user_id=$1 WHERE s.id=$2`, actor, id).Scan(&role, &kind)
+		if err != nil {
+			return Job{}, err
+		}
+		if !server.Allowed(role, server.Settings) {
+			return Job{}, server.ErrNotFound
+		}
+		if !server.SupportsPlugins(kind) && !server.SupportsMods(kind) {
+			return Job{}, ErrInvalid
+		}
+	} else if !admin {
 		if action != Terminate {
 			return Job{}, ErrForbidden
 		}
@@ -163,7 +177,7 @@ func (s Service) EnqueueTx(ctx context.Context, tx pgx.Tx, actor, id, key uuid.U
 	if err = tx.QueryRow(ctx, "SELECT NOT EXISTS(SELECT 1 FROM subscriptions WHERE server_id=$1 AND (status<>'ACTIVE' OR current_period_end<=now()))", id).Scan(&entitled); err != nil {
 		return Job{}, err
 	}
-	if (action == Unsuspend || action == Provision) && !entitled {
+	if (action == Unsuspend || action == Provision || action == VoicePort) && !entitled {
 		return Job{}, ErrConflict
 	}
 	if action == Provision {
@@ -177,6 +191,10 @@ func (s Service) EnqueueTx(ctx context.Context, tx pgx.Tx, actor, id, key uuid.U
 	}
 	next := state
 	switch action {
+	case VoicePort:
+		if state != server.Running {
+			return Job{}, ErrConflict
+		}
 	case Provision:
 		if state == server.PendingPayment {
 			next = server.PaymentConfirmed

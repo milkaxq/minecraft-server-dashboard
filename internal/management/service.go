@@ -258,7 +258,7 @@ func (s *Service) mutate(ctx context.Context, user, id, key uuid.UUID, p server.
 	outcome := "SUCCEEDED"
 	if runErr != nil {
 		outcome = "UNKNOWN"
-		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, ErrMod) || errors.Is(runErr, catalog.ErrUnavailable) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
+		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, ErrAddonConfig) || errors.Is(runErr, ErrAddonPort) || errors.Is(runErr, ErrMod) || errors.Is(runErr, catalog.ErrUnavailable) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
 			outcome = "REJECTED"
 		}
 	}

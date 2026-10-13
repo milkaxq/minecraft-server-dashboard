@@ -55,15 +55,24 @@ type querier interface {
 // Access is reused by console tickets and live revalidation. Server IDs, roles and
 // Panel identifiers are resolved in PostgreSQL, never accepted from clients.
 func (s Service) Access(ctx context.Context, q querier, user, id uuid.UUID, permission server.Permission) (Target, error) {
+	return s.access(ctx, q, user, id, permission, "")
+}
+
+// AccessAddonRead permits inspecting configuration during voice-port setup only.
+// Lifecycle jobs, revoked membership and expired subscriptions still block access.
+func (s Service) AccessAddonRead(ctx context.Context, q querier, user, id uuid.UUID) (Target, error) {
+	return s.access(ctx, q, user, id, server.Settings, "VOICE_PORT")
+}
+func (s Service) access(ctx context.Context, q querier, user, id uuid.UUID, permission server.Permission, readAction string) (Target, error) {
 	var t Target
 	var identifier *string
 	var busy bool
 	var entitled bool
 	err := q.QueryRow(ctx, `SELECT s.id,s.pterodactyl_identifier,s.status,s.hostname,s.port,
  CASE WHEN s.owner_id=$1 THEN 'OWNER' ELSE COALESCE(m.role,'') END,
- EXISTS(SELECT 1 FROM jobs j WHERE j.server_id=s.id AND j.status IN ('PENDING','RUNNING')),
+ EXISTS(SELECT 1 FROM jobs j WHERE j.server_id=s.id AND j.status IN ('PENDING','RUNNING') AND j.action<>$3),
  NOT EXISTS(SELECT 1 FROM subscriptions su WHERE su.server_id=s.id AND (su.status<>'ACTIVE' OR su.current_period_end<=now()))
- FROM servers s LEFT JOIN server_members m ON m.server_id=s.id AND m.user_id=$1 WHERE s.id=$2`, user, id).Scan(&t.ID, &identifier, &t.State, &t.Hostname, &t.Port, &t.Role, &busy, &entitled)
+ FROM servers s LEFT JOIN server_members m ON m.server_id=s.id AND m.user_id=$1 WHERE s.id=$2`, user, id, readAction).Scan(&t.ID, &identifier, &t.State, &t.Hostname, &t.Port, &t.Role, &busy, &entitled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, server.ErrNotFound
 	}

@@ -17,10 +17,11 @@ type Mock struct {
 	servers              map[int]Server
 	external             map[uuid.UUID]int
 	states               map[string]string
+	extraAllocations     map[int][]int
 }
 
 func NewMock() *Mock {
-	return &Mock{users: map[uuid.UUID]User{}, userRequests: map[uuid.UUID]UserRequest{}, servers: map[int]Server{}, external: map[uuid.UUID]int{}, states: map[string]string{}}
+	return &Mock{extraAllocations: map[int][]int{}, users: map[uuid.UUID]User{}, userRequests: map[uuid.UUID]UserRequest{}, servers: map[int]Server{}, external: map[uuid.UUID]int{}, states: map[string]string{}}
 }
 
 var _ ApplicationClient = (*Mock)(nil)
@@ -124,6 +125,7 @@ func (m *Mock) DeleteServer(ctx context.Context, id int) error {
 		delete(m.external, s.ExternalID)
 		delete(m.states, s.Identifier)
 		delete(m.servers, id)
+		delete(m.extraAllocations, id)
 	}
 	return nil
 }

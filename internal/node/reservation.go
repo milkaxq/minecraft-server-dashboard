@@ -50,7 +50,7 @@ func Reserve(ctx context.Context, tx pgx.Tx, id uuid.UUID, ram, disk, cpu int) (
 		return r, ErrInvariant
 	}
 	err = tx.QueryRow(ctx, `SELECT n.id,n.pterodactyl_node_id FROM nodes n WHERE n.enabled AND n.ram_capacity_mb-n.allocated_ram_mb >= $1 AND n.disk_capacity_mb-n.allocated_disk_mb >= $2 AND n.cpu_capacity-n.allocated_cpu >= $3
- AND EXISTS(SELECT 1 FROM node_allocations a WHERE a.node_id=n.id AND a.enabled AND a.reserved_server_id IS NULL)
+ AND EXISTS(SELECT 1 FROM node_allocations a WHERE a.node_id=n.id AND a.enabled AND a.reserved_server_id IS NULL AND NOT EXISTS(SELECT 1 FROM server_addon_ports extra WHERE extra.allocation_id=a.id))
  ORDER BY n.allocated_ram_mb,n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1`, ram, disk, cpu).Scan(&r.NodeID, &r.PanelNodeID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrCapacity
@@ -59,7 +59,7 @@ func Reserve(ctx context.Context, tx pgx.Tx, id uuid.UUID, ram, disk, cpu int) (
 		return r, err
 	}
 	var allocation uuid.UUID
-	err = tx.QueryRow(ctx, `SELECT id,pterodactyl_allocation_id,hostname,port FROM node_allocations WHERE node_id=$1 AND enabled AND reserved_server_id IS NULL ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`, r.NodeID).Scan(&allocation, &r.PanelAllocationID, &r.Hostname, &r.Port)
+	err = tx.QueryRow(ctx, `SELECT id,pterodactyl_allocation_id,hostname,port FROM node_allocations WHERE node_id=$1 AND enabled AND reserved_server_id IS NULL AND NOT EXISTS(SELECT 1 FROM server_addon_ports extra WHERE extra.allocation_id=node_allocations.id) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`, r.NodeID).Scan(&allocation, &r.PanelAllocationID, &r.Hostname, &r.Port)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, ErrCapacity
 	}
@@ -93,6 +93,9 @@ func Release(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrInvariant
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM server_addon_ports WHERE server_id=$1", id); err != nil {
+		return err
 	}
 	tag, err = tx.Exec(ctx, "UPDATE node_allocations SET reserved_server_id=NULL WHERE reserved_server_id=$1 AND node_id=$2", id, nodeID)
 	if err != nil {

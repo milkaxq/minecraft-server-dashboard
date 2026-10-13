@@ -61,7 +61,14 @@ func (s *Service) CatalogSearch(ctx context.Context, user, id uuid.UUID, collect
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	return s.catalogClient().SearchPage(ctx, loader, t.Version, options)
+	page, err := s.catalogClient().SearchPage(ctx, loader, t.Version, options)
+	for i := range page.Projects {
+		page.Projects[i].ConfigurationID = ""
+		if page.Projects[i].ID == "9eGKb6K1" {
+			page.Projects[i].ConfigurationID = VoiceAddon
+		}
+	}
+	return page, err
 }
 func (s *Service) resolvePreview(ctx context.Context, t Target, collection, project string) (InstallPreview, error) {
 	loader, err := catalogLoader(t, collection)

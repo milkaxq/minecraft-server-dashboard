@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,7 +32,7 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("use control bootstrap-invite, admin, software or node")
+		return errors.New("use control bootstrap-invite, admin, software, node or voice-ports")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -110,6 +112,35 @@ func run() error {
 			return err
 		}
 		fmt.Println("Software configured:", t.ServerType)
+		return nil
+	case "voice-ports":
+		actor := f.String("actor", "", "administrator UUID")
+		nodeID := f.String("node", "", "registered node UUID")
+		raw := f.String("ports", "", "comma-separated unreserved ports")
+		ready := f.Bool("udp-ready", false, "confirm node and provider firewall allow UDP on these allocations")
+		if err = f.Parse(os.Args[2:]); err != nil {
+			return err
+		}
+		actorID, err := uuid.Parse(*actor)
+		if err != nil {
+			return err
+		}
+		id, err := uuid.Parse(*nodeID)
+		if err != nil {
+			return err
+		}
+		ports := []int{}
+		for _, part := range strings.Split(*raw, ",") {
+			port, err := strconv.Atoi(strings.TrimSpace(part))
+			if err != nil {
+				return err
+			}
+			ports = append(ports, port)
+		}
+		if err = node.EnableVoicePorts(ctx, db, actorID, id, ports, *ready); err != nil {
+			return err
+		}
+		fmt.Println("Voice-capable allocations enabled.")
 		return nil
 	case "node":
 		actor := f.String("actor", "", "administrator UUID")

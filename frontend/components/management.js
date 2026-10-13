@@ -791,6 +791,25 @@ function Plugins({ id, server, offline, mods = false }) {
         onInstalled={resource.refresh}
         files={resource.data}
       />
+      {server.permissions?.includes("settings") &&
+        resource.data?.some(
+          (file) =>
+            file.name.toLowerCase().includes("voicechat") &&
+            file.name.toLowerCase().endsWith(".jar"),
+        ) && (
+          <section className="panel addon-setup-card">
+            <div>
+              <span className="eyebrow">GUIDED SETTINGS</span>
+              <h2>Simple Voice Chat</h2>
+              <p>
+                Configure voice distance, group chats, and the player setup from your dashboard.
+              </p>
+            </div>
+            <Link className="button primary" href={`/servers/${id}/addons/simple-voice-chat`}>
+              Configure voice chat
+            </Link>
+          </section>
+        )}
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -1056,13 +1075,25 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
                   </a>
                 </span>
               </div>
-              <button
-                className="button"
-                disabled={action.busy || installedProjects.has(project.project_id)}
-                onClick={() => review(project.project_id)}
-              >
-                {installedProjects.has(project.project_id) ? "Installed" : "Review install"}
-              </button>
+              <div className="file-actions catalog-project-actions">
+                {installedProjects.has(project.project_id) &&
+                  project.configuration_id &&
+                  server.permissions?.includes("settings") && (
+                    <Link
+                      className="button primary"
+                      href={`/servers/${id}/addons/${encodeURIComponent(project.configuration_id)}`}
+                    >
+                      Configure
+                    </Link>
+                  )}
+                <button
+                  className="button"
+                  disabled={action.busy || installedProjects.has(project.project_id)}
+                  onClick={() => review(project.project_id)}
+                >
+                  {installedProjects.has(project.project_id) ? "Installed" : "Review install"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
