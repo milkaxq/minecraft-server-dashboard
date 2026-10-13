@@ -30,3 +30,18 @@ for this change is read-only: no customer backup is created, restored or deleted
 Deployment checks: production readiness and the backup page returned 200. The
 backup API returned 401 without a session, confirming that backup data still
 requires authentication. No live backup mutations were submitted.
+
+## Choosing a recovery copy
+
+The newest usable copy is selected by backup creation time, rather than completion
+time: a slow older backup should not outrank a newer snapshot. It is identified in
+history and has download/restore shortcuts in the protection summary. Restore
+still opens the acknowledgement dialog and respects the offline check.
+
+If the newest usable copy started more than 48 hours ago, the summary recommends
+making a fresh copy before changes. This is a reminder, not a claim that an older
+backup is corrupt or cannot be restored. The age display updates once per minute.
+
+Six targeted browser checks passed, including the slow-old/new-success/failed-new
+selection case, restore acknowledgement, changing power state and mobile/laptop
+visual checks. Frontend lint and production build passed.

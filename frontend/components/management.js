@@ -1321,12 +1321,18 @@ function Backups({ id, offline, limit }) {
   const resource = useResource(`/servers/${id}/backups`, 10000);
   const action = useAction(resource.refresh);
   const [name, setName] = useState("");
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
   const [target, setTarget] = useState(null);
   const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
   const usable = (resource.data || []).filter(
     (backup) => backup.is_successful && backup.completed_at,
   );
-  const latest = [...usable].sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))[0];
+  const latest = [...usable].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+  const oldCopy = latest && now - Date.parse(latest.created_at) > 48 * 60 * 60 * 1000;
   const pending = (resource.data || []).filter((backup) => !backup.completed_at).length;
   const selectedReady =
     target &&
@@ -1393,11 +1399,48 @@ function Backups({ id, offline, limit }) {
           {resource.error
             ? "We could not check backup history. Refresh it before relying on a recovery copy."
             : latest
-              ? `${usable.length} completed ${usable.length === 1 ? "backup is" : "backups are"} available. Your latest successful backup finished on ${new Date(latest.completed_at).toLocaleString()}.`
+              ? `${usable.length} completed ${usable.length === 1 ? "backup is" : "backups are"} available. Your newest usable copy is “${latest.name}”. Its backup started on ${new Date(latest.created_at).toLocaleString()}.`
               : pending
                 ? "Wait for a backup to finish successfully before relying on it."
                 : "Create a backup before changing your world, installing add-ons or updating Minecraft."}
         </p>
+        {oldCopy && !resource.error && (
+          <p className="notice">
+            Your newest usable copy is over two days old. Create a fresh backup before making
+            changes you may want to undo.
+          </p>
+        )}
+        {latest && !resource.error && (
+          <div className="backup-summary-actions">
+            <button
+              className="button secondary"
+              disabled={action.busy}
+              onClick={() =>
+                action.run(
+                  () =>
+                    download(
+                      api,
+                      `/servers/${id}/backups/${latest.uuid}/download`,
+                      `backup-${latest.uuid}.tar.gz`,
+                    ),
+                  "Download ready.",
+                )
+              }
+            >
+              Download latest copy
+            </button>
+            <button
+              className="button secondary"
+              disabled={!offline || action.busy}
+              onClick={() => {
+                setRestoreAcknowledged(false);
+                setTarget({ action: "restore", backup: latest });
+              }}
+            >
+              Restore latest copy
+            </button>
+          </div>
+        )}
         <p className="field-help">
           Backups save your server’s worlds, settings and add-on files. Files excluded by backup
           rules are not included. A ready backup is a recovery option; it does not prove that a
@@ -1480,6 +1523,9 @@ function Backups({ id, offline, limit }) {
                   <tr key={b.uuid}>
                     <td>
                       <strong>{b.name}</strong>
+                      {b.uuid === latest?.uuid && (
+                        <small className="backup-latest-label">Newest usable copy</small>
+                      )}
                       <small>{b.automatic ? "Automatic" : "Manual"}</small>
                       <small>{new Date(b.created_at).toLocaleString()}</small>
                     </td>

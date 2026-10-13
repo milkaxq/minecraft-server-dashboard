@@ -3815,3 +3815,51 @@ test("restore confirmation stops when the server starts while the dialog is open
   await expect(dialog.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled();
   expect(calls.filter((call) => call.path.endsWith("/restore"))).toHaveLength(0);
 });
+
+test("backup shortcuts choose the newest usable snapshot rather than a failed or slow older copy", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-10-14T12:00:00Z") });
+  const calls = await mockAPI(page);
+  const newest = "40000000-0000-4000-8000-000000000002";
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    route.fulfill({
+      json: [
+        {
+          uuid: "40000000-0000-4000-8000-000000000001",
+          name: "Old slow backup",
+          is_successful: true,
+          created_at: "2026-10-07T10:00:00Z",
+          completed_at: "2026-10-14T11:00:00Z",
+          bytes: 100,
+        },
+        {
+          uuid: newest,
+          name: "Newest world copy",
+          is_successful: true,
+          created_at: "2026-10-11T10:00:00Z",
+          completed_at: "2026-10-11T10:01:00Z",
+          bytes: 100,
+        },
+        {
+          uuid: "failed",
+          name: "New failed copy",
+          is_successful: false,
+          created_at: "2026-10-14T10:00:00Z",
+          completed_at: "2026-10-14T10:01:00Z",
+          bytes: 0,
+        },
+      ],
+    }),
+  );
+  await openServer(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  const summary = page.getByRole("region", { name: "Backup protection" });
+  await expect(summary).toContainText("Your newest usable copy is “Newest world copy”");
+  await expect(summary).toContainText("over two days old");
+  await summary.getByRole("button", { name: "Restore latest copy" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Newest world copy");
+  await expect(dialog.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled();
+  expect(calls.filter((call) => call.path.endsWith("/restore"))).toHaveLength(0);
+});

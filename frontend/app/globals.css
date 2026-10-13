@@ -5118,3 +5118,19 @@ input {
   min-height: 20px;
   margin-top: 3px;
 }
+
+.backup-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+.backup-latest-label {
+  color: #22633d;
+  font-weight: 650;
+}
+@media (max-width: 760px) {
+  .backup-summary-actions .button {
+    width: 100%;
+  }
+}
