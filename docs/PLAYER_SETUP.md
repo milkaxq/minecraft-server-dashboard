@@ -167,3 +167,9 @@ completed real-world import or Minecraft launch.
 The official changelog documents drag-and-drop modpack imports from 4.0.30:
 https://next.skmedix.pl/changelog . Current launcher downloads are linked through
 https://next.skmedix.pl/downloads . OS double-click association is not assumed.
+
+Import-first deployment verification: seven focused browser tests, frontend
+lint/build/format passed. A live 390px browser selected SKlauncher 4 and displayed
+the player-pack download and import instructions with the manual ZIP hidden;
+there was no horizontal overflow, and readiness returned 200. Actual import and
+Minecraft launch remain a client-side acceptance test.
