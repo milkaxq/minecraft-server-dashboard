@@ -791,25 +791,6 @@ function Plugins({ id, server, offline, mods = false }) {
         onInstalled={resource.refresh}
         files={resource.data}
       />
-      {server.permissions?.includes("settings") &&
-        resource.data?.some(
-          (file) =>
-            file.name.toLowerCase().includes("voicechat") &&
-            file.name.toLowerCase().endsWith(".jar"),
-        ) && (
-          <section className="panel addon-setup-card">
-            <div>
-              <span className="eyebrow">GUIDED SETTINGS</span>
-              <h2>Simple Voice Chat</h2>
-              <p>
-                Configure voice distance, group chats, and the player setup from your dashboard.
-              </p>
-            </div>
-            <Link className="button primary" href={`/servers/${id}/addons/simple-voice-chat`}>
-              Configure voice chat
-            </Link>
-          </section>
-        )}
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -857,13 +838,25 @@ function Plugins({ id, server, offline, mods = false }) {
                   <strong>{v.name}</strong>
                   <small>{formatBytes(v.size)}</small>
                 </span>
-                <button
-                  className="button danger-outline"
-                  disabled={!offline || action.busy}
-                  onClick={() => setRemove(v.name)}
-                >
-                  Delete {label}
-                </button>
+                <div className="file-actions installed-addon-actions">
+                  {server.permissions?.includes("settings") &&
+                    v.name.toLowerCase().includes("voicechat") &&
+                    v.name.toLowerCase().endsWith(".jar") && (
+                      <Link
+                        className="button primary"
+                        href={`/servers/${id}/addons/simple-voice-chat`}
+                      >
+                        Configure
+                      </Link>
+                    )}
+                  <button
+                    className="button danger-outline"
+                    disabled={!offline || action.busy}
+                    onClick={() => setRemove(v.name)}
+                  >
+                    Delete {label}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

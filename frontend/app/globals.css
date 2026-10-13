@@ -4571,23 +4571,6 @@ input {
   border-radius: 4px;
   color: var(--ink);
 }
-.addon-setup-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-.addon-setup-card h2 {
-  margin: 8px 0;
-}
-.addon-setup-card p {
-  font-size: 14px;
-  color: var(--muted);
-}
-.addon-setup-card .button {
-  flex-shrink: 0;
-}
 @media (max-width: 1100px) {
   .addon-settings-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -4597,23 +4580,22 @@ input {
   }
 }
 @media (max-width: 640px) {
-  .addon-setup-card {
-    flex-direction: column;
-    align-items: stretch;
-  }
   .addon-save-actions {
     flex-direction: column;
     align-items: stretch;
   }
 }
+.installed-addon-actions,
 .catalog-project-actions {
   flex-shrink: 0;
   justify-content: flex-end;
 }
 @media (max-width: 640px) {
+  .installed-addon-actions,
   .catalog-project-actions {
     width: 100%;
   }
+  .installed-addon-actions .button,
   .catalog-project-actions .button {
     flex: 1 1 auto;
     justify-content: center;

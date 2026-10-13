@@ -2716,7 +2716,61 @@ test("installed supported catalog addons lead directly to guided configuration",
   await page.goto(`/servers/${serverID}/plugins`);
   await page.getByRole("button", { name: "Review install" }).click();
   await page.getByRole("button", { name: "Install now" }).click();
-  await page.getByRole("link", { name: "Configure", exact: true }).click();
+  await page
+    .locator(".plugin-list li")
+    .filter({ hasText: file.filename })
+    .getByRole("link", { name: "Configure", exact: true })
+    .click();
   await expect(page).toHaveURL(new RegExp(`/servers/${serverID}/addons/simple-voice-chat$`));
   await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("72");
 });
+
+for (const [software, collection, width] of [
+  ["PAPER", "plugins", 1366],
+  ["FABRIC", "mods", 390],
+]) {
+  test(`installed ${collection} expose configuration without catalog results`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockAPI(page, {
+      servers: [{ ...baseServer, server_type: software }],
+      initiallyRunning: true,
+    });
+    await page.route(
+      `http://localhost:8080/servers/${serverID}/${collection}/catalog?**`,
+      (route) => route.fulfill({ json: { projects: [], has_more: false } }),
+    );
+    await page.route(`http://localhost:8080/servers/${serverID}/${collection}`, (route) =>
+      route.fulfill({
+        json: [
+          { name: "voicechat-2.6.jar", is_file: true, size: 10000 },
+          { name: "other-addon.jar", is_file: true, size: 10000 },
+        ],
+      }),
+    );
+    await login(page);
+    await page.goto(`/servers/${serverID}/${collection}`);
+    const row = page.locator(".plugin-list li").filter({ hasText: "voicechat-2.6.jar" });
+    await expect(row.getByRole("link", { name: "Configure", exact: true })).toBeVisible();
+    await expect(
+      row.getByRole("button", { name: `Delete ${collection === "mods" ? "mod" : "plugin"}` }),
+    ).toBeDisabled();
+    await expect(
+      page
+        .locator(".plugin-list li")
+        .filter({ hasText: "other-addon.jar" })
+        .getByRole("link", { name: "Configure" }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await row.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(`installed-${collection}.png`),
+      fullPage: true,
+    });
+    await row.getByRole("link", { name: "Configure", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/servers/${serverID}/addons/simple-voice-chat$`));
+  });
+}
