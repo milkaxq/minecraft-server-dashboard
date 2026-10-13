@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 
+	"minecraft-hosting/internal/control"
 	"minecraft-hosting/internal/jobs"
 	"minecraft-hosting/internal/management"
 	"minecraft-hosting/internal/server"
@@ -106,6 +107,37 @@ func (a *API) clientRequirements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := a.Management.ClientRequirements(r.Context(), currentUser(r).ID, id)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, http.StatusOK, v)
+}
+
+func (a *API) checkPlugins(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.managementID(w, r)
+	if !ok {
+		return
+	}
+	if err := (server.Service{DB: a.DB}).Authorize(r.Context(), currentUser(r).ID, id, server.Plugins); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	key, err := operationKey(r)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	var input struct{}
+	if err = decode(w, r, &input); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	if a.Console == nil {
+		a.fail(w, r, control.ErrNotConfigured)
+		return
+	}
+	v, err := a.Console.CheckPlugins(r.Context(), currentUser(r).ID, id, key, requestID(r))
 	if err != nil {
 		a.fail(w, r, err)
 		return

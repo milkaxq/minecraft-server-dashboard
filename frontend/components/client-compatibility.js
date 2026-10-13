@@ -1,6 +1,5 @@
 "use client";
 import Link from "next/link";
-import { useResource } from "./data";
 import { softwareName, supportsMods } from "../lib/software";
 
 export function clientCompatibility(addon) {
@@ -58,8 +57,7 @@ export function ClientRequirementTag({ addon }) {
   );
 }
 
-export function ClientRequirementsNotice({ server, ready }) {
-  const resource = useResource(ready ? `/servers/${server.id}/client-requirements` : null, 15000);
+export function ClientRequirementsNotice({ server, ready, resource }) {
   const addons = resource.data?.addons || [];
   const required = addons.some((addon) => clientCompatibility(addon).kind === "required");
   const unknown = addons.some((addon) => clientCompatibility(addon).kind === "unknown");
@@ -109,7 +107,7 @@ export function ClientRequirementsNotice({ server, ready }) {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Client downloads and instructions ↗
+                    Downloads and setup instructions ↗
                   </a>
                 )}
                 {addon.configuration_id === "simple-voice-chat" &&

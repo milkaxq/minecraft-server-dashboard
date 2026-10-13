@@ -4656,3 +4656,72 @@ input {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.join-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.join-share-actions code {
+  flex: 1 1 220px;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.join-setup-details,
+.join-troubleshooting {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.clipboard-fallback {
+  display: block;
+  margin-top: 16px;
+}
+.clipboard-fallback textarea {
+  width: 100%;
+  margin-top: 10px;
+}
+.troubleshooting-answer {
+  margin: 16px 0;
+  padding: 18px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.troubleshooting-answer h3 {
+  margin-top: 0;
+  font-size: 16px;
+}
+.addon-runtime-check {
+  margin-bottom: 24px;
+}
+.addon-runtime-check p {
+  color: var(--muted);
+  line-height: 1.65;
+}
+.runtime-plugin-list {
+  list-style: none;
+  padding: 0;
+}
+.runtime-plugin-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.runtime-plugin-list strong {
+  overflow-wrap: anywhere;
+}
+.runtime-plugin-list .client-requirement-tag {
+  margin-top: 0;
+}
+@media (max-width: 640px) {
+  .join-share-actions .button {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+  .runtime-plugin-list li {
+    flex-wrap: wrap;
+  }
+}

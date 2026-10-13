@@ -76,3 +76,42 @@ needed for voice, but required to join only when that option is enabled.
 
 References: [Modrinth project metadata](https://docs.modrinth.com/api/operations/getproject/)
 and [Simple Voice Chat configuration](https://modrepo.de/minecraft/voicechat/wiki/server_config).
+
+## Sharing and troubleshooting
+
+Overview keeps power controls and live metrics above a compact How to join card.
+Its detailed player setup is collapsed by default. Copy join instructions shares
+only the address, Minecraft version, loader guidance, client-addon requirements,
+account guidance, and whitelist state. Missing or failed reads stay unknown in the
+copied text. Clipboard denial provides a selectable text fallback. No session,
+Panel, or host credentials are included.
+
+The connection helper covers invalid sessions/account verification, whitelist,
+version mismatch, missing client mods, game-port connectivity, and voice-only
+connection issues. It links owners/admins to relevant management pages without
+changing account verification or other settings automatically.
+
+## Plugin runtime checks
+
+`POST /servers/{id}/plugins/check` accepts empty JSON and a UUID Idempotency-Key.
+OWNER/ADMIN plugin permission is checked before Panel access, before command
+execution, and before returning results. The endpoint shares the console socket
+allowlist, rejects redirects, bounds frames and time, and has a separate rate
+limit. It runs only the fixed read-only `bukkit:plugins` Minecraft command through
+Pterodactyl. Existing control operations provide command idempotency and auditing.
+
+Only a fresh complete plugin-list response with recognizable enabled/disabled
+colours establishes runtime status. Historical startup inventories, delivery
+acknowledgements, plain output, incomplete counts, and host events never establish
+success. Raw console output and privileged WebSocket credentials are not returned.
+The enabled plugin names are the server's response, not guesses derived from JAR
+filenames. This confirms plugin enabled state, not every feature's health.
+
+The UI distinguishes File installed from Loaded and enabled and Disabled or failed
+to load. Results expire after one minute and are invalidated by observed server
+stops, uptime resets, or changes to the installed file list. Mod loaders have no
+uniform trustworthy per-mod runtime query; their UI explains that limit and directs
+users to startup output in Console rather than claiming successful load from file
+presence. No reload, restart, or world mutation is performed by a load check.
+
+Reference: [Paper plugin installation and checks](https://docs.papermc.io/paper/adding-plugins/).

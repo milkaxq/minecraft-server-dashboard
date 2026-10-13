@@ -1912,6 +1912,7 @@ for (const width of [320, 1366]) {
     await login(page);
     await page.goto(`/servers/${serverID}`);
     const card = page.getByRole("region", { name: "How to join" });
+    await card.getByText("Join instructions and player setup", { exact: true }).click();
     await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
     await expect(card.getByText("Whitelist is disabled.", { exact: false })).toBeVisible();
     await expect(card.getByText("play.example.com:25565", { exact: true })).toBeVisible();
@@ -1927,6 +1928,7 @@ test("moderator joining help does not request privileged settings", async ({ pag
   await login(page);
   await page.goto(`/servers/${serverID}`);
   const card = page.getByRole("region", { name: "How to join" });
+  await card.getByText("Join instructions and player setup", { exact: true }).click();
   await expect(card.getByText("Check which account you need", { exact: true })).toBeVisible();
   await expect(card.getByRole("link", { name: "Manage allowed players →" })).toHaveCount(0);
   expect(calls.some((c) => c.path.endsWith("/settings"))).toBe(false);
@@ -1941,6 +1943,7 @@ test("offline joining guidance does not assume an authentication plugin is insta
   await login(page);
   await page.goto(`/servers/${serverID}`);
   const card = page.getByRole("region", { name: "How to join" });
+  await card.getByText("Join instructions and player setup", { exact: true }).click();
   await expect(
     card.getByText("Check the server’s login instructions", { exact: true }),
   ).toBeVisible();
@@ -2544,9 +2547,9 @@ test("catalog shows actual installation progress and a durable installed badge",
   await expect(page.getByText("Downloading and checking files", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("installation-progress.png") });
   release();
-  await expect(page.getByRole("button", { name: "Installed", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "File installed", exact: true })).toBeDisabled();
   await page.reload();
-  await expect(page.getByRole("button", { name: "Installed", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "File installed", exact: true })).toBeDisabled();
   installed = false;
   await page.reload();
   await expect(page.getByRole("button", { name: "Review install" })).toBeEnabled();
@@ -2803,6 +2806,7 @@ for (const [width, voiceRequired] of [
       route.fulfill({ json: { addons } }),
     );
     await openServer(page);
+    await page.getByText("Join instructions and player setup", { exact: true }).click();
     const notice = page.getByLabel("Player client requirements");
     await expect(
       notice.getByText(voiceRequired ? "Modded client required" : "Check client requirements", {
@@ -2890,10 +2894,183 @@ test("failed requirement lookup never claims vanilla compatibility", async ({ pa
     route.fulfill({ status: 503, json: { message: "Unavailable" } }),
   );
   await openServer(page);
+  await page.getByText("Join instructions and player setup", { exact: true }).click();
   const notice = page.getByLabel("Player client requirements");
   await expect(
     notice.getByText("Player requirements could not be checked", { exact: true }),
   ).toBeVisible();
   await expect(notice.getByText("Vanilla Java supported", { exact: true })).toHaveCount(0);
   await expect(notice.getByRole("button", { name: "Check again" })).toBeVisible();
+});
+
+for (const width of [390, 1366]) {
+  test(`compact overview shares complete join instructions at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text) => {
+            window.sharedJoinInstructions = text;
+          },
+        },
+      }),
+    );
+    await mockAPI(page, { initiallyRunning: true });
+    await page.route(`http://localhost:8080/servers/${serverID}/settings`, (route) =>
+      route.fulfill({ json: { online_mode: true, whitelist: true } }),
+    );
+    await page.route(`http://localhost:8080/servers/${serverID}/client-requirements`, (route) =>
+      route.fulfill({
+        json: {
+          addons: [
+            {
+              filename: "voicechat.jar",
+              title: "Simple Voice Chat",
+              project_id: "9eGKb6K1",
+              configuration_id: "simple-voice-chat",
+              voice_required: true,
+            },
+            { filename: "custom.jar", client_side: "unknown" },
+          ],
+        },
+      }),
+    );
+    await openServer(page);
+    const card = page.getByRole("region", { name: "How to join" });
+    await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeHidden();
+    await expect(page.locator(".metric-grid")).toBeVisible();
+    const metrics = await page.locator(".metric-grid").boundingBox();
+    const join = await card.boundingBox();
+    expect(metrics.y).toBeLessThan(join.y);
+    // Let the two independent setup reads finish before sharing the snapshot.
+    await card.getByText("Join instructions and player setup", { exact: true }).click();
+    await expect(card.getByText("Client mod required to join", { exact: true })).toBeVisible();
+    await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
+    await card.getByText("Join instructions and player setup", { exact: true }).click();
+    await card.getByRole("button", { name: "Copy join instructions" }).click();
+    await expect(card.getByRole("status")).toContainText("Join instructions copied");
+    const text = await page.evaluate(() => window.sharedJoinInstructions);
+    expect(text).toContain("Minecraft Java 1.21.1");
+    expect(text).toContain("play.example.com:25565");
+    expect(text).toContain("Client mod required to join");
+    expect(text).toContain("Client requirement unknown");
+    expect(text).toContain("Sign in through Microsoft");
+    expect(text).toContain("Whitelist is enabled");
+    expect(text).not.toContain("csrf");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: testInfo.outputPath(`compact-overview-${width}.png`),
+      fullPage: true,
+    });
+  });
+}
+
+test("join instruction copy falls back safely when clipboard and setup are unavailable", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    }),
+  );
+  await mockAPI(page, { role: "MODERATOR", initiallyRunning: true });
+  await page.route(`http://localhost:8080/servers/${serverID}/client-requirements`, (route) =>
+    route.fulfill({ status: 503, json: { error: "Unavailable" } }),
+  );
+  await openServer(page);
+  await page.getByText("Join instructions and player setup", { exact: true }).click();
+  await expect(
+    page.getByText("Player requirements could not be checked", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Copy join instructions" }).click();
+  const text = await page.getByLabel("Join instructions to copy").inputValue();
+  expect(text).toContain("Client requirements could not be checked");
+  expect(text).toContain("Ask the host which account");
+  expect(text).not.toContain("No client mods required");
+});
+
+test("connection troubleshooting gives specific version mods whitelist and voice guidance", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  await openServer(page);
+  const card = page.getByRole("region", { name: "How to join" });
+  await card.getByText("Having trouble connecting?", { exact: true }).click();
+  const control = card.getByRole("combobox", { name: "What does Minecraft show?" });
+  await selectValue(page, control, "version");
+  await expect(card.getByText("Open Minecraft Java 1.21.1.", { exact: false })).toBeVisible();
+  await selectValue(page, control, "whitelist");
+  await expect(card.getByRole("link", { name: "Open Players", exact: true })).toBeVisible();
+  await selectValue(page, control, "mods");
+  await card.getByRole("button", { name: "Show player setup" }).click();
+  await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
+  await selectValue(page, control, "voice");
+  await expect(card.getByText("Check microphone permissions", { exact: false })).toBeVisible();
+});
+
+test("plugin checks distinguish installed files from enabled disabled and unconfirmed runtime", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  let confirmed = true;
+  let request;
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/check`, (route) => {
+    request = route.request();
+    return route.fulfill({
+      json: {
+        confirmed,
+        checked_at: new Date().toISOString(),
+        uptime_ms: 0,
+        plugins: confirmed
+          ? [
+              { name: "Essentials", enabled: true },
+              { name: "BrokenPlugin", enabled: false },
+            ]
+          : [],
+        reason: confirmed ? "" : "No coloured response received.",
+      },
+    });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await expect(page.getByText("File installed", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Loaded and enabled", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Check loaded plugins" }).click();
+  await expect(page.getByText("Loaded and enabled", { exact: true })).toBeVisible();
+  await expect(page.getByText("Disabled or failed to load", { exact: true })).toBeVisible();
+  expect(request.postDataJSON()).toEqual({});
+  expect(request.headers()["idempotency-key"]).toBeTruthy();
+  confirmed = false;
+  await page.getByRole("button", { name: "Check loaded plugins" }).click();
+  await expect(
+    page.getByText("Load status could not be confirmed.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("Loaded and enabled", { exact: true })).toHaveCount(0);
+});
+
+test("offline plugins and mod loaders do not claim runtime confirmation", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await expect(page.getByRole("button", { name: "Check loaded plugins" })).toBeDisabled();
+  await page.route(`http://localhost:8080/servers/${serverID}`, (route) =>
+    route.fulfill({ json: { ...baseServer, server_type: "FABRIC" } }),
+  );
+  await page.goto(`/servers/${serverID}/mods`);
+  await expect(
+    page.getByText("Automatic per-mod load checks are not available", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check loaded plugins" })).toHaveCount(0);
+  expect(calls.some((call) => call.path.endsWith("/plugins/check"))).toBe(false);
 });

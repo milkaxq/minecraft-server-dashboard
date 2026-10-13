@@ -1,4 +1,5 @@
 "use client";
+import { PluginCheck } from "./plugin-check";
 import { Select } from "./select";
 import { ClientRequirementTag } from "./client-compatibility";
 import { BackupSchedule } from "./backup-schedule";
@@ -181,13 +182,13 @@ export function ManagementPage({ id, section }) {
                 <Settings id={id} offline={offline} />
               ) : section === "mods" ? (
                 supportsMods(server.server_type) ? (
-                  <Plugins id={id} server={server} offline={offline} mods />
+                  <Plugins id={id} server={server} offline={offline} mods usage={usage.data} />
                 ) : (
                   <p className="notice">Mods require Fabric, Forge, or NeoForge.</p>
                 )
               ) : section === "plugins" ? (
                 supportsPlugins(server.server_type) ? (
-                  <Plugins id={id} server={server} offline={offline} />
+                  <Plugins id={id} server={server} offline={offline} usage={usage.data} />
                 ) : (
                   <p className="notice">
                     Plugins are available for Paper, Spigot, and Purpur servers.
@@ -744,7 +745,7 @@ function Settings({ id, offline }) {
     </>
   );
 }
-function Plugins({ id, server, offline, mods = false }) {
+function Plugins({ id, server, offline, mods = false, usage }) {
   const collection = mods ? "mods" : "plugins";
   const label = mods ? "mod" : "plugin";
   const { api } = useAuth();
@@ -797,6 +798,7 @@ function Plugins({ id, server, offline, mods = false }) {
         onInstalled={resource.refresh}
         files={resource.data}
       />
+      <PluginCheck key={id} id={id} mods={mods} usage={usage} files={resource.data} />
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -842,7 +844,7 @@ function Plugins({ id, server, offline, mods = false }) {
               <li key={v.name}>
                 <span>
                   <strong>{v.name}</strong>
-                  <small>{formatBytes(v.size)}</small>
+                  <small>{formatBytes(v.size)} · File installed</small>
                   <ClientRequirementTag
                     addon={
                       clientSetup.data?.addons?.find((addon) => addon.filename === v.name) || {}
@@ -1096,7 +1098,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
                   disabled={action.busy || installedProjects.has(project.project_id)}
                   onClick={() => review(project.project_id)}
                 >
-                  {installedProjects.has(project.project_id) ? "Installed" : "Review install"}
+                  {installedProjects.has(project.project_id) ? "File installed" : "Review install"}
                 </button>
               </div>
             </li>

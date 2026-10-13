@@ -477,15 +477,6 @@ export function ServerDetail({ id, advanced = false }) {
                 onCopy={copy}
               />
             )}
-            {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
-              <JoinServer
-                server={server}
-                ready={ready}
-                powerState={displayPowerState}
-                address={address}
-                onCopy={copy}
-              />
-            )}
             {ready && !notice && ["starting", "stopping"].includes(displayPowerState) && (
               <p className="notice" role="status">
                 {displayPowerState === "starting"
@@ -569,6 +560,16 @@ export function ServerDetail({ id, advanced = false }) {
                     }
                   />
                 </div>
+                {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
+                  <JoinServer
+                    key={server.id}
+                    server={server}
+                    ready={ready}
+                    powerState={displayPowerState}
+                    address={address}
+                    onCopy={copy}
+                  />
+                )}
                 <div className="overview-grid">
                   <section className="panel performance-panel">
                     <div className="section-heading">
