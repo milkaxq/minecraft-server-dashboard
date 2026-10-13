@@ -3,9 +3,12 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"strings"
 )
+
+var ErrPreviewClient = errors.New("matching client build is a prerelease")
 
 // ResolveClient pins a mod to the installed server release. Paper plugins may
 // have a separate client build, which must match that release's version number.
@@ -30,10 +33,19 @@ func (c *Client) ResolveClient(ctx context.Context, project, installed, loader, 
 	if err := c.get(ctx, "project/"+project+"/version?"+q.Encode(), &candidates); err != nil {
 		return nil, err
 	}
+	preview := false
 	for _, candidate := range candidates {
+		if candidate.ProjectID == project && sameClientRelease(project, v.Number, candidate.Number, loader, game) && candidate.Type == "beta" {
+			stable := candidate
+			stable.Type = "release"
+			preview = preview || Compatible(stable, loader, game)
+		}
 		if candidate.ProjectID == project && sameClientRelease(project, v.Number, candidate.Number, loader, game) && Compatible(candidate, loader, game) {
 			return c.resolve(ctx, project, candidate.ID, loader, game, true)
 		}
+	}
+	if preview {
+		return nil, ErrPreviewClient
 	}
 	return nil, ErrUnavailable
 }

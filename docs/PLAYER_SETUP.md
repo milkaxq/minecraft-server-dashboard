@@ -72,3 +72,9 @@ settings changed. Local fixture tests validate ready-pack generation; the live
 server still needs its unverified addon reconciled before testing launcher import.
 
 The client-metadata follow-up removes the blanket unknown-metadata block. Modrinth project/version environment fields describe required, optional, and server-only use; absent or conflicting metadata remains unspecified. Catalog provenance and client compatibility are separate checks.
+
+Live follow-up: VeinMiner no longer blocks publication. Simple Voice Chat 2.6.24
+client builds for Minecraft 26.3 are marked beta by Modrinth (Fabric, Forge, and
+NeoForge). The stable-only client resolver now reports that exact reason instead
+of describing the source as unverified. Private Beta's required voice client
+still prevents a stable-only automatic pack; its server plugins remain installed.

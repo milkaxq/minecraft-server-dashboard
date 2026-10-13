@@ -203,6 +203,9 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 			}
 			out.Files = nil
 			out.PackReason = root.Title + ": a required matching client release or dependency could not be verified. Ask your host to review this addon."
+			if errors.Is(e, catalog.ErrPreviewClient) {
+				out.PackReason = root.Title + ": the matching client build for Minecraft " + out.Version + " is marked beta on Modrinth. Automatic player packs currently include stable builds only."
+			}
 			return out, nil
 		}
 		for _, file := range files {

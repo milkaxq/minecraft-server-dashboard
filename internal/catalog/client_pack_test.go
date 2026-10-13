@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -45,6 +46,11 @@ func TestClientPackPinsVoiceReleaseAndIncludesClientOnlyDependencies(t *testing.
 	if err != nil || len(files) != 2 || files[0].ProjectID != "library" || files[1].SHA1 == "" {
 		t.Fatal(files, err)
 	}
+	clientVersion.Type = "beta"
+	if _, err = c.ResolveClient(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3"); !errors.Is(err, ErrPreviewClient) {
+		t.Fatal("beta client build did not explain the stable-only policy", err)
+	}
+	clientVersion.Type = "release"
 	clientVersion.Number = "fabric-2.6.25+26.3"
 	if _, err = c.ResolveClient(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3"); err == nil {
 		t.Fatal("silently substituted a different client release")
