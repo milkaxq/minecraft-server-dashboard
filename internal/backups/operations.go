@@ -64,9 +64,12 @@ func (w *Worker) create(ctx context.Context, conn *pgxpool.Conn, r claimedRun) e
 		return w.rejectIntent(ctx, conn, r, op, "schedule_changed")
 	}
 	request, c := context.WithTimeout(ctx, 30*time.Second)
-	b, err := w.Panel.CreateAutomaticBackup(request, r.Identifier, "Daily backup "+r.ID.String())
+	b, err := w.Panel.CreateAutomaticBackup(request, r.Identifier, "Daily backup "+r.ID.String(), func(callCtx context.Context) error { return w.revalidate(callCtx, conn, r) })
 	c()
 	if err != nil {
+		if errors.Is(err, pterodactyl.ErrBackupPreflight) {
+			return w.rejectIntent(ctx, conn, r, op, "schedule_changed")
+		}
 		if pterodactyl.Rejected(err) || errors.Is(err, pterodactyl.ErrConflict) {
 			return w.rejectIntent(ctx, conn, r, op, "panel_rejected")
 		}
@@ -164,8 +167,11 @@ func (w *Worker) rotate(ctx context.Context, conn *pgxpool.Conn, r claimedRun, t
 		return w.rejectIntent(ctx, conn, r, op, "capacity_full")
 	}
 	request, c := context.WithTimeout(ctx, 30*time.Second)
-	err = w.Panel.DeleteAutomaticBackup(request, r.Identifier, target)
+	err = w.Panel.DeleteAutomaticBackup(request, r.Identifier, target, func(callCtx context.Context) error { return w.revalidate(callCtx, conn, r) })
 	c()
+	if errors.Is(err, pterodactyl.ErrBackupPreflight) {
+		return w.rejectIntent(ctx, conn, r, op, "schedule_changed")
+	}
 	if err != nil && (pterodactyl.Rejected(err) || errors.Is(err, pterodactyl.ErrConflict)) {
 		return w.rejectIntent(ctx, conn, r, op, "panel_rejected")
 	}
@@ -203,7 +209,7 @@ func (w *Worker) confirmDelete(ctx context.Context, conn *pgxpool.Conn, r claime
 	return tx.Commit(ctx)
 }
 func (w *Worker) unknown(ctx context.Context, conn *pgxpool.Conn, r claimedRun, op uuid.UUID, code string) error {
-	if _, err := conn.Exec(ctx, "UPDATE backup_intents SET status='UNKNOWN',updated_at=now() WHERE id=$1", op); err != nil {
+	if err := w.finishIntent(ctx, conn, r, op, "UNKNOWN"); err != nil {
 		return err
 	}
 	if err := w.transition(ctx, conn, r, "NEEDS_INSPECTION", code, nil); err != nil {
@@ -213,7 +219,7 @@ func (w *Worker) unknown(ctx context.Context, conn *pgxpool.Conn, r claimedRun, 
 }
 func (w *Worker) rejectIntent(ctx context.Context, conn *pgxpool.Conn, r claimedRun, op uuid.UUID, code string) error {
 	// CONFIRMED means the outcome is established, including a known rejection.
-	if _, err := conn.Exec(ctx, "UPDATE backup_intents SET status='CONFIRMED',updated_at=now() WHERE id=$1", op); err != nil {
+	if err := w.finishIntent(ctx, conn, r, op, "CONFIRMED"); err != nil {
 		return err
 	}
 	if err := w.transition(ctx, conn, r, "SKIPPED", code, nil); err != nil {
@@ -260,6 +266,19 @@ func (w *Worker) reconcileDeletes(ctx context.Context, conn *pgxpool.Conn, r cla
 		if err = w.confirmDelete(ctx, conn, r, p.id, p.target); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// All intent outcomes are fenced, including requests whose response was lost.
+func (w *Worker) finishIntent(ctx context.Context, conn *pgxpool.Conn, r claimedRun, op uuid.UUID, status string) error {
+	tag, err := conn.Exec(ctx, `UPDATE backup_intents SET status=$4,updated_at=now() WHERE id=$1 AND run_id=$2
+ AND EXISTS(SELECT 1 FROM backup_runs WHERE id=$2 AND lease_token=$3 AND lease_expires_at>now())`, op, r.ID, r.Token, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return errLease
 	}
 	return nil
 }

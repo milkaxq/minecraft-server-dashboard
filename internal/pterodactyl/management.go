@@ -3,6 +3,7 @@ package pterodactyl
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/google/uuid"
 )
+
+var ErrBackupPreflight = errors.New("backup request stopped before remote mutation")
 
 const MaxTextBytes = 1 << 20
 const MaxUploadBytes = 64 << 20
@@ -291,14 +294,17 @@ func (a *HTTPServerClient) ListBackups(ctx context.Context, id string) ([]Backup
 	return nil, ErrInvalid
 }
 func (a *HTTPServerClient) CreateBackup(ctx context.Context, id, name string) (Backup, error) {
-	return a.createBackup(ctx, id, name, true)
+	return a.createBackup(ctx, id, name, true, nil)
 }
 
 // CreateAutomaticBackup leaves scheduler-owned copies eligible for safe rotation.
-func (a *HTTPServerClient) CreateAutomaticBackup(ctx context.Context, id, name string) (Backup, error) {
-	return a.createBackup(ctx, id, name, false)
+func (a *HTTPServerClient) CreateAutomaticBackup(ctx context.Context, id, name string, preflight func(context.Context) error) (Backup, error) {
+	if preflight == nil {
+		return Backup{}, ErrInvalid
+	}
+	return a.createBackup(ctx, id, name, false, preflight)
 }
-func (a *HTTPServerClient) createBackup(ctx context.Context, id, name string, locked bool) (Backup, error) {
+func (a *HTTPServerClient) createBackup(ctx context.Context, id, name string, locked bool, preflight func(context.Context) error) (Backup, error) {
 	if !safeIdentifier(id) {
 		return Backup{}, ErrInvalid
 	}
@@ -323,6 +329,11 @@ func (a *HTTPServerClient) createBackup(ctx context.Context, id, name string, lo
 	var r struct {
 		Attributes Backup `json:"attributes"`
 	}
+	if preflight != nil {
+		if err := preflight(ctx); err != nil {
+			return Backup{}, ErrBackupPreflight
+		}
+	}
 	err = a.request(ctx, "POST", prefix(id)+"/backups", map[string]any{"name": name, "is_locked": locked}, &r)
 	return r.Attributes, err
 }
@@ -336,15 +347,18 @@ func (a *HTTPServerClient) RestoreBackup(ctx context.Context, id, backup string)
 	return a.request(ctx, "POST", prefix(id)+"/backups/"+url.PathEscape(backup)+"/restore", map[string]bool{"truncate": true}, nil)
 }
 func (a *HTTPServerClient) DeleteBackup(ctx context.Context, id, backup string) error {
-	return a.deleteBackup(ctx, id, backup, true)
+	return a.deleteBackup(ctx, id, backup, true, nil)
 }
 
 // DeleteAutomaticBackup never changes lock state; a lock revokes automation's
 // deletion authority even if it changed after the scheduler's policy check.
-func (a *HTTPServerClient) DeleteAutomaticBackup(ctx context.Context, id, backup string) error {
-	return a.deleteBackup(ctx, id, backup, false)
+func (a *HTTPServerClient) DeleteAutomaticBackup(ctx context.Context, id, backup string, preflight func(context.Context) error) error {
+	if preflight == nil {
+		return ErrInvalid
+	}
+	return a.deleteBackup(ctx, id, backup, false, preflight)
 }
-func (a *HTTPServerClient) deleteBackup(ctx context.Context, id, backup string, unlock bool) error {
+func (a *HTTPServerClient) deleteBackup(ctx context.Context, id, backup string, unlock bool, preflight func(context.Context) error) error {
 	// Our backups are locked to prevent Panel's rotating retention from evicting
 	// another backup during creation. Explicit customer deletion unlocks first.
 	if !safeIdentifier(id) {
@@ -361,6 +375,9 @@ func (a *HTTPServerClient) deleteBackup(ctx context.Context, id, backup string, 
 	for _, b := range list {
 		if b.UUID == backup {
 			found = true
+			if !unlock && b.CompletedAt == nil {
+				return ErrConflict
+			}
 			if b.Locked {
 				if !unlock {
 					return ErrConflict
@@ -374,6 +391,11 @@ func (a *HTTPServerClient) deleteBackup(ctx context.Context, id, backup string, 
 	}
 	if !found {
 		return ErrNotFound
+	}
+	if preflight != nil {
+		if err := preflight(ctx); err != nil {
+			return ErrBackupPreflight
+		}
 	}
 	return a.request(ctx, "DELETE", prefix(id)+"/backups/"+url.PathEscape(backup), nil, nil)
 }

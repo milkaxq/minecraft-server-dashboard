@@ -20,8 +20,8 @@ import (
 type Client interface {
 	Ready(context.Context, string) error
 	ListBackups(context.Context, string) ([]pterodactyl.Backup, error)
-	CreateAutomaticBackup(context.Context, string, string) (pterodactyl.Backup, error)
-	DeleteAutomaticBackup(context.Context, string, string) error
+	CreateAutomaticBackup(context.Context, string, string, func(context.Context) error) (pterodactyl.Backup, error)
+	DeleteAutomaticBackup(context.Context, string, string, func(context.Context) error) error
 }
 type Worker struct {
 	DB      *pgxpool.Pool
@@ -131,12 +131,22 @@ func (w *Worker) process(parent context.Context, r claimedRun) error {
 	if r.BackupUUID != nil {
 		return w.monitor(ctx, conn, r)
 	}
-	var intent bool
-	if err = conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM backup_intents WHERE run_id=$1 AND action='CREATE')", r.ID).Scan(&intent); err != nil {
+	var intentStatus string
+	var resultUUID *uuid.UUID
+	err = conn.QueryRow(ctx, "SELECT status,result_uuid FROM backup_intents WHERE run_id=$1 AND action='CREATE'", r.ID).Scan(&intentStatus, &resultUUID)
+	if err != nil && !noRows(err) {
 		return err
 	}
-	if intent {
+	if err == nil {
+		if intentStatus == "CONFIRMED" && resultUUID == nil {
+			return w.transition(ctx, conn, r, "SKIPPED", "panel_rejected", nil)
+		}
 		return w.transition(ctx, conn, r, "NEEDS_INSPECTION", "create_unconfirmed", nil)
+	}
+	// Reconcile already recorded deletion even after schedule disable or
+	// suspension. This performs reads only; it never retries a deletion.
+	if err = w.reconcileDeletes(ctx, conn, r); err != nil {
+		return err
 	}
 	if !enabled || revision != r.Revision || owner != r.Owner {
 		return w.transition(ctx, conn, r, "SKIPPED", "schedule_changed", nil)
@@ -155,11 +165,6 @@ func (w *Worker) process(parent context.Context, r claimedRun) error {
 	c()
 	if err != nil {
 		return w.retry(ctx, conn, r, "panel_unavailable")
-	}
-	// Reconcile a previous DELETE before capacity calculation. A missing target
-	// proves deletion; a still-present target is never blindly deleted again.
-	if err = w.reconcileDeletes(ctx, conn, r); err != nil {
-		return err
 	}
 	var blocked bool
 	if err = conn.QueryRow(ctx, `SELECT
