@@ -19,6 +19,7 @@ import (
 )
 
 var ErrUnavailable = errors.New("catalog unavailable or package cannot be installed safely")
+var ErrSearchUnavailable = errors.New("catalog search unavailable")
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,80}$`)
 
 type Client struct{ HTTP *http.Client }
@@ -28,17 +29,17 @@ func New() *Client {
 }
 
 type Project struct {
-	ClientSide      string `json:"client_side"`
-	Environment     string `json:"environment,omitempty"`
-	ConfigurationID string `json:"configuration_id,omitempty"`
-	ID              string `json:"project_id"`
-	Slug            string `json:"slug"`
-	Title           string `json:"title"`
-	Description     string `json:"description"`
-	ServerSide      string `json:"server_side"`
-	IconURL         string `json:"icon_url,omitempty"`
-	Downloads       int64  `json:"downloads"`
-	ReleaseVersion  string `json:"release_version,omitempty"`
+	ClientSide      string   `json:"client_side"`
+	Environment     []string `json:"environment,omitempty"`
+	ConfigurationID string   `json:"configuration_id,omitempty"`
+	ID              string   `json:"project_id"`
+	Slug            string   `json:"slug"`
+	Title           string   `json:"title"`
+	Description     string   `json:"description"`
+	ServerSide      string   `json:"server_side"`
+	IconURL         string   `json:"icon_url,omitempty"`
+	Downloads       int64    `json:"downloads"`
+	ReleaseVersion  string   `json:"release_version,omitempty"`
 }
 type File struct {
 	URL      string            `json:"url"`
@@ -53,6 +54,7 @@ type Dependency struct {
 	Type      string `json:"dependency_type"`
 }
 type Version struct {
+	Environment  string       `json:"environment,omitempty"`
 	ID           string       `json:"id"`
 	ProjectID    string       `json:"project_id"`
 	Name         string       `json:"name"`
@@ -156,10 +158,10 @@ func (c *Client) SearchPage(ctx context.Context, loader, game string, options Se
 		Total int       `json:"total_hits"`
 	}
 	if err := c.get(ctx, "search?"+q.Encode(), &response); err != nil {
-		return out, err
+		return out, errors.Join(ErrSearchUnavailable, err)
 	}
 	if len(response.Hits) > 12 {
-		return out, ErrUnavailable
+		return out, errors.Join(ErrSearchUnavailable, ErrUnavailable)
 	}
 	// Search facets describe a whole project, not one release. Check both
 	// constraints on the same stable release, preserving upstream sort order.
@@ -194,11 +196,12 @@ func (c *Client) SearchPage(ctx context.Context, loader, game string, options Se
 			continue
 		}
 		if failures[i] != nil {
-			return out, ErrUnavailable
+			return out, errors.Join(ErrSearchUnavailable, ErrUnavailable)
 		}
 		if !SafeIconURL(project.IconURL) {
 			project.IconURL = ""
 		}
+		project.ClientSide = clientRequirementForVersion(versions[i].Environment, project.Environment, project.ClientSide)
 		project.ReleaseVersion = versions[i].Number
 		out.Projects = append(out.Projects, project)
 	}
@@ -261,10 +264,10 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 		seen[v.ID] = true
 		projects[v.ProjectID] = v.ID
 		var meta struct {
-			Title       string `json:"title"`
-			ClientSide  string `json:"client_side"`
-			Environment string `json:"environment"`
-			ServerSide  string `json:"server_side"`
+			Title       string   `json:"title"`
+			ClientSide  string   `json:"client_side"`
+			Environment []string `json:"environment"`
+			ServerSide  string   `json:"server_side"`
 		}
 		if err = c.get(ctx, "project/"+v.ProjectID, &meta); err != nil || (meta.ServerSide != "required" && meta.ServerSide != "optional") {
 			return ErrUnavailable
@@ -309,7 +312,7 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 				return ErrUnavailable
 			}
 		}
-		out = append(out, Package{ClientSide: ClientRequirement(meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], URL: f.URL})
+		out = append(out, Package{ClientSide: clientRequirementForVersion(v.Environment, meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], URL: f.URL})
 		return nil
 	}
 	if err := visit(project, "", 0); err != nil {
@@ -375,4 +378,22 @@ func ClientRequirement(environment, legacy string) string {
 		}
 	}
 	return "unknown"
+}
+
+// Project environments aggregate different loaders and releases. Conflicting
+// values cannot establish the selected release's client requirements.
+func clientRequirementForVersion(version string, environments []string, legacy string) string {
+	if version != "" && version != "unknown" {
+		return ClientRequirement(version, "")
+	}
+	if len(environments) == 0 {
+		return ClientRequirement("", legacy)
+	}
+	environment := environments[0]
+	for _, other := range environments[1:] {
+		if other != environment {
+			return "unknown"
+		}
+	}
+	return ClientRequirement(environment, legacy)
 }

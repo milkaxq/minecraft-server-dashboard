@@ -66,7 +66,7 @@ func TestResolveStableDependenciesAndCompatibility(t *testing.T) {
 		case "/v2/version/dependency":
 			return response(dep), nil
 		case "/v2/project/root", "/v2/project/dep":
-			return response(map[string]string{"server_side": "required"}), nil
+			return response(map[string]any{"server_side": "required", "environment": []string{"server_only"}}), nil
 		default:
 			t.Fatal("unexpected request", r.URL)
 			return nil, nil
@@ -75,6 +75,9 @@ func TestResolveStableDependenciesAndCompatibility(t *testing.T) {
 	packages, err := c.Resolve(context.Background(), "root", "forge", "1.21.1")
 	if err != nil || len(packages) != 2 || packages[0].Filename != "dep.jar" {
 		t.Fatal(packages, err)
+	}
+	if packages[0].ClientSide != "unsupported" || packages[1].ClientSide != "unsupported" {
+		t.Fatal("project environment arrays lost in preview", packages)
 	}
 	dep.Loaders = []string{"fabric"}
 	if _, err = c.Resolve(context.Background(), "root", "forge", "1.21.1"); err == nil {
@@ -236,5 +239,37 @@ func TestClientRequirementMetadata(t *testing.T) {
 		if got := ClientRequirement(tc.environment, tc.legacy); got != tc.want {
 			t.Errorf("%q/%q: got %q, want %q", tc.environment, tc.legacy, got, tc.want)
 		}
+	}
+}
+
+// Literal provider-shaped JSON guards against modelling project environment
+// arrays as the singular environment used on version responses.
+func TestSearchDecodesRealProjectEnvironmentArray(t *testing.T) {
+	c := New()
+	c.HTTP.Transport = roundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v2/search" {
+			return response(map[string]any{"hits": []map[string]any{
+				{"project_id": "voice", "server_side": "optional", "client_side": "optional", "environment": []string{"client_or_server_prefers_both"}},
+				{"project_id": "mixed", "server_side": "required", "client_side": "required", "environment": []string{"client_and_server", "server_only"}},
+			}, "total_hits": 2}), nil
+		}
+		id := strings.Split(r.URL.Path, "/")[3]
+		return response([]map[string]any{{"id": "stable", "project_id": id, "version_type": "release", "environment": "unknown", "loaders": []string{"paper"}, "game_versions": []string{"1.21.1"}}}), nil
+	})
+	page, err := c.SearchPage(context.Background(), "paper", "1.21.1", SearchOptions{})
+	if err != nil || len(page.Projects) != 2 {
+		t.Fatal("provider project array rejected", page, err)
+	}
+	if page.Projects[0].ClientSide != "optional" || page.Projects[1].ClientSide != "unknown" {
+		t.Fatal("mixed project metadata misclassified", page)
+	}
+}
+
+func TestVersionRequirementOverridesAggregatedProjectMetadata(t *testing.T) {
+	if got := clientRequirementForVersion("server_only", []string{"client_and_server", "server_only"}, "required"); got != "unsupported" {
+		t.Fatal(got)
+	}
+	if got := clientRequirementForVersion("unknown", nil, "optional"); got != "optional" {
+		t.Fatal(got)
 	}
 }

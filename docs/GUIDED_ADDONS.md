@@ -53,8 +53,10 @@ OWNER/ADMIN with settings permission can use these endpoints; moderators and for
 ## Player client requirements
 
 The catalog, install preview, and installed lists label addons as client required,
-client optional, server only, or unknown. Modrinth environment metadata takes
-precedence over its legacy client-side field. Metadata for each dependency is
+client optional, server only, or unknown. Modrinth version environment metadata takes
+precedence over project metadata. Projects provide a list of environments across
+loaders and releases; conflicting values remain unknown for the selected release.
+Legacy client-side fields are used only when modern metadata is absent or unknown. Metadata for each dependency is
 saved in the existing successful installation receipt; no external API lookup is
 needed to render the installed server checklist.
 

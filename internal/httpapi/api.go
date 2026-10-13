@@ -225,6 +225,8 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 		status, message = 409, "your backup allowance is full; delete a backup before creating another"
 	case errors.Is(err, management.ErrChanged):
 		status, message = 409, "file changed or already exists; reload before saving"
+	case errors.Is(err, catalog.ErrSearchUnavailable):
+		status, message = 502, "catalog search is temporarily unavailable; retry in a moment"
 	case errors.Is(err, catalog.ErrUnavailable):
 		status, message = 502, "package unavailable: a stable server-compatible release and supported dependencies are required; retry or choose another project"
 	case errors.Is(err, management.ErrPlugin):
