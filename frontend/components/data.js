@@ -24,10 +24,12 @@ export function useResource(path, interval = 0) {
     let timer;
     let alive = true;
     async function load() {
+      let retryDelay = interval;
       try {
         const data = await api(path, { signal: controller.signal });
         if (alive) setResult({ key: resourceKey, data, error: null });
       } catch (error) {
+        if (error.status === 429) retryDelay = Math.max(interval, error.retryAfterMs || 60000);
         if (alive && error.name !== "AbortError") {
           setResult((previous) => ({
             key: resourceKey,
@@ -36,7 +38,7 @@ export function useResource(path, interval = 0) {
           }));
         }
       } finally {
-        if (alive && interval) timer = setTimeout(load, interval);
+        if (alive && interval) timer = setTimeout(load, retryDelay);
       }
     }
     load();

@@ -22,7 +22,7 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\nrm -f .blockyard-install.json\ncurl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --fail --location --retry 3 \"https://api.purpurmc.org/v2/purpur/${MINECRAFT_VERSION}/${BUILD_NUMBER}/download\" -o server.jar.part\nmv server.jar.part server.jar\njar tf server.jar > /dev/null\nprintf '{\"software\":\"PURPUR\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"${MINECRAFT_VERSION}\" \"${BUILD_NUMBER}\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n",
+      "script": "#!/bin/bash\nset -euo pipefail\nmkdir -p /mnt/server\ncd /mnt/server\nrm -f .blockyard-install.json\ncurl --user-agent \"Blockyard/0.1 (Minecraft hosting)\" --connect-timeout 30 --max-time 600 --fail --location --retry 3 \"https://api.purpurmc.org/v2/purpur/${MINECRAFT_VERSION}/${BUILD_NUMBER}/download\" -o server.jar.part\nmv server.jar.part server.jar\njar tf server.jar > /dev/null\nprintf '{\"software\":\"PURPUR\",\"minecraft_version\":\"%s\",\"loader_version\":\"%s\"}\\n' \"${MINECRAFT_VERSION}\" \"${BUILD_NUMBER}\" > .blockyard-install.json.tmp\nmv .blockyard-install.json.tmp .blockyard-install.json\n\n# First-install access defaults; preserve settings on reinstall.\nif [ ! -f server.properties ]; then\n  printf 'online-mode=false\\nwhite-list=false\\n' > server.properties\nfi\n",
       "container": "blockyard/minecraft-installer:java21",
       "entrypoint": "bash"
     }

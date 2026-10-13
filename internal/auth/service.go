@@ -251,10 +251,18 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 
 // PostgreSQL gives atomic, shared rate limits across API instances. Never trust X-Forwarded-For.
 func (s *Service) RateLimit(ctx context.Context, bucket string, limit int) error {
+	return s.RateLimitWindow(ctx, bucket, limit, 15*time.Minute)
+}
+
+// RateLimitWindow keeps authentication protection independent of dashboard polling.
+func (s *Service) RateLimitWindow(ctx context.Context, bucket string, limit int, window time.Duration) error {
+	if limit < 1 || window < time.Second || window > 24*time.Hour {
+		return ErrInvalid
+	}
 	var attempts int
 	err := s.DB.QueryRow(ctx, `INSERT INTO auth_rate_limits(bucket,window_start,attempts) VALUES($1,now(),1)
- ON CONFLICT(bucket) DO UPDATE SET attempts=CASE WHEN auth_rate_limits.window_start<=now()-interval '15 minutes' THEN 1 ELSE auth_rate_limits.attempts+1 END,
- window_start=CASE WHEN auth_rate_limits.window_start<=now()-interval '15 minutes' THEN now() ELSE auth_rate_limits.window_start END RETURNING attempts`, bucket).Scan(&attempts)
+ ON CONFLICT(bucket) DO UPDATE SET attempts=CASE WHEN auth_rate_limits.window_start<=now()-$2*interval '1 second' THEN 1 ELSE auth_rate_limits.attempts+1 END,
+ window_start=CASE WHEN auth_rate_limits.window_start<=now()-$2*interval '1 second' THEN now() ELSE auth_rate_limits.window_start END RETURNING attempts`, bucket, int64(window/time.Second)).Scan(&attempts)
 	if err != nil {
 		return err
 	}

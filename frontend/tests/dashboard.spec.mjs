@@ -3472,3 +3472,28 @@ test("new server selector hides legacy loaders even in stale options", async ({ 
   for (const kind of ["SPIGOT", "PURPUR", "FORGE", "NEOFORGE"])
     await expect(page.locator(`[role="option"][data-value="${kind}"]`)).toHaveCount(0);
 });
+
+test("dashboard polling respects Retry-After after rate limiting", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.clock.install();
+  let requests = 0;
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/addons/simple-voice-chat/network`,
+    (route) => {
+      requests++;
+      return route.fulfill({
+        status: 429,
+        headers: { "Retry-After": "60" },
+        json: { error: "too many requests" },
+      });
+    },
+  );
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await expect(page.getByText("too many requests", { exact: true })).toBeVisible();
+  expect(requests).toBe(1);
+  await page.clock.fastForward(10000);
+  expect(requests).toBe(1);
+  await page.clock.fastForward(50001);
+  await expect.poll(() => requests).toBe(2);
+});

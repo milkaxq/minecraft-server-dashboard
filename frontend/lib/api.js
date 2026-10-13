@@ -36,13 +36,19 @@ export async function request(
   }
   if (response.ok && download) return response.blob();
   const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok)
-    throw new APIError(
+  if (!response.ok) {
+    const error = new APIError(
       data?.error || "Something went wrong. Please try again.",
       response.status,
       response.headers.get("X-Request-ID") || data?.request_id,
       data?.code,
     );
+    const seconds = Number(response.headers.get("Retry-After"));
+    if (response.status === 429)
+      error.retryAfterMs =
+        Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 900) * 1000 : 60000;
+    throw error;
+  }
   return data;
 }
 export function consoleURL(id) {

@@ -172,3 +172,28 @@ Validation: 130 browser tests passed, including all offered choices and stale-op
 filtering. PostgreSQL race tests passed for server, billing and provisioning; the
 legacy provisioning fixture verifies existing loader snapshots still work. Go vet,
 staticcheck, import formatting, frontend lint, formatting and production build passed.
+
+## Polling limits and requested player-access defaults
+
+Dashboard reads now use independent per-user one-minute buckets; writes and
+authentication retain 15-minute budgets. Read polling cannot consume the write
+allowance, 429 replies advertise the correct Retry-After, and the frontend waits
+for that delay before polling again. PostgreSQL race tests verified window reset,
+read/write isolation and unchanged write protection. Auth/HTTP race suites passed;
+131 browser tests passed, including a simulated minute of rate-limit backoff.
+
+At the owner's explicit request, new-server installer defaults now write
+online-mode=false and white-list=false only when server.properties does not exist.
+Existing settings survive reinstalls. The isolated script-block test verified both
+first installation and preservation for all reviewed eggs without downloads or
+running Minecraft. Disabling Microsoft verification means names are not verified
+by Microsoft; disabling the whitelist removes the approved-player gate. Login
+plugins remain optional and are not automatically installed.
+
+The current Private Beta server was inspected through authorized Panel-backed
+domain services. Its UUID is now 0ac3c2e4-9cc2-4d3b-93f5-5185c31c1f9d (the owner
+had replaced the previous server). Microsoft verification and whitelist were both
+enabled. Per the owner's request, they were disabled through revision-checked
+Settings after a graceful stop; Start was requested using the existing accepted
+EULA. Simple Voice Chat remains required, version 2.6.24, with its saved network
+configuration ready. This requirement checks voice capability, not a whole modpack.

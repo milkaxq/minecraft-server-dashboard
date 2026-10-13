@@ -1,8 +1,12 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
+	"time"
+
+	"minecraft-hosting/internal/auth"
 
 	"github.com/google/uuid"
 
@@ -14,7 +18,16 @@ import (
 
 func (a *API) liveLimit(bucket string, limit int, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := a.Auth.RateLimit(r.Context(), "live:"+bucket+":"+currentUser(r).ID.String(), limit); err != nil {
+		window := 15 * time.Minute
+		class := "write"
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			window = time.Minute
+			class = "read"
+		}
+		if err := a.Auth.RateLimitWindow(r.Context(), "live:"+bucket+":"+class+":"+currentUser(r).ID.String(), limit, window); err != nil {
+			if errors.Is(err, auth.ErrRateLimited) && class == "read" {
+				w.Header().Set("Retry-After", "60")
+			}
 			a.fail(w, r, err)
 			return
 		}

@@ -263,7 +263,9 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 		status, message = 404, "resource not found"
 	case errors.Is(err, auth.ErrRateLimited):
 		status, message = 429, "too many requests"
-		w.Header().Set("Retry-After", "900")
+		if w.Header().Get("Retry-After") == "" {
+			w.Header().Set("Retry-After", "900")
+		}
 	}
 	// Never serialize database errors, credentials, request bodies or SMTP responses.
 	if status == 500 {
