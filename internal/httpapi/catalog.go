@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"minecraft-hosting/internal/catalog"
+	"minecraft-hosting/internal/management"
 	"minecraft-hosting/internal/server"
 
 	"minecraft-hosting/internal/auth"
@@ -59,6 +60,7 @@ func (a *API) catalogInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	var input struct {
 		Revision string `json:"revision"`
+		management.BackupDecision
 	}
 	if err = decode(w, r, &input); err != nil {
 		a.fail(w, r, err)
@@ -72,7 +74,7 @@ func (a *API) catalogInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(3 * time.Minute))
-	v, err := a.Management.CatalogInstall(r.Context(), currentUser(r).ID, id, key, r.PathValue("collection"), r.PathValue("project"), input.Revision, requestID(r))
+	v, err := a.Management.CatalogInstall(r.Context(), currentUser(r).ID, id, key, r.PathValue("collection"), r.PathValue("project"), input.Revision, input.BackupDecision, requestID(r))
 	if err != nil {
 		a.fail(w, r, err)
 		return

@@ -66,13 +66,13 @@ func TestModManagementAuthorizationAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := modJar(t, "fabric.mod.json", `{"id":"example","environment":"*"}`)
-	if _, err := f.s.UploadMod(ctx, f.other, f.id, uuid.New(), "example.jar", data, "test"); !errors.Is(err, server.ErrNotFound) {
+	if _, err := f.s.UploadMod(ctx, f.other, f.id, uuid.New(), "example.jar", data, BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal("outsider", err)
 	}
-	if _, err := f.s.UploadMod(ctx, f.mod, f.id, uuid.New(), "example.jar", data, "test"); !errors.Is(err, server.ErrNotFound) {
+	if _, err := f.s.UploadMod(ctx, f.mod, f.id, uuid.New(), "example.jar", data, BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal("moderator", err)
 	}
-	if _, err := f.s.UploadMod(ctx, f.owner, f.id, uuid.New(), "wrong.jar", modJar(t, "plugin.yml", "name: Wrong"), "test"); !errors.Is(err, ErrMod) {
+	if _, err := f.s.UploadMod(ctx, f.owner, f.id, uuid.New(), "wrong.jar", modJar(t, "plugin.yml", "name: Wrong"), BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, ErrMod) {
 		t.Fatal("incompatible mod is not a definite rejection", err)
 	}
 	var unresolved int
@@ -80,10 +80,10 @@ func TestModManagementAuthorizationAndReplay(t *testing.T) {
 		t.Fatal("invalid mod blocked further operations", unresolved, err)
 	}
 	key := uuid.New()
-	if _, err := f.s.UploadMod(ctx, f.owner, f.id, key, "example.jar", data, "test"); err != nil {
+	if _, err := f.s.UploadMod(ctx, f.owner, f.id, key, "example.jar", data, BackupDecision{WithoutBackup: true}, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.UploadMod(ctx, f.owner, f.id, key, "example.jar", data, "test"); err != nil {
+	if _, err := f.s.UploadMod(ctx, f.owner, f.id, key, "example.jar", data, BackupDecision{WithoutBackup: true}, "test"); err != nil {
 		t.Fatal("replay", err)
 	}
 	list, err := f.s.Mods(ctx, f.owner, f.id)

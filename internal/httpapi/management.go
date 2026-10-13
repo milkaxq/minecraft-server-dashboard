@@ -22,6 +22,7 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /servers/{id}/plugins/check", a.protected(a.liveLimit("plugin-check", 6, a.checkPlugins)))
 	mux.HandleFunc("POST /servers/{id}/addons/simple-voice-chat/network", a.protected(a.liveLimit("addon-network", 10, a.prepareVoicePort)))
 	routes := map[string]http.HandlerFunc{
+		"GET /servers/{id}/startup-check":                    a.startupCheck,
 		"GET /servers/{id}/client-requirements":              a.clientRequirements,
 		"GET /servers/{id}/addons/simple-voice-chat":         a.voiceChat,
 		"PUT /servers/{id}/addons/simple-voice-chat":         a.saveVoiceChat,
@@ -176,6 +177,24 @@ func (a *API) uploadFile(asset string) http.HandlerFunc {
 			a.fail(w, r, err)
 			return
 		}
+		var safety management.BackupDecision
+		if asset == "plugin" || asset == "mod" {
+			if raw := r.URL.Query().Get("backup"); raw != "" {
+				parsed, e := uuid.Parse(raw)
+				if e != nil {
+					a.fail(w, r, server.ErrInvalid)
+					return
+				}
+				safety.Backup = &parsed
+			}
+			if raw := r.URL.Query().Get("acknowledge_no_backup"); raw != "" {
+				if raw != "true" && raw != "false" {
+					a.fail(w, r, server.ErrInvalid)
+					return
+				}
+				safety.WithoutBackup = raw == "true"
+			}
+		}
 		if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/octet-stream" {
 			a.fail(w, r, server.ErrInvalid)
 			return
@@ -207,9 +226,9 @@ func (a *API) uploadFile(asset string) http.HandlerFunc {
 		}
 		var result any
 		if asset == "mod" {
-			result, err = a.Management.UploadMod(r.Context(), currentUser(r).ID, id, key, r.URL.Query().Get("name"), data, requestID(r))
+			result, err = a.Management.UploadMod(r.Context(), currentUser(r).ID, id, key, r.URL.Query().Get("name"), data, safety, requestID(r))
 		} else {
-			result, err = a.Management.Upload(r.Context(), currentUser(r).ID, id, key, dir, r.URL.Query().Get("name"), data, asset == "plugin", requestID(r))
+			result, err = a.Management.Upload(r.Context(), currentUser(r).ID, id, key, dir, r.URL.Query().Get("name"), data, asset == "plugin", safety, requestID(r))
 		}
 		if err != nil {
 			a.fail(w, r, err)

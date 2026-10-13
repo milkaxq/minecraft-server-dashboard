@@ -258,7 +258,7 @@ func (s *Service) mutate(ctx context.Context, user, id, key uuid.UUID, p server.
 	outcome := "SUCCEEDED"
 	if runErr != nil {
 		outcome = "UNKNOWN"
-		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, ErrAddonConfig) || errors.Is(runErr, ErrAddonPort) || errors.Is(runErr, ErrMod) || errors.Is(runErr, catalog.ErrUnavailable) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
+		if errors.Is(runErr, server.ErrInvalid) || errors.Is(runErr, server.ErrNotFound) || errors.Is(runErr, ErrOffline) || errors.Is(runErr, ErrLimit) || errors.Is(runErr, ErrBackupDecision) || errors.Is(runErr, ErrBackupUnavailable) || errors.Is(runErr, ErrChanged) || errors.Is(runErr, ErrPlugin) || errors.Is(runErr, ErrAddonConfig) || errors.Is(runErr, ErrAddonPort) || errors.Is(runErr, ErrMod) || errors.Is(runErr, catalog.ErrUnavailable) || errors.Is(runErr, control.ErrBusy) || errors.Is(runErr, control.ErrState) || pterodactyl.Rejected(runErr) {
 			outcome = "REJECTED"
 		}
 	}
@@ -372,7 +372,7 @@ func (s *Service) ChangeFile(ctx context.Context, user, id, key uuid.UUID, in Fi
 		return map[string]any{"status": "saved", "restart_required": true}, nil
 	})
 }
-func (s *Service) Upload(ctx context.Context, user, id, key uuid.UUID, dir, name string, data []byte, plugin bool, rid string) (any, error) {
+func (s *Service) Upload(ctx context.Context, user, id, key uuid.UUID, dir, name string, data []byte, plugin bool, safety BackupDecision, rid string) (any, error) {
 	if _, err := Path(dir, true); err != nil {
 		return nil, err
 	}
@@ -392,6 +392,9 @@ func (s *Service) Upload(ctx context.Context, user, id, key uuid.UUID, dir, name
 		}
 	}
 	input := map[string]any{"directory": dir, "name": name, "digest": revision(data)}
+	if plugin {
+		input["safety"] = safety
+	}
 	return s.mutate(ctx, user, id, key, permission, action, input, rid, func(t Target) (any, error) {
 		if plugin && (!server.SupportsPlugins(t.Type) || validatePluginForSoftware(t.Type, name, data) != nil) {
 			return nil, ErrPlugin
@@ -400,6 +403,9 @@ func (s *Service) Upload(ctx context.Context, user, id, key uuid.UUID, dir, name
 			return nil, err
 		}
 		if plugin {
+			if err := s.checkBackupDecision(ctx, t, safety); err != nil {
+				return nil, err
+			}
 			v, err := s.inspect(ctx, t, dir, true)
 			if err != nil {
 				return nil, err

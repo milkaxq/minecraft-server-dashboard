@@ -292,11 +292,24 @@ export function Badge({ state }) {
   );
 }
 export function ErrorMessage({ error }) {
+  const path = usePathname();
+  const { session } = useAuth();
+  const params = new URLSearchParams();
+  const server = path?.match(/^\/servers\/([0-9a-f-]{36})(?:\/|$)/i)?.[1];
+  if (server) params.set("server", server);
+  if (path) params.set("page", path);
+  if (typeof error?.requestId === "string" && /^[0-9a-f-]{36}$/i.test(error.requestId))
+    params.set("reference", error.requestId);
   if (!error) return null;
   return (
     <div role="alert" className="error-message">
-      {typeof error === "string" ? error : error.message}
+      <span>{typeof error === "string" ? error : error.message}</span>
       {error.requestId && <small>Reference: {error.requestId}</small>}
+      {session && (
+        <Link className="text-link error-report-link" href={`/feedback?${params.toString()}`}>
+          Report this problem →
+        </Link>
+      )}
     </div>
   );
 }

@@ -66,15 +66,18 @@ func validatePluginForSoftware(kind, name string, data []byte) error {
 	return validatePluginDescriptor(name, data, kind != "SPIGOT")
 }
 
-func (s *Service) UploadMod(ctx context.Context, user, id, key uuid.UUID, name string, data []byte, rid string) (any, error) {
+func (s *Service) UploadMod(ctx context.Context, user, id, key uuid.UUID, name string, data []byte, safety BackupDecision, rid string) (any, error) {
 	if Name(name) != nil || len(data) > pterodactyl.MaxUploadBytes {
 		return nil, server.ErrInvalid
 	}
-	return s.mutate(ctx, user, id, key, server.Files, "mod.upload", map[string]string{"name": name, "digest": revision(data)}, rid, func(t Target) (any, error) {
+	return s.mutate(ctx, user, id, key, server.Files, "mod.upload", map[string]any{"name": name, "digest": revision(data), "safety": safety}, rid, func(t Target) (any, error) {
 		if err := validateMod(t.Type, name, data); err != nil {
 			return nil, err
 		}
 		if err := s.offline(ctx, t); err != nil {
+			return nil, err
+		}
+		if err := s.checkBackupDecision(ctx, t, safety); err != nil {
 			return nil, err
 		}
 		folder, err := s.inspect(ctx, t, "/mods", true)

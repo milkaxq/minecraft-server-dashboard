@@ -1,4 +1,5 @@
 "use client";
+import { ChangeSafety } from "./change-safety";
 import { PluginCheck } from "./plugin-check";
 import { Select } from "./select";
 import { ClientRequirementTag } from "./client-compatibility";
@@ -234,7 +235,7 @@ export function Confirm({
         <Icon name="shield" size={25} />
       </div>
       <h2>{title}</h2>
-      <div>{children}</div>
+      <div className="confirm-content">{children}</div>
       <div className="dialog-actions">
         <button className="button secondary" disabled={busy} onClick={onCancel}>
           Cancel
@@ -758,18 +759,31 @@ function Plugins({ id, server, offline, mods = false, usage }) {
   const action = useAction(resource.refresh);
   const input = useRef(null);
   const [remove, setRemove] = useState(null);
-  async function upload(file) {
-    if (!file) return;
-    await action.run(
+  const [pendingUpload, setPendingUpload] = useState(null);
+  const [uploadSafety, setUploadSafety] = useState(null);
+  const uploadAttempt = useRef(null);
+  async function upload() {
+    if (!pendingUpload || !uploadSafety) return;
+    const file = pendingUpload;
+    const params = new URLSearchParams({
+      name: file.name,
+      acknowledge_no_backup: String(uploadSafety.acknowledge_no_backup),
+    });
+    if (uploadSafety.backup) params.set("backup", uploadSafety.backup);
+    const fingerprint = JSON.stringify([file.name, file.size, file.lastModified, uploadSafety]);
+    if (uploadAttempt.current?.fingerprint !== fingerprint)
+      uploadAttempt.current = { fingerprint, key: crypto.randomUUID() };
+    const success = await action.run(
       () =>
-        api(`/servers/${id}/${collection}/upload?name=${query(file.name)}`, {
+        api(`/servers/${id}/${collection}/upload?${params}`, {
           method: "POST",
           raw: true,
           body: file,
-          key: crypto.randomUUID(),
+          key: uploadAttempt.current.key,
         }),
       `${mods ? "Mod" : "Plugin"} uploaded. Start your server to load it.`,
     );
+    if (success) setPendingUpload(null);
   }
   async function erase() {
     if (
@@ -822,7 +836,9 @@ function Plugins({ id, server, offline, mods = false, usage }) {
             type="file"
             accept=".jar"
             onChange={(e) => {
-              upload(e.target.files[0]);
+              setUploadSafety(null);
+              uploadAttempt.current = null;
+              setPendingUpload(e.target.files[0]);
               e.target.value = "";
             }}
           />
@@ -875,6 +891,30 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           </ul>
         )}
       </section>
+      {pendingUpload && (
+        <Confirm
+          title={`Review ${label} upload`}
+          label={`Upload ${label}`}
+          confirmVariant="primary"
+          busy={action.busy}
+          confirmDisabled={!offline || !uploadSafety}
+          onCancel={() => setPendingUpload(null)}
+          onConfirm={upload}
+        >
+          <p>
+            {pendingUpload.name} · {formatBytes(pendingUpload.size)}. Only upload trusted addons for
+            your server software and Minecraft version.
+          </p>
+          <ChangeSafety
+            key={`${pendingUpload.name}:${pendingUpload.lastModified}`}
+            server={server}
+            offline={offline}
+            busy={action.busy}
+            onDecision={setUploadSafety}
+          />
+          <ErrorMessage error={action.error} />
+        </Confirm>
+      )}
       {remove && (
         <Confirm
           title={`Delete this ${label}?`}
@@ -912,7 +952,8 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     setLoaded({ filterKey, response: resource.data, items: results });
   }
   const [preview, setPreview] = useState(null);
-  const [installKey, setInstallKey] = useState(null);
+  const attempt = useRef(null);
+  const [safety, setSafety] = useState(null);
   const installed = useResource(`/servers/${id}/${collection}/catalog/installed`);
   const action = useAction(() => {
     onInstalled();
@@ -950,16 +991,23 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
   async function review(project) {
     await action.run(async () => {
       setPreview(await api(`/servers/${id}/${collection}/catalog/${query(project)}`));
-      setInstallKey(crypto.randomUUID());
+      attempt.current = null;
+      setSafety(null);
     });
   }
   async function install() {
+    if (!safety) return;
+    const body = { revision: preview.revision, ...safety };
+    const fingerprint = JSON.stringify(body);
+    if (attempt.current?.fingerprint !== fingerprint)
+      attempt.current = { fingerprint, key: crypto.randomUUID() };
+    const installKey = attempt.current.key;
     setActiveInstall(installKey);
     const success = await action.run(async () => {
       const result = await api(`/servers/${id}/${collection}/catalog/${query(preview.project)}`, {
         method: "POST",
         key: installKey,
-        body: { revision: preview.revision },
+        body,
       });
       setReceipt(result);
     }, "Installed. Start your server to load the changes.");
@@ -1132,7 +1180,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
           title="Review installation"
           label="Install now"
           busy={action.busy}
-          confirmDisabled={!offline}
+          confirmDisabled={!offline || !safety}
           onCancel={() => setPreview(null)}
           onConfirm={install}
         >
@@ -1149,6 +1197,13 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
               </li>
             ))}
           </ul>
+          <ChangeSafety
+            key={`${preview.project}:${preview.revision}`}
+            server={server}
+            offline={offline}
+            busy={action.busy}
+            onDecision={setSafety}
+          />
           {activeInstall && (
             <div className="installation-progress" role="status">
               <strong>{progress.data?.phase || "Preparing installation…"}</strong>

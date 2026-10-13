@@ -181,6 +181,10 @@ func write(w http.ResponseWriter, status int, v any) {
 func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, message := 500, "internal server error"
 	switch {
+	case errors.Is(err, management.ErrBackupUnavailable):
+		status, message = 502, "Backup availability could not be checked. Retry before installing, or explicitly choose to continue without a backup."
+	case errors.Is(err, management.ErrBackupDecision):
+		status, message = 409, "Choose a completed backup, or confirm that you want to continue without one."
 	case errors.Is(err, management.ErrAddonConfig):
 		status, message = 409, "This addon uses settings outside the guided form's supported values. Review its configuration in Files."
 	case errors.Is(err, management.ErrAddonPort):
@@ -436,6 +440,7 @@ func (a *API) middleware(next http.Handler) http.Handler {
 			}
 			rw.Header().Set("Access-Control-Allow-Origin", origin)
 			rw.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 			rw.Header().Set("Vary", "Origin")
 			rw.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		}

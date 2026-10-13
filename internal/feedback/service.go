@@ -4,6 +4,7 @@ package feedback
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -23,25 +24,29 @@ var ErrConflict = errors.New("report changed or submission key reused")
 
 type Service struct{ DB *pgxpool.Pool }
 type Report struct {
-	ID          uuid.UUID  `json:"id"`
-	AuthorID    uuid.UUID  `json:"author_id"`
-	AuthorName  string     `json:"author_name"`
-	AuthorEmail string     `json:"author_email"`
-	ServerID    *uuid.UUID `json:"server_id"`
-	Category    string     `json:"category"`
-	Title       string     `json:"title"`
-	Message     string     `json:"message"`
-	Status      string     `json:"status"`
-	Response    string     `json:"response"`
-	Revision    int        `json:"revision"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	RequestReference *uuid.UUID `json:"request_reference"`
+	SourcePage       string     `json:"source_page"`
+	ID               uuid.UUID  `json:"id"`
+	AuthorID         uuid.UUID  `json:"author_id"`
+	AuthorName       string     `json:"author_name"`
+	AuthorEmail      string     `json:"author_email"`
+	ServerID         *uuid.UUID `json:"server_id"`
+	Category         string     `json:"category"`
+	Title            string     `json:"title"`
+	Message          string     `json:"message"`
+	Status           string     `json:"status"`
+	Response         string     `json:"response"`
+	Revision         int        `json:"revision"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 type Input struct {
-	ServerID *uuid.UUID `json:"server_id"`
-	Category string     `json:"category"`
-	Title    string     `json:"title"`
-	Message  string     `json:"message"`
+	RequestReference *uuid.UUID `json:"request_reference"`
+	SourcePage       string     `json:"source_page"`
+	ServerID         *uuid.UUID `json:"server_id"`
+	Category         string     `json:"category"`
+	Title            string     `json:"title"`
+	Message          string     `json:"message"`
 }
 type Update struct {
 	Status   string `json:"status"`
@@ -49,11 +54,11 @@ type Update struct {
 	Revision int    `json:"revision"`
 }
 
-const columns = "f.id,f.author_id,u.name,u.email,f.server_id,f.category,f.title,f.message,f.status,f.response,f.revision,f.created_at,f.updated_at"
+const columns = "f.id,f.author_id,u.name,u.email,f.server_id,f.category,f.title,f.message,f.status,f.response,f.revision,f.created_at,f.updated_at,f.request_reference,f.source_page"
 
 func scan(row pgx.Row) (Report, error) {
 	var v Report
-	err := row.Scan(&v.ID, &v.AuthorID, &v.AuthorName, &v.AuthorEmail, &v.ServerID, &v.Category, &v.Title, &v.Message, &v.Status, &v.Response, &v.Revision, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.AuthorID, &v.AuthorName, &v.AuthorEmail, &v.ServerID, &v.Category, &v.Title, &v.Message, &v.Status, &v.Response, &v.Revision, &v.CreatedAt, &v.UpdatedAt, &v.RequestReference, &v.SourcePage)
 	return v, err
 }
 func validText(s string, min, max int, multiline bool) bool {
@@ -82,6 +87,10 @@ func requireUser(ctx context.Context, tx pgx.Tx, actor uuid.UUID, admin bool, lo
 	return nil
 }
 func (s Service) Create(ctx context.Context, actor, key uuid.UUID, in Input, rid string) (Report, error) {
+	in.SourcePage = strings.TrimSpace(in.SourcePage)
+	if !ValidSourcePage(in.SourcePage) || (in.RequestReference != nil && *in.RequestReference == uuid.Nil) {
+		return Report{}, server.ErrInvalid
+	}
 	in.Title = strings.TrimSpace(in.Title)
 	in.Message = strings.TrimSpace(in.Message)
 	if key == uuid.Nil || !validText(in.Title, 3, 120, false) || !validText(in.Message, 10, 4000, true) || (in.Category != "BUG" && in.Category != "QUESTION" && in.Category != "IDEA") || (in.ServerID != nil && *in.ServerID == uuid.Nil) {
@@ -99,7 +108,8 @@ func (s Service) Create(ctx context.Context, actor, key uuid.UUID, in Input, rid
 	existing, err := scan(tx.QueryRow(ctx, "SELECT "+columns+" FROM beta_feedback f JOIN users u ON u.id=f.author_id WHERE f.author_id=$1 AND f.submission_key=$2", actor, key))
 	if err == nil {
 		sameServer := (existing.ServerID == nil && in.ServerID == nil) || (existing.ServerID != nil && in.ServerID != nil && *existing.ServerID == *in.ServerID)
-		if !sameServer || existing.Category != in.Category || existing.Title != in.Title || existing.Message != in.Message {
+		sameReference := (existing.RequestReference == nil && in.RequestReference == nil) || (existing.RequestReference != nil && in.RequestReference != nil && *existing.RequestReference == *in.RequestReference)
+		if !sameReference || existing.SourcePage != in.SourcePage || !sameServer || existing.Category != in.Category || existing.Title != in.Title || existing.Message != in.Message {
 			return Report{}, ErrConflict
 		}
 		return existing, tx.Commit(ctx)
@@ -124,7 +134,7 @@ func (s Service) Create(ctx context.Context, actor, key uuid.UUID, in Input, rid
 		return Report{}, auth.ErrRateLimited
 	}
 	id := uuid.New()
-	if _, err = tx.Exec(ctx, "INSERT INTO beta_feedback(id,author_id,server_id,submission_key,category,title,message) VALUES($1,$2,$3,$4,$5,$6,$7)", id, actor, in.ServerID, key, in.Category, in.Title, in.Message); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO beta_feedback(id,author_id,server_id,submission_key,category,title,message,request_reference,source_page) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", id, actor, in.ServerID, key, in.Category, in.Title, in.Message, in.RequestReference, in.SourcePage); err != nil {
 		return Report{}, err
 	}
 	if err = audit.Record(ctx, tx, actor, uuid.Nil, "beta.feedback_created", rid, map[string]string{"report_id": id.String(), "category": in.Category}); err != nil {
@@ -201,4 +211,20 @@ func (s Service) Update(ctx context.Context, actor, id uuid.UUID, in Update, rid
 		return Report{}, err
 	}
 	return out, tx.Commit(ctx)
+}
+
+var serverPage = regexp.MustCompile(`^/servers/([0-9a-fA-F-]{36})(?:/(?:plugins|mods|files|console|backups|settings|worlds|members|players|addons/simple-voice-chat))?$`)
+
+// Only app routes are retained; URLs, query strings and arbitrary paths may contain secrets.
+func ValidSourcePage(page string) bool {
+	switch page {
+	case "", "/", "/dashboard", "/servers", "/servers/new", "/billing", "/account", "/guide", "/admin", "/feedback", "/login", "/register":
+		return true
+	}
+	match := serverPage.FindStringSubmatch(page)
+	if len(match) != 2 {
+		return false
+	}
+	_, err := uuid.Parse(match[1])
+	return err == nil
 }

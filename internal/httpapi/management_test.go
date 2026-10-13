@@ -80,6 +80,7 @@ func TestManagementHTTPAuthorizationCORSAndStrictInput(t *testing.T) {
 	backup := uuid.NewString()
 	for _, route := range []struct{ method, path, body, kind string }{
 		{"POST", "/plugins/check", `{}`, "application/json"},
+		{"GET", "/startup-check", "", "application/json"},
 		{"GET", "/client-requirements", "", "application/json"},
 		{"GET", "/addons/simple-voice-chat", "", "application/json"},
 		{"GET", "/addons/simple-voice-chat/network", "", "application/json"},

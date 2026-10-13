@@ -100,7 +100,7 @@ func (s *Service) CatalogPreview(ctx context.Context, user, id uuid.UUID, collec
 
 // CatalogInstall preflights the complete bundle before writing. Successful writes are
 // durably idempotent; interrupted remote writes retain UNKNOWN status for inspection.
-func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, collection, project, expected, rid string) (any, error) {
+func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, collection, project, expected string, safety BackupDecision, rid string) (any, error) {
 	p, err := catalogPermission(collection)
 	if err != nil {
 		return nil, err
@@ -108,8 +108,14 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 	if len(expected) != 64 {
 		return nil, server.ErrInvalid
 	}
-	return s.mutate(ctx, user, id, key, p, "catalog.install", map[string]string{"collection": collection, "project": project, "revision": expected}, rid, func(t Target) (any, error) {
+	return s.mutate(ctx, user, id, key, p, "catalog.install", struct {
+		Collection, Project, Revision string
+		Safety                        BackupDecision
+	}{collection, project, expected, safety}, rid, func(t Target) (any, error) {
 		if err := s.offline(ctx, t); err != nil {
+			return nil, err
+		}
+		if err := s.checkBackupDecision(ctx, t, safety); err != nil {
 			return nil, err
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -200,6 +206,9 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 		}
 		// Recheck membership after network downloads and before issuing file mutations.
 		if _, err = s.Control.Access(ctx, t.q, user, id, p); err != nil {
+			return nil, err
+		}
+		if err = s.checkBackupDecision(ctx, t, safety); err != nil {
 			return nil, err
 		}
 		if f == nil {

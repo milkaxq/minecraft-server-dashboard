@@ -199,7 +199,7 @@ func TestAuthorizationBeforePanelAndFileSafety(t *testing.T) {
 				_, e := f.s.ChangeFile(ctx, user, f.id, uuid.New(), FileMutation{Action: "create", Path: "/new"}, "test")
 				return e
 			}, func() error { _, e := f.s.NewBackup(ctx, user, f.id, uuid.New(), "backup", "test"); return e }, func() error {
-				_, e := f.s.Upload(ctx, user, f.id, uuid.New(), "/", "new", []byte("a"), false, "test")
+				_, e := f.s.Upload(ctx, user, f.id, uuid.New(), "/", "new", []byte("a"), false, BackupDecision{WithoutBackup: true}, "test")
 				return e
 			}, func() error { _, _, e := f.s.Download(ctx, user, f.id, "/server.properties"); return e }, func() error {
 				_, e := f.s.ChangeBackup(ctx, user, f.id, uuid.New(), uuid.NewString(), "restore", "bad", "test")
@@ -355,7 +355,7 @@ func TestFilesAndPaperPluginLifecycle(t *testing.T) {
 	if string(data) != "second" {
 		t.Fatal(string(data))
 	}
-	if _, err = f.s.Upload(ctx, f.owner, f.id, uuid.New(), "/plugins", "Test.jar", pluginJar(t, "plugin.yml"), true, "test"); err != nil {
+	if _, err = f.s.Upload(ctx, f.owner, f.id, uuid.New(), "/plugins", "Test.jar", pluginJar(t, "plugin.yml"), true, BackupDecision{WithoutBackup: true}, "test"); err != nil {
 		t.Fatal(err)
 	}
 	plugins, err := f.s.Plugins(ctx, f.owner, f.id)
@@ -366,7 +366,7 @@ func TestFilesAndPaperPluginLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.db.Exec(ctx, "UPDATE servers SET server_type='VANILLA' WHERE id=$1", f.id)
-	if _, err = f.s.Upload(ctx, f.owner, f.id, uuid.New(), "/plugins", "Test.jar", pluginJar(t, "plugin.yml"), true, "test"); !errors.Is(err, ErrPlugin) {
+	if _, err = f.s.Upload(ctx, f.owner, f.id, uuid.New(), "/plugins", "Test.jar", pluginJar(t, "plugin.yml"), true, BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, ErrPlugin) {
 		t.Fatal("Vanilla plugin accepted", err)
 	}
 }

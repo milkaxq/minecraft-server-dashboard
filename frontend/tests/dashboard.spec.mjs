@@ -248,6 +248,13 @@ async function mockAPI(
     if (path === "/auth/verify-email") return route.fulfill({ status: 204 });
     if (path === "/auth/resend-verification")
       return reply({ message: "Verification email sent." }, 202);
+    if (path === `/servers/${serverID}/startup-check`)
+      return reply({
+        checked: true,
+        checked_at: "2026-10-13T11:00:00Z",
+        issues: [],
+        power_state: running ? "running" : "offline",
+      });
     if (path === `/servers/${serverID}/client-requirements`)
       return reply({
         software: server.server_type,
@@ -795,6 +802,10 @@ test("Paper plugin uploads raw binary and confirms removal", async ({ page }) =>
     mimeType: "application/java-archive",
     buffer: Buffer.from("test-only binary jar"),
   });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Upload plugin", exact: true })
+    .click();
   await expect(page.getByRole("status").filter({ hasText: "Plugin uploaded" })).toContainText(
     "Plugin uploaded",
   );
@@ -1161,6 +1172,7 @@ test("Fabric mods have a guided upload page", async ({ page }) => {
     mimeType: "application/java-archive",
     buffer: Buffer.from("browser fixture"),
   });
+  await page.getByRole("dialog").getByRole("button", { name: "Upload mod", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Mod uploaded" })).toContainText(
     "Mod uploaded",
   );
@@ -1813,7 +1825,11 @@ test("plugin catalog reviews compatible files before installing", async ({ page 
   await page.getByRole("button", { name: "Install now", exact: true }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   const install = calls.find((c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST");
-  expect(install.body).toEqual({ revision: "c".repeat(64) });
+  expect(install.body).toEqual({
+    revision: "c".repeat(64),
+    backup: "40000000-0000-4000-8000-000000000001",
+    acknowledge_no_backup: false,
+  });
   expect(install.headers["idempotency-key"]).toBeTruthy();
 });
 
@@ -3073,4 +3089,169 @@ test("offline plugins and mod loaders do not claim runtime confirmation", async 
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Check loaded plugins" })).toHaveCount(0);
   expect(calls.some((call) => call.path.endsWith("/plugins/check"))).toBe(false);
+});
+
+test("addon installation waits for a successful backup or an explicit risk choice", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const calls = await mockAPI(page);
+  let complete = false;
+  const backup = {
+    uuid: "40000000-0000-4000-8000-000000000099",
+    name: "Before addon change",
+    is_successful: false,
+    completed_at: null,
+  };
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    route.fulfill({
+      json:
+        route.request().method() === "POST"
+          ? backup
+          : [
+              {
+                ...backup,
+                is_successful: complete,
+                completed_at: complete ? "2026-10-13T11:00:00Z" : null,
+              },
+            ],
+    }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Review install" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Install now", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Create backup first" }).click();
+  await expect(dialog.getByText("Waiting for the selected backup", { exact: false })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Install now", exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath("backup-safety-mobile.png"), fullPage: true });
+  complete = true;
+  await expect(dialog.getByRole("button", { name: "Install now", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Install now", exact: true }).click();
+  expect(
+    calls.find((c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST").body.backup,
+  ).toBe(backup.uuid);
+});
+
+test("no-backup risk acknowledgement is explicit", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Review install" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Install now", exact: true })).toBeDisabled();
+  await dialog.getByLabel("I understand I am continuing without a backup.").check();
+  await dialog.getByRole("button", { name: "Install now", exact: true }).click();
+  const body = calls.find(
+    (c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST",
+  ).body;
+  expect(body).toMatchObject({ acknowledge_no_backup: true, backup: null });
+});
+
+test("version changes offer a backup before navigating to a new server", async ({ page }) => {
+  await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("button", { name: "Prepare version change" }).click();
+  await expect(page.getByRole("combobox", { name: "Completed backup" })).toContainText(
+    "Before changes",
+  );
+  await expect(page.getByText("This creates a separate server.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download your world →" })).toHaveAttribute(
+    "href",
+    `/servers/${serverID}/worlds`,
+  );
+});
+
+test("startup help shows safe actionable issues and preserves the console fallback", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/startup-check`, (route) =>
+    route.fulfill({
+      json: {
+        checked: true,
+        checked_at: "2026-10-13T11:00:00Z",
+        issues: [
+          {
+            code: "MISSING_DEPENDENCY",
+            title: "An addon is missing a dependency",
+            help: "Check Console for the required addon names and versions.",
+          },
+        ],
+      },
+    }),
+  );
+  await openServer(page);
+  await expect(page.getByText("An addon is missing a dependency", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".startup-check").getByRole("link", { name: "Open Console →" }),
+  ).toHaveAttribute("href", `/servers/${serverID}/console`);
+});
+
+test("error reports attach server page and reference without query tokens or private logs", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const reference = "066aa59b-590d-4296-951c-81d70922d4f9";
+  let submitted;
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog?**`, (route) =>
+    route.fulfill({
+      status: 502,
+      headers: { "X-Request-ID": reference },
+      json: { error: "Catalog temporarily unavailable", request_id: reference },
+    }),
+  );
+  await page.route("http://localhost:8080/feedback", (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { ...feedbackFixture, id: orderID } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins?token=private-query-value`);
+  await page.getByRole("link", { name: "Report this problem →" }).first().click();
+  await expect(page.getByText(`Support reference: ${reference}`, { exact: false })).toBeVisible();
+  await page.getByLabel("Short summary").fill("Catalog search failed");
+  await page.getByLabel("What happened?").fill("I tried searching for a compatible plugin.");
+  await page.getByRole("button", { name: "Send report", exact: true }).click();
+  expect(submitted).toMatchObject({
+    server_id: serverID,
+    request_reference: reference,
+    source_page: `/servers/${serverID}/plugins`,
+  });
+  expect(JSON.stringify(submitted)).not.toContain("private-query-value");
+  expect(submitted).not.toHaveProperty("logs");
+});
+
+test("full backup allowance offers existing snapshots without silently deleting them", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    route.fulfill({
+      json: [
+        {
+          uuid: "40000000-0000-4000-8000-000000000001",
+          name: "Completed copy",
+          is_successful: true,
+          completed_at: "2026-10-13T11:00:00Z",
+        },
+        {
+          uuid: "40000000-0000-4000-8000-000000000002",
+          name: "Pending copy",
+          is_successful: false,
+          completed_at: null,
+        },
+      ],
+    }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Review install" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Create backup first" })).toBeDisabled();
+  await expect(dialog.getByText("All 2 backup slots are used.", { exact: false })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Install now", exact: true })).toBeEnabled();
 });

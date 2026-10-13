@@ -73,7 +73,7 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 		}
 	}
 	for _, user := range []uuid.UUID{f.other, f.mod} {
-		if _, err := f.s.CatalogInstall(ctx, user, f.id, uuid.New(), "plugins", "project", strings.Repeat("a", 64), "test"); !errors.Is(err, server.ErrNotFound) {
+		if _, err := f.s.CatalogInstall(ctx, user, f.id, uuid.New(), "plugins", "project", strings.Repeat("a", 64), BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, server.ErrNotFound) {
 			t.Fatal("unauthorized catalog installation", err)
 		}
 	}
@@ -84,8 +84,14 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", preview.Revision, BackupDecision{}, "test"); !errors.Is(err, ErrBackupDecision) {
+		t.Fatal("missing backup decision accepted", err)
+	}
+	if downloads != 0 {
+		t.Fatal("download began before backup decision")
+	}
 	rejectedKey := uuid.New()
-	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, rejectedKey, "plugins", "project", strings.Repeat("a", 64), "test"); !errors.Is(err, ErrChanged) {
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, rejectedKey, "plugins", "project", strings.Repeat("a", 64), BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, ErrChanged) {
 		t.Fatal("stale preview installed", err)
 	}
 	if downloads != 0 {
@@ -104,7 +110,7 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 			t.Fatal("unauthorized progress", err)
 		}
 	}
-	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, key, "plugins", "project", preview.Revision, "test"); err != nil {
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, key, "plugins", "project", preview.Revision, BackupDecision{WithoutBackup: true}, "test"); err != nil {
 		t.Fatal(err)
 	}
 	progress, err := f.s.CatalogProgress(ctx, f.owner, f.id, key, "plugins")
@@ -128,13 +134,13 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 	if !bytes.Equal(f.panel.files["/plugins/Test.jar"], data) {
 		t.Fatal("verified jar not uploaded")
 	}
-	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, key, "plugins", "project", preview.Revision, "test"); err != nil {
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, key, "plugins", "project", preview.Revision, BackupDecision{WithoutBackup: true}, "test"); err != nil {
 		t.Fatal(err)
 	}
 	if downloads != 1 {
 		t.Fatal("replay repeated download")
 	}
-	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", preview.Revision, "test"); err != nil {
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", preview.Revision, BackupDecision{WithoutBackup: true}, "test"); err != nil {
 		t.Fatal("existing identical dependency should be retained", err)
 	}
 	if downloads != 1 {
@@ -146,7 +152,7 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 		t.Fatal("deleted plugin still installed", installed, err)
 	}
 	f.panel.files["/plugins/Test.jar"] = []byte("changed")
-	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", preview.Revision, "test"); !errors.Is(err, ErrChanged) {
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", preview.Revision, BackupDecision{WithoutBackup: true}, "test"); !errors.Is(err, ErrChanged) {
 		t.Fatal("existing file overwritten", err)
 	}
 }

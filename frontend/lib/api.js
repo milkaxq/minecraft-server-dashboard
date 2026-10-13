@@ -39,7 +39,7 @@ export async function request(
     throw new APIError(
       data?.error || "Something went wrong. Please try again.",
       response.status,
-      response.headers.get("X-Request-ID"),
+      response.headers.get("X-Request-ID") || data?.request_id,
     );
   return data;
 }

@@ -144,3 +144,17 @@ func (a *API) checkPlugins(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, http.StatusOK, v)
 }
+
+func (a *API) startupCheck(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.managementID(w, r)
+	if !ok {
+		return
+	}
+	result, err := a.Management.Startup(r.Context(), currentUser(r).ID, id)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	result.RequestReference = requestID(r)
+	write(w, http.StatusOK, result)
+}

@@ -184,3 +184,31 @@ func TestReportConcurrentIdempotencyAndDailyLimit(t *testing.T) {
 		t.Fatal("unexpected count", count, err)
 	}
 }
+
+func TestFeedbackContextPrivacyValidationAndIdempotency(t *testing.T) {
+	s, actor, _, _ := fixture(t)
+	ctx := context.Background()
+	ref := uuid.New()
+	in := input()
+	in.RequestReference = &ref
+	in.SourcePage = "/dashboard"
+	key := uuid.New()
+	report, err := s.Create(ctx, actor, key, in, "context")
+	if err != nil || report.RequestReference == nil || *report.RequestReference != ref || report.SourcePage != "/dashboard" {
+		t.Fatal(report, err)
+	}
+	if _, err = s.Create(ctx, actor, key, in, "retry"); err != nil {
+		t.Fatal(err)
+	}
+	other := uuid.New()
+	in.RequestReference = &other
+	if _, err = s.Create(ctx, actor, key, in, "changed"); !errors.Is(err, ErrConflict) {
+		t.Fatal("changed context accepted", err)
+	}
+	for _, path := range []string{"https://example.com?token=secret", "/dashboard?token=secret", "/reset-password/private-token", "/servers/nope", "/dashboard#secret"} {
+		in.SourcePage = path
+		if _, err = s.Create(ctx, actor, uuid.New(), in, "unsafe"); !errors.Is(err, server.ErrInvalid) {
+			t.Fatal("unsafe source", path, err)
+		}
+	}
+}

@@ -28,6 +28,16 @@ export function Feedback() {
   const [notice, setNotice] = useState("");
   const submission = useRef(null);
   const requested = params.get("server");
+  const reference = /^[0-9a-f-]{36}$/i.test(params.get("reference") || "")
+    ? params.get("reference")
+    : null;
+  const sourcePage = params.get("page") || "";
+  const safePage =
+    /^\/(?:dashboard|servers(?:\/new|\/[0-9a-f-]{36}(?:\/(?:plugins|mods|files|console|backups|settings|worlds|members|players|addons\/simple-voice-chat))?)?|billing|account|guide|admin|feedback|login|register)?$/i.test(
+      sourcePage,
+    )
+      ? sourcePage
+      : "";
   const selection = serverId ?? (servers.data?.some((s) => s.id === requested) ? requested : "");
   async function submit(e) {
     e.preventDefault();
@@ -40,6 +50,8 @@ export function Feedback() {
       title: title.trim(),
       message: message.trim(),
       server_id: selection || null,
+      request_reference: reference,
+      source_page: safePage,
     };
     const fingerprint = JSON.stringify(body);
     if (submission.current?.fingerprint !== fingerprint)
@@ -78,6 +90,13 @@ export function Feedback() {
         {notice && (
           <p className="notice success" role="status">
             {notice}
+          </p>
+        )}
+        {(reference || safePage) && (
+          <p className="feedback-context">
+            Attached context: {safePage && <code>{safePage}</code>}{" "}
+            {reference && <span>Support reference: {reference}</span>}. No logs or files are
+            attached.
           </p>
         )}
         <form className="feedback-form" onSubmit={submit}>
@@ -232,6 +251,12 @@ function ReportCard({ report, admin, refresh }) {
         </p>
       )}
       <p className="feedback-text">{report.message}</p>
+      {(report.request_reference || report.source_page) && (
+        <p className="feedback-context">
+          {report.source_page && <code>Page: {report.source_page}</code>}
+          {report.request_reference && <span>Support reference: {report.request_reference}</span>}
+        </p>
+      )}
       {report.response && (
         <div className="feedback-response">
           <strong>Reply from your host</strong>

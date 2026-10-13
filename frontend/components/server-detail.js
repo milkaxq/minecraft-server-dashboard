@@ -6,6 +6,8 @@ import { FeatureLinks } from "./management";
 import { ContextHelp } from "./context-help";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { VersionSafety } from "./change-safety";
+import { StartupCheck } from "./startup-check";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -465,6 +467,9 @@ export function ServerDetail({ id, advanced = false }) {
                 Live controls are temporarily unavailable. Please contact hosting support.
               </p>
             )}
+            {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
+              <StartupCheck key={id} server={server} ready={ready} powerState={displayPowerState} />
+            )}
             <FeatureLinks id={id} server={server} advanced={advanced} />
             {!advanced && (
               <FirstServerChecklist
@@ -669,16 +674,7 @@ export function ServerDetail({ id, advanced = false }) {
                 </section>
                 {has("delete") && server.status !== "CANCELLED" && !server.deletion_pending && (
                   <section className="panel details-panel">
-                    <div>
-                      <h2>Change Minecraft version</h2>
-                      <p>
-                        Create a new server with the version you want. Back up and download this
-                        world before moving it; newer worlds may not open on older versions.
-                      </p>
-                      <Link href="/servers/new" className="button secondary">
-                        Create another server
-                      </Link>
-                    </div>
+                    <VersionSafety server={server} offline={usage?.power_state === "offline"} />
                     <div>
                       <h2>Delete server</h2>
                       <p>Remove this server and its files after you have saved what you need.</p>
