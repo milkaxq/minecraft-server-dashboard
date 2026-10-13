@@ -61,3 +61,12 @@ Apply migration 018 before starting the updated backend: managed mutations now
 invalidate player invitations in PostgreSQL. Rebuild backend and frontend;
 Pterodactyl remains responsible for game containers. No new launcher dependency,
 Minecraft restart, or game world change is required to deploy the website/API.
+
+## Deployment check — 2026-10-13
+
+Commit `3b46148` deployed to the VPS; migration 018 applied before backend startup.
+The public readiness endpoint returned ready. Publishing an owner invitation for
+Private Beta succeeded. Its automatic pack remains disabled because a legacy or
+uploaded addon has no verified catalog record. No plugins were removed or game
+settings changed. Local fixture tests validate ready-pack generation; the live
+server still needs its unverified addon reconciled before testing launcher import.
