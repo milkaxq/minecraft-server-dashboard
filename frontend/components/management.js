@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Table, Badge, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
-import { formatBytes } from "../lib/api";
+import { formatBytes, backupPreflightRejected } from "../lib/api";
 
 export function FeatureLinks({ id, server, advanced = false, active = "" }) {
   const navigation = useRef(null);
@@ -774,13 +774,19 @@ function Plugins({ id, server, offline, mods = false, usage }) {
     if (uploadAttempt.current?.fingerprint !== fingerprint)
       uploadAttempt.current = { fingerprint, key: crypto.randomUUID() };
     const success = await action.run(
-      () =>
-        api(`/servers/${id}/${collection}/upload?${params}`, {
-          method: "POST",
-          raw: true,
-          body: file,
-          key: uploadAttempt.current.key,
-        }),
+      async () => {
+        try {
+          return await api(`/servers/${id}/${collection}/upload?${params}`, {
+            method: "POST",
+            raw: true,
+            body: file,
+            key: uploadAttempt.current.key,
+          });
+        } catch (error) {
+          if (backupPreflightRejected(error)) uploadAttempt.current = null;
+          throw error;
+        }
+      },
       `${mods ? "Mod" : "Plugin"} uploaded. Start your server to load it.`,
     );
     if (success) setPendingUpload(null);
@@ -1004,12 +1010,17 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     const installKey = attempt.current.key;
     setActiveInstall(installKey);
     const success = await action.run(async () => {
-      const result = await api(`/servers/${id}/${collection}/catalog/${query(preview.project)}`, {
-        method: "POST",
-        key: installKey,
-        body,
-      });
-      setReceipt(result);
+      try {
+        const result = await api(`/servers/${id}/${collection}/catalog/${query(preview.project)}`, {
+          method: "POST",
+          key: installKey,
+          body,
+        });
+        setReceipt(result);
+      } catch (error) {
+        if (backupPreflightRejected(error)) attempt.current = null;
+        throw error;
+      }
     }, "Installed. Start your server to load the changes.");
     setActiveInstall(null);
     if (success) setPreview(null);

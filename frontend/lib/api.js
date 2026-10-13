@@ -3,10 +3,11 @@ export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:80
   "",
 );
 export class APIError extends Error {
-  constructor(message, status, requestId) {
+  constructor(message, status, requestId, code) {
     super(message);
     this.status = status;
     this.requestId = requestId;
+    this.code = typeof code === "string" ? code : undefined;
   }
 }
 export async function request(
@@ -40,6 +41,7 @@ export async function request(
       data?.error || "Something went wrong. Please try again.",
       response.status,
       response.headers.get("X-Request-ID") || data?.request_id,
+      data?.code,
     );
   return data;
 }
@@ -79,3 +81,7 @@ export const STATE_LABELS = {
   starting: "Starting",
   stopping: "Stopping",
 };
+
+export function backupPreflightRejected(error) {
+  return ["BACKUP_DECISION_REQUIRED", "BACKUP_CHECK_FAILED"].includes(error?.code);
+}

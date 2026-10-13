@@ -269,7 +269,14 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if status == 500 {
 		a.Log.Error("request failed", "request_id", requestID(r), "category", "internal")
 	}
-	write(w, status, map[string]string{"error": message, "request_id": requestID(r)})
+	response := map[string]string{"error": message, "request_id": requestID(r)}
+	if errors.Is(err, management.ErrBackupDecision) {
+		response["code"] = "BACKUP_DECISION_REQUIRED"
+	}
+	if errors.Is(err, management.ErrBackupUnavailable) {
+		response["code"] = "BACKUP_CHECK_FAILED"
+	}
+	write(w, status, response)
 }
 func (a *API) register(w http.ResponseWriter, r *http.Request) {
 	var input auth.RegisterInput

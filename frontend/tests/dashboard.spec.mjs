@@ -3255,3 +3255,51 @@ test("full backup allowance offers existing snapshots without silently deleting 
   await expect(dialog.getByText("All 2 backup slots are used.", { exact: false })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Install now", exact: true })).toBeEnabled();
 });
+
+test("known backup preflight failures retry with a new key while uncertain writes retain their key", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const keys = [];
+  let code = "BACKUP_CHECK_FAILED";
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/viaversion`,
+    (route) => {
+      if (route.request().method() === "GET")
+        return route.fulfill({
+          json: {
+            project: "viaversion",
+            software: "PAPER",
+            minecraft_version: "1.21.1",
+            revision: "c".repeat(64),
+            files: [{ version_id: "stable", filename: "ViaVersion.jar", size: 1 }],
+          },
+        });
+      keys.push(route.request().headers()["idempotency-key"]);
+      return route.fulfill({
+        status: 502,
+        json: {
+          error: code
+            ? "Backup availability could not be checked"
+            : "Operation outcome could not be confirmed",
+          code,
+        },
+      });
+    },
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Review install" }).click();
+  const install = page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Install now", exact: true });
+  await install.click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Backup availability");
+  code = null;
+  await install.click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Operation outcome");
+  expect(keys[1]).not.toBe(keys[0]);
+  await install.click();
+  await expect.poll(() => keys.length).toBe(3);
+  expect(keys[2]).toBe(keys[1]);
+});

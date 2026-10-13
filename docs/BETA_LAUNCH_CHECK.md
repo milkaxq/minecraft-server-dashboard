@@ -28,6 +28,10 @@
 
 ## API changes
 
+Known backup preflight failures carry explicit error codes so retries can use a
+fresh request key. Uncertain remote writes retain their original key and cannot be
+blindly repeated.
+
 Catalog install JSON includes either `backup` (completed owned backup UUID) with
 `acknowledge_no_backup: false`, or `backup: null` with
 `acknowledge_no_backup: true`. The existing revision and UUID Idempotency-Key remain
@@ -49,7 +53,7 @@ installing addons and creating/restoring backups retain their existing permissio
 | Backup limits, completion, ownership and explicit install choice | Automated tests passed |
 | Feedback context validation, privacy and retry idempotency | Automated tests passed |
 | Frontend lint, formatting, production build | Passed |
-| Browser regression suite | 127 passed, including mobile backup flow and contextual reports |
+| Browser regression suite | 128 passed, including mobile backup flow and contextual reports |
 | Real Panel backup/restore on a disposable stopped server | Pending: VPS SSH connection times out; no temporary server created |
 | Current public Minecraft protocol/connectivity check | Pending: connection from this machine times out |
 | Real player joining and authenticating | Pending: owner has no Minecraft client available |
