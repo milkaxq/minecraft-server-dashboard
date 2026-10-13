@@ -53,7 +53,7 @@ installing addons and creating/restoring backups retain their existing permissio
 | Backup limits, completion, ownership and explicit install choice | Automated tests passed |
 | Feedback context validation, privacy and retry idempotency | Automated tests passed |
 | Frontend lint, formatting, production build | Passed |
-| Browser regression suite | 130 passed after simplifying new-server choices; mobile history/storage, addon update review, notifications and player checklist covered |
+| Browser regression suite | 131 passed; polling Retry-After regression and simplified choices covered |
 | Real Panel backup/restore on a disposable stopped server | Passed: synthetic world marker backed up, changed and restored through Panel |
 | Current public Minecraft protocol/connectivity check | Passed: production Minecraft status responds from VPS, 0/10 players |
 | Real player joining and authenticating | Passed joining: owner reports SKlauncher, Forge profile, Java 26.3; voice connected and microphone test works (second-person audio still pending) |
@@ -197,3 +197,14 @@ enabled. Per the owner's request, they were disabled through revision-checked
 Settings after a graceful stop; Start was requested using the existing accepted
 EULA. Simple Voice Chat remains required, version 2.6.24, with its saved network
 configuration ready. This requirement checks voice capability, not a whole modpack.
+
+Live follow-up: application commit `0b1e2ef` deployed; HTTPS readiness passed.
+The current server restarted successfully and responded to Minecraft status
+(0/20 players) with zero recognized startup issues. Readback after starting showed
+online-mode=false and white-list=false; force_voice_chat remained true and voice
+configuration remained ready. All seven reviewed Panel eggs received the
+first-install-only access defaults through operator CLI, preserving the existing
+runtime, images, variables and other configuration. Original installation scripts
+were backed up privately for rollback. The scoped Application token cannot modify
+admin eggs, so no extra permissions were granted to that token. A successful
+connection by the friend remains to be confirmed after these requested changes.
