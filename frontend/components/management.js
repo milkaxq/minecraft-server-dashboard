@@ -1,4 +1,5 @@
 "use client";
+import { Select } from "./select";
 import { BackupSchedule } from "./backup-schedule";
 import { ProjectIcon } from "./project-icon";
 import { supportsPlugins, supportsMods, softwareName } from "../lib/software";
@@ -8,10 +9,20 @@ import { ContextHelp } from "./context-help";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
-import { Badge, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
+import { Table, Badge, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 import { formatBytes } from "../lib/api";
 
 export function FeatureLinks({ id, server, advanced = false, active = "" }) {
+  const navigation = useRef(null);
+  useEffect(() => {
+    const nav = navigation.current;
+    const current = nav?.querySelector('[aria-current="page"]');
+    if (!current) return;
+    const item = current.getBoundingClientRect();
+    const bounds = nav.getBoundingClientRect();
+    if (item.right > bounds.right) nav.scrollLeft += item.right - bounds.right + 8;
+    else if (item.left < bounds.left) nav.scrollLeft -= bounds.left - item.left + 8;
+  }, [id, active, advanced]);
   const permissions = server.permissions || [];
   const items = advanced
     ? [
@@ -31,7 +42,7 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
       ];
   if (permissions.includes("members")) items.push(["members", "Members", `/servers/${id}/members`]);
   return (
-    <nav className="feature-tabs" aria-label="Server pages">
+    <nav ref={navigation} className="feature-tabs" aria-label="Server pages">
       {items
         .filter(([permission]) => permissions.includes(permission))
         .map(([key, label, href]) => (
@@ -197,6 +208,7 @@ export function Confirm({
   label = "Confirm",
   busy,
   confirmDisabled = false,
+  confirmVariant = "danger",
   onCancel,
   onConfirm,
 }) {
@@ -209,7 +221,7 @@ export function Confirm({
   return (
     <dialog
       ref={ref}
-      className="confirm-dialog"
+      className={`confirm-dialog ${confirmVariant === "primary" ? "install-dialog" : ""}`}
       aria-label={title}
       onCancel={(e) => {
         e.preventDefault();
@@ -225,7 +237,11 @@ export function Confirm({
         <button className="button secondary" disabled={busy} onClick={onCancel}>
           Cancel
         </button>
-        <button className="button danger" disabled={busy || confirmDisabled} onClick={onConfirm}>
+        <button
+          className={`button ${confirmVariant}`}
+          disabled={busy || confirmDisabled}
+          onClick={onConfirm}
+        >
           {busy ? "Working…" : label}
         </button>
       </div>
@@ -400,7 +416,7 @@ function Files({ id, offline }) {
           <p className="management-empty">This folder is empty.</p>
         ) : (
           <div className="table-scroll">
-            <table className="management-table">
+            <Table className="management-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -468,7 +484,7 @@ function Files({ id, offline }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
         )}
       </section>
@@ -636,7 +652,8 @@ function Settings({ id, offline }) {
               <div className="field-row">
                 <label className="field">
                   Difficulty
-                  <select
+                  <Select
+                    aria-label="Difficulty"
                     value={form.difficulty}
                     onChange={(e) => set("difficulty", e.target.value)}
                   >
@@ -645,17 +662,21 @@ function Settings({ id, offline }) {
                         {v}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   Game mode
-                  <select value={form.gamemode} onChange={(e) => set("gamemode", e.target.value)}>
+                  <Select
+                    aria-label="Game mode"
+                    value={form.gamemode}
+                    onChange={(e) => set("gamemode", e.target.value)}
+                  >
                     {["survival", "creative", "adventure", "spectator"].map((v) => (
                       <option key={v} value={v}>
                         {v}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
               <div className="field-row">
@@ -768,6 +789,7 @@ function Plugins({ id, server, offline, mods = false }) {
         collection={collection}
         offline={offline}
         onInstalled={resource.refresh}
+        files={resource.data}
       />
       <section className="panel management-panel">
         <div className="section-heading">
@@ -843,7 +865,7 @@ function Plugins({ id, server, offline, mods = false }) {
     </>
   );
 }
-function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
+function CatalogBrowser({ id, server, collection, offline, onInstalled, files }) {
   const { api } = useAuth();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ query: "", sort: "downloads", category: "" });
@@ -866,7 +888,25 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
   }
   const [preview, setPreview] = useState(null);
   const [installKey, setInstallKey] = useState(null);
-  const action = useAction(onInstalled);
+  const installed = useResource(`/servers/${id}/${collection}/catalog/installed`);
+  const action = useAction(() => {
+    onInstalled();
+    installed.refresh();
+  });
+  const [activeInstall, setActiveInstall] = useState(null);
+  const progress = useResource(
+    activeInstall ? `/servers/${id}/${collection}/catalog/operations/${activeInstall}` : null,
+    750,
+  );
+  const [receipt, setReceipt] = useState(null);
+  const present = new Set((files || []).map((file) => file.name));
+  const installedProjects = new Set(installed.data?.projects || []);
+  for (const file of receipt?.files || [])
+    if (present.has(file.filename)) installedProjects.add(file.project_id);
+  const refreshInstalled = installed.refresh;
+  useEffect(() => {
+    refreshInstalled();
+  }, [files, refreshInstalled]);
   function changeFilters(next) {
     setFilters(next);
     setOffset(0);
@@ -889,18 +929,17 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
     });
   }
   async function install() {
-    if (
-      await action.run(
-        () =>
-          api(`/servers/${id}/${collection}/catalog/${query(preview.project)}`, {
-            method: "POST",
-            key: installKey,
-            body: { revision: preview.revision },
-          }),
-        "Installed. Start your server to load the changes.",
-      )
-    )
-      setPreview(null);
+    setActiveInstall(installKey);
+    const success = await action.run(async () => {
+      const result = await api(`/servers/${id}/${collection}/catalog/${query(preview.project)}`, {
+        method: "POST",
+        key: installKey,
+        body: { revision: preview.revision },
+      });
+      setReceipt(result);
+    }, "Installed. Start your server to load the changes.");
+    setActiveInstall(null);
+    if (success) setPreview(null);
   }
   return (
     <section className="panel management-panel addon-catalog">
@@ -925,7 +964,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
         </p>
       )}
       <Feedback action={action} />
-      <ErrorMessage error={resource.error} />
+      <ErrorMessage error={resource.error || installed.error} />
       <form onSubmit={browse} className="catalog-controls">
         <label>
           Search {collection}
@@ -940,7 +979,8 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
         </label>
         <label>
           Sort catalog
-          <select
+          <Select
+            aria-label="Sort catalog"
             value={filters.sort}
             onChange={(e) => changeFilters({ ...filters, sort: e.target.value })}
             disabled={action.busy}
@@ -949,11 +989,12 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
             <option value="relevance">Relevance</option>
             <option value="newest">Newest</option>
             <option value="updated">Recently updated</option>
-          </select>
+          </Select>
         </label>
         <label>
           Category filter
-          <select
+          <Select
+            aria-label="Category filter"
             value={filters.category}
             onChange={(e) => changeFilters({ ...filters, category: e.target.value })}
             disabled={action.busy}
@@ -971,7 +1012,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
                 {label}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <div className="catalog-filter-actions">
           <button className="button primary" disabled={action.busy}>
@@ -1017,10 +1058,10 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
               </div>
               <button
                 className="button"
-                disabled={action.busy}
+                disabled={action.busy || installedProjects.has(project.project_id)}
                 onClick={() => review(project.project_id)}
               >
-                Review install
+                {installedProjects.has(project.project_id) ? "Installed" : "Review install"}
               </button>
             </li>
           ))}
@@ -1049,6 +1090,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
       )}
       {preview && (
         <Confirm
+          confirmVariant="primary"
           title="Review installation"
           label="Install now"
           busy={action.busy}
@@ -1068,6 +1110,24 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled }) {
               </li>
             ))}
           </ul>
+          {activeInstall && (
+            <div className="installation-progress" role="status">
+              <strong>{progress.data?.phase || "Preparing installation…"}</strong>
+              <progress
+                aria-label="Installation progress"
+                max={progress.data?.total || undefined}
+                value={progress.data?.total ? progress.data.completed : undefined}
+              />
+              <small>
+                {progress.data?.total
+                  ? `${progress.data.completed} of ${progress.data.total} file steps completed`
+                  : "Checking your server and compatible releases"}
+              </small>
+              {progress.error && progress.error.status !== 404 && (
+                <p>Progress updates interrupted. Waiting for the installation result…</p>
+              )}
+            </div>
+          )}
           {!offline && <p>Stop your server before installing.</p>}
           <ErrorMessage error={action.error} />
         </Confirm>
@@ -1164,7 +1224,7 @@ function Backups({ id, offline, limit }) {
           </p>
         ) : (
           <div className="table-scroll">
-            <table className="management-table">
+            <Table className="management-table">
               <thead>
                 <tr>
                   <th>Backup</th>
@@ -1219,7 +1279,7 @@ function Backups({ id, offline, limit }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
         )}
       </section>

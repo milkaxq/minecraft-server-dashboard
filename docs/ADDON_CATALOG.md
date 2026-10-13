@@ -6,9 +6,15 @@ On a server's Plugins or Mods page:
 2. Search Modrinth for a project. Results match the server's Minecraft version and software.
 3. Open its project details and read the installation instructions.
 4. Choose **Review install** to see the stable release and required dependency files.
-5. Remove older versions of the same projects first. Choose **Install now** and start the server.
+5. Remove older versions of the same projects first. Choose **Install now**, wait for the installation to finish, and start the server.
 
 Paper, Spigot and Purpur install plugins into `/plugins`. Fabric, Forge and NeoForge install mods into `/mods`. Vanilla has no addon catalog. Client-only mods belong on players' computers. Gameplay mods often require matching client installations; the dashboard does not modify players' computers.
+
+## Installation feedback
+
+The review dialog shows real stages and a progress bar based on completed download/verification and upload steps. Release resolution is indeterminate until the file count is known; the bar does not estimate elapsed time or download bytes. Keep the page open until the installation response arrives. Closing or refreshing the page can interrupt the request; an ambiguous remote write requires inspection rather than another blind attempt.
+
+Catalog projects installed through Blockyard show **Installed**, including after refresh. The backend matches durable installation receipts against JAR filenames and sizes still present in the server's plugin/mod folder. Removing a package clears its badge. Manually uploaded JARs remain listed under **Your plugins/mods**; they cannot reliably be attributed to a catalog project just from their filename. An Installed badge indicates package presence, not successful loading by Minecraft.
 
 ## ViaVersion
 
@@ -20,6 +26,8 @@ The backend uses the official Modrinth v2 API, not store scraping. New REST endp
 
 - `GET /servers/{id}/plugins/catalog?q=...` (or `mods`)
 - `GET /servers/{id}/plugins/catalog/{project}` returns a review with a revision
+- `GET /servers/{id}/plugins/catalog/installed` lists projects with recorded packages still present
+- `GET /servers/{id}/plugins/catalog/operations/{key}` exposes safe progress metadata for the authenticated actor’s operation
 - `POST /servers/{id}/plugins/catalog/{project}` takes `{"revision":"..."}` and an `Idempotency-Key` UUID
 
 No additional credentials, migrations or dependencies are needed. Server software/version come from PostgreSQL. Authorization occurs before catalog access, and installation shares the server advisory lock and durable management-operation audit/idempotency records.

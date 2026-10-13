@@ -1,4 +1,5 @@
 "use client";
+import { Select } from "./select";
 import { BetaGettingStarted } from "./first-server";
 import { softwareName } from "../lib/software";
 import Link from "next/link";
@@ -201,10 +202,10 @@ export function Dashboard({ serversOnly = false }) {
           </span>
         </div>
         <div className="server-list-tools">
-          <select aria-label="Server view" value={view} onChange={(e) => setView(e.target.value)}>
+          <Select aria-label="Server view" value={view} onChange={(e) => setView(e.target.value)}>
             <option value="active">Active servers</option>
             <option value="all">All servers</option>
-          </select>
+          </Select>
           <label className="search-box">
             <span aria-hidden="true">⌕</span>
             <input

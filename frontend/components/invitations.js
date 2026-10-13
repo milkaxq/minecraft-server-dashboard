@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useAuth } from "./auth";
-import { ErrorMessage, Loading } from "./ui";
+import { Table, ErrorMessage, Loading } from "./ui";
 export function Invitations({ rows, loading, refresh }) {
   const { api } = useAuth();
   const [email, setEmail] = useState("");
@@ -97,7 +97,7 @@ export function Invitations({ rows, loading, refresh }) {
         <p className="management-empty">No invitations yet.</p>
       ) : (
         <div className="table-scroll">
-          <table className="management-table">
+          <Table className="management-table">
             <thead>
               <tr>
                 <th>Email</th>
@@ -126,7 +126,7 @@ export function Invitations({ rows, loading, refresh }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         </div>
       )}
     </section>

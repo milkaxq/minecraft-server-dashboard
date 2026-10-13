@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Shell, PageHeading } from "./ui";
+import { Table, Shell, PageHeading } from "./ui";
 import { SOFTWARE } from "../lib/software";
 
 const goals = {
@@ -66,7 +66,7 @@ export function Guide() {
           </div>
           <p className="notice">{goals[goal][1]}</p>
           <div className="table-scroll">
-            <table className="management-table guide-table">
+            <Table className="management-table guide-table">
               <thead>
                 <tr>
                   <th>Software</th>
@@ -91,7 +91,7 @@ export function Guide() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
           <p className="field-help">
             Paper-specific plugins may require Paper or Purpur and will not work on Spigot. Forge

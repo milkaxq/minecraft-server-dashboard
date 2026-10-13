@@ -1,4 +1,5 @@
 "use client";
+import { Select } from "./select";
 import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "./auth";
@@ -83,7 +84,8 @@ export function Feedback() {
           <div className="feedback-fields">
             <label className="field">
               What kind of report?
-              <select
+              <Select
+                aria-label="What kind of report?"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
                 disabled={busy}
@@ -93,11 +95,12 @@ export function Feedback() {
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="field">
               Related server (optional)
-              <select
+              <Select
+                aria-label="Related server (optional)"
                 value={selection}
                 onChange={(e) => setServerId(e.target.value)}
                 disabled={busy || servers.loading}
@@ -108,7 +111,7 @@ export function Feedback() {
                     {s.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
           <label className="field">
@@ -241,7 +244,8 @@ function ReportCard({ report, admin, refresh }) {
             <ErrorMessage error={error} />
             <label className="field">
               Report status
-              <select
+              <Select
+                aria-label="Report status"
                 value={edit.status}
                 disabled={busy}
                 onChange={(e) => setEdit({ ...edit, status: e.target.value })}
@@ -251,7 +255,7 @@ function ReportCard({ report, admin, refresh }) {
                     {label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="field">
               Reply to tester

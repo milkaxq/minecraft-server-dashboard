@@ -332,3 +332,28 @@ export function PageHeading({ eyebrow, title, description, action }) {
     </div>
   );
 }
+
+// Preserve table semantics while giving narrow screens labeled, readable cards.
+export function Table({ children, className = "", ...props }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const table = ref.current;
+    const headings = [...table.querySelectorAll("thead th")].map((cell) => cell.textContent.trim());
+    for (const group of table.querySelectorAll("thead, tbody"))
+      group.setAttribute("role", "rowgroup");
+    for (const row of table.querySelectorAll("tr")) row.setAttribute("role", "row");
+    for (const cell of table.querySelectorAll("thead th"))
+      cell.setAttribute("role", "columnheader");
+    for (const row of table.querySelectorAll("tbody tr")) {
+      [...row.children].forEach((cell, index) => {
+        cell.setAttribute("role", "cell");
+        cell.dataset.label = cell.colSpan > 1 ? "" : headings[index] || "";
+      });
+    }
+  }, [children]);
+  return (
+    <table {...props} ref={ref} role="table" className={`responsive-table ${className}`}>
+      {children}
+    </table>
+  );
+}

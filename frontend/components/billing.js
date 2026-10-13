@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
-import { ErrorMessage, Loading, PageHeading, Shell } from "./ui";
+import { Table, ErrorMessage, Loading, PageHeading, Shell } from "./ui";
 import { price } from "../lib/api";
 function money(item) {
   return price({
@@ -273,7 +273,7 @@ export function Billing() {
           <p className="management-empty">Your orders will appear here.</p>
         ) : (
           <div className="table-scroll">
-            <table className="management-table">
+            <Table className="management-table">
               <thead>
                 <tr>
                   <th>Order</th>
@@ -303,7 +303,7 @@ export function Billing() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
         )}
       </section>

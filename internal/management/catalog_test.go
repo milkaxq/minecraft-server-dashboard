@@ -34,6 +34,7 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 	h := sha512.Sum512(data)
 	requests := 0
 	downloads := 0
+	key := uuid.New()
 	v := catalog.Version{ID: "release", ProjectID: "project", Name: "Test 1.0", Type: "release", Loaders: []string{"paper"}, Games: []string{"1.21.1"}, Files: []catalog.File{{URL: "https://cdn.modrinth.com/test.jar", Filename: "Test.jar", Size: int64(len(data)), Primary: true, Hashes: map[string]string{"sha512": hex.EncodeToString(h[:])}}}}
 	c := catalog.New()
 	c.HTTP.Transport = catalogTransport(func(r *http.Request) (*http.Response, error) {
@@ -41,6 +42,14 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 		var content []byte
 		if r.URL.Host == "cdn.modrinth.com" {
 			downloads++
+			progress, err := f.s.CatalogProgress(ctx, f.owner, f.id, key, "plugins")
+			if err != nil {
+				t.Fatal("pending progress inaccessible during download", err)
+			}
+			state := progress.(map[string]any)
+			if state["status"] != "PENDING" || state["completed"] != 0 || state["total"] != 2 {
+				t.Fatal("progress simulated or missing", state)
+			}
 			content = data
 		} else {
 			switch r.URL.Path {
@@ -75,15 +84,42 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", strings.Repeat("a", 64), "test"); !errors.Is(err, ErrChanged) {
+	rejectedKey := uuid.New()
+	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, rejectedKey, "plugins", "project", strings.Repeat("a", 64), "test"); !errors.Is(err, ErrChanged) {
 		t.Fatal("stale preview installed", err)
 	}
 	if downloads != 0 {
 		t.Fatal("stale preview downloaded")
 	}
-	key := uuid.New()
+	rejected, err := f.s.CatalogProgress(ctx, f.owner, f.id, rejectedKey, "plugins")
+	if err != nil || rejected.(map[string]any)["status"] != "REJECTED" {
+		t.Fatal("failed operation lost its progress metadata", rejected, err)
+	}
+
+	for _, user := range []uuid.UUID{f.other, f.mod} {
+		if _, err := f.s.CatalogInstalled(ctx, user, f.id, "plugins"); !errors.Is(err, server.ErrNotFound) {
+			t.Fatal("unauthorized installed list", err)
+		}
+		if _, err := f.s.CatalogProgress(ctx, user, f.id, key, "plugins"); !errors.Is(err, server.ErrNotFound) {
+			t.Fatal("unauthorized progress", err)
+		}
+	}
 	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, key, "plugins", "project", preview.Revision, "test"); err != nil {
 		t.Fatal(err)
+	}
+	progress, err := f.s.CatalogProgress(ctx, f.owner, f.id, key, "plugins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.(map[string]any)["status"] != "SUCCEEDED" || progress.(map[string]any)["completed"] != 2 {
+		t.Fatal("completion progress", progress)
+	}
+	if _, err = f.s.CatalogProgress(ctx, f.admin, f.id, key, "plugins"); !errors.Is(err, server.ErrNotFound) {
+		t.Fatal("another actor read private operation", err)
+	}
+	installed, err := f.s.CatalogInstalled(ctx, f.owner, f.id, "plugins")
+	if err != nil || len(installed.(map[string]any)["projects"].([]string)) != 1 {
+		t.Fatal("installed receipt missing", installed, err)
 	}
 	if !bytes.Equal(f.panel.files["/plugins/Test.jar"], data) {
 		t.Fatal("verified jar not uploaded")
@@ -99,6 +135,11 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 	}
 	if downloads != 1 {
 		t.Fatal("identical file downloaded again")
+	}
+	delete(f.panel.files, "/plugins/Test.jar")
+	installed, err = f.s.CatalogInstalled(ctx, f.owner, f.id, "plugins")
+	if err != nil || len(installed.(map[string]any)["projects"].([]string)) != 0 {
+		t.Fatal("deleted plugin still installed", installed, err)
 	}
 	f.panel.files["/plugins/Test.jar"] = []byte("changed")
 	if _, err = f.s.CatalogInstall(ctx, f.owner, f.id, uuid.New(), "plugins", "project", preview.Revision, "test"); !errors.Is(err, ErrChanged) {

@@ -1,4 +1,5 @@
 "use client";
+import { Select } from "./select";
 import { SOFTWARE, softwareName, supportsMods } from "../lib/software";
 import Link from "next/link";
 import { ContextHelp } from "./context-help";
@@ -145,7 +146,8 @@ export function NewServer({ initialPlan = "" }) {
               <div className="field-row">
                 <label className="field">
                   Server software
-                  <select
+                  <Select
+                    aria-label="Server software"
                     value={type}
                     onChange={(e) => setType(e.target.value)}
                     disabled={!software.length}
@@ -155,11 +157,12 @@ export function NewServer({ initialPlan = "" }) {
                         {`${softwareName(v)} — ${SOFTWARE[v]?.category === "mods" ? "supports mods" : SOFTWARE[v]?.category === "plugins" ? "supports plugins" : "classic Minecraft"}`}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   Minecraft version
-                  <select
+                  <Select
+                    aria-label="Minecraft version"
                     value={version}
                     onChange={(e) => setVersion(e.target.value)}
                     disabled={!versions.length}
@@ -169,7 +172,7 @@ export function NewServer({ initialPlan = "" }) {
                         {v}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
               </div>
               {options && !options.length && (

@@ -5,10 +5,13 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"minecraft-hosting/internal/catalog"
 	"minecraft-hosting/internal/control"
@@ -104,6 +107,14 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 		}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
+		report := func(phase string, completed, total int) error {
+			data, _ := json.Marshal(map[string]any{"collection": collection, "project": project, "phase": phase, "completed": completed, "total": total})
+			var updated bool
+			return t.q.QueryRow(ctx, `UPDATE management_operations SET result=$4,updated_at=now() WHERE server_id=$1 AND user_id=$2 AND idempotency_key=$3 AND action='catalog.install' AND status='PENDING' RETURNING true`, id, user, key, data).Scan(&updated)
+		}
+		if err := report("Resolving compatible releases", 0, 0); err != nil {
+			return nil, err
+		}
 		preview, err := s.resolvePreview(ctx, t, collection, project)
 		if err != nil {
 			return nil, err
@@ -122,7 +133,12 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 		client := s.catalogClient()
 		var total int64
 		pending := []catalog.Package{}
+		completed := 0
+		units := len(preview.Files) * 2
 		for _, file := range preview.Files {
+			if err := report("Downloading and checking files", completed, units); err != nil {
+				return nil, err
+			}
 			if f != nil {
 				existing, err := s.inspect(ctx, t, path.Join(folder, file.Filename), true)
 				if err != nil {
@@ -142,6 +158,7 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 					if err != nil || n != file.Size || !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), file.SHA512) {
 						return nil, ErrChanged
 					}
+					completed += 2
 					continue
 				}
 			}
@@ -159,6 +176,10 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 			}
 			total += file.Size
 			pending = append(pending, file)
+			completed++
+		}
+		if err := report("Checking server storage", completed, units); err != nil {
+			return nil, err
 		}
 		usage, err := s.Control.Panel.Resources(ctx, t.Identifier)
 		if err != nil {
@@ -180,11 +201,15 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 			}
 		}
 		for _, file := range pending {
+			if err := report("Installing files", completed, units); err != nil {
+				return nil, control.ErrUnknown
+			}
 			if err = s.Panel.UploadFile(ctx, t.Identifier, folder, file.Filename, file.Data); err != nil {
 				return nil, control.ErrUnknown
 			}
+			completed++
 		}
-		return map[string]any{"status": "installed", "files": preview.Files, "restart_required": true}, nil
+		return map[string]any{"collection": collection, "project": project, "identifier": t.Identifier, "phase": "Installed", "completed": units, "total": units, "status": "installed", "files": preview.Files, "restart_required": true}, nil
 	})
 }
 
@@ -193,4 +218,100 @@ func (s *Service) catalogClient() *catalog.Client {
 		return s.Catalog
 	}
 	return catalog.New()
+}
+
+// CatalogProgress exposes only safe metadata for this customer's operation.
+func (s *Service) CatalogProgress(ctx context.Context, user, id, key uuid.UUID, collection string) (any, error) {
+	p, err := catalogPermission(collection)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = s.Control.Access(ctx, s.DB, user, id, p); err != nil {
+		return nil, err
+	}
+	var status string
+	var data []byte
+	err = s.DB.QueryRow(ctx, `SELECT status,result FROM management_operations WHERE server_id=$1 AND user_id=$2 AND idempotency_key=$3 AND action='catalog.install' AND result->>'collection'=$4`, id, user, key, collection).Scan(&status, &data)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, server.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var progress struct {
+		Phase     string `json:"phase"`
+		Completed int    `json:"completed"`
+		Total     int    `json:"total"`
+	}
+	if err = json.Unmarshal(data, &progress); err != nil {
+		return nil, err
+	}
+	return map[string]any{"status": status, "phase": progress.Phase, "completed": progress.Completed, "total": progress.Total}, nil
+}
+
+// Receipts identify catalog projects; current files ensure deleted packages lose their badge.
+func (s *Service) CatalogInstalled(ctx context.Context, user, id uuid.UUID, collection string) (any, error) {
+	p, err := catalogPermission(collection)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.access(ctx, user, id, p)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = catalogLoader(t, collection); err != nil {
+		return nil, err
+	}
+	folder := "/" + collection
+	entry, err := s.inspect(ctx, t, folder, true)
+	if err != nil {
+		return nil, err
+	}
+	projects := []string{}
+	if entry != nil && entry.IsFile {
+		return nil, server.ErrInvalid
+	}
+	if entry == nil {
+		return map[string]any{"projects": projects}, nil
+	}
+	files, err := s.Panel.ListFiles(ctx, t.Identifier, folder)
+	if err != nil {
+		return nil, control.ErrUnavailable
+	}
+	present := map[string]int64{}
+	for _, file := range files {
+		if file.IsFile && !file.IsSymlink {
+			present[file.Name] = file.Size
+		}
+	}
+	rows, err := s.DB.Query(ctx, `SELECT result FROM management_operations WHERE server_id=$1 AND action='catalog.install' AND status='SUCCEEDED' AND (result->>'collection'=$2 OR NOT result ? 'collection')`, id, collection)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	for rows.Next() {
+		var data []byte
+		if err = rows.Scan(&data); err != nil {
+			return nil, err
+		}
+		var receipt struct {
+			Identifier string            `json:"identifier"`
+			Files      []catalog.Package `json:"files"`
+		}
+		if err = json.Unmarshal(data, &receipt); err != nil {
+			return nil, err
+		}
+		if receipt.Identifier != "" && receipt.Identifier != t.Identifier {
+			continue
+		}
+		for _, file := range receipt.Files {
+			size, exists := present[file.Filename]
+			if exists && size == file.Size && file.ProjectID != "" && !seen[file.ProjectID] {
+				projects = append(projects, file.ProjectID)
+				seen[file.ProjectID] = true
+			}
+		}
+	}
+	return map[string]any{"projects": projects}, rows.Err()
 }

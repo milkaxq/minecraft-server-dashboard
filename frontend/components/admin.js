@@ -1,9 +1,10 @@
 "use client";
+import { Select } from "./select";
 import { JobHelp, NodeCapacity } from "./admin-health";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
-import { ErrorMessage, Loading, PageHeading, Shell, Badge } from "./ui";
+import { Table, ErrorMessage, Loading, PageHeading, Shell, Badge } from "./ui";
 import { ReportList } from "./feedback";
 import { Invitations } from "./invitations";
 import { formatBytes, price } from "../lib/api";
@@ -191,13 +192,14 @@ export function Admin() {
                 </div>
                 <label className="field">
                   Billing period
-                  <select
+                  <Select
+                    aria-label="Billing period"
                     value={edit.billing_period}
                     onChange={(e) => setEdit({ ...edit, billing_period: e.target.value })}
                   >
                     <option value="MONTHLY">Monthly</option>
                     <option value="YEARLY">Yearly</option>
-                  </select>
+                  </Select>
                 </label>
                 <label className="setting-toggle">
                   <strong>Available for new orders</strong>
@@ -246,7 +248,7 @@ export function Admin() {
                 <p className="management-empty">No {tab} to display.</p>
               ) : (
                 <div className="table-scroll">
-                  <table className="management-table">
+                  <Table className="management-table">
                     {tab === "plans" ? (
                       <>
                         <thead>
@@ -505,7 +507,7 @@ export function Admin() {
                         </tbody>
                       </>
                     )}
-                  </table>
+                  </Table>
                 </div>
               )}
               {["users", "servers", "orders", "audit"].includes(tab) && (

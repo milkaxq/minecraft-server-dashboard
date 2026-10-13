@@ -1,10 +1,11 @@
 "use client";
+import { Select } from "./select";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Confirm, FeatureLinks } from "./management";
-import { ErrorMessage, Loading, PageHeading, Shell } from "./ui";
+import { Table, ErrorMessage, Loading, PageHeading, Shell } from "./ui";
 
 export function MembersPage({ id }) {
   const { api } = useAuth();
@@ -97,14 +98,14 @@ export function MembersPage({ id }) {
                 </label>
                 <label className="field">
                   Server role
-                  <select
+                  <Select
                     aria-label="Server role"
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
                   >
                     <option value="MODERATOR">Moderator</option>
                     <option value="ADMIN">Admin</option>
-                  </select>
+                  </Select>
                 </label>
                 <button
                   className="button primary"
@@ -117,7 +118,7 @@ export function MembersPage({ id }) {
                 <Loading />
               ) : (
                 <div className="table-scroll">
-                  <table className="management-table">
+                  <Table className="management-table">
                     <thead>
                       <tr>
                         <th>Person</th>
@@ -136,7 +137,7 @@ export function MembersPage({ id }) {
                             {member.role === "OWNER" ? (
                               "Owner"
                             ) : (
-                              <select
+                              <Select
                                 aria-label={`Role for ${member.name}`}
                                 value={member.role}
                                 disabled={busy}
@@ -151,7 +152,7 @@ export function MembersPage({ id }) {
                               >
                                 <option value="MODERATOR">Moderator</option>
                                 <option value="ADMIN">Admin</option>
-                              </select>
+                              </Select>
                             )}
                           </td>
                           <td>
@@ -170,7 +171,7 @@ export function MembersPage({ id }) {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </Table>
                 </div>
               )}
               <p className="field-help">

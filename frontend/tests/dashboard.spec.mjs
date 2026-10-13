@@ -1,4 +1,8 @@
 import { test, expect } from "@playwright/test";
+async function selectValue(page, control, value) {
+  await control.click();
+  await page.locator(`[role="option"][data-value="${value}"]`).click();
+}
 const serverID = "30000000-0000-4000-8000-000000000001";
 const orderID = "50000000-0000-4000-8000-000000000001";
 const planID = "10000000-0000-4000-8000-000000000001";
@@ -173,6 +177,8 @@ async function mockAPI(
     }
     if (path === "/auth/config") return reply({ invite_required: inviteRequired });
     if (path === "/admin/invitations") return reply([]);
+    if (["/feedback", "/admin/feedback"].includes(path) && request.method() === "GET")
+      return reply([]);
     if (path === "/auth/register") return reply(user, 201);
     if (path === "/auth/logout") {
       loggedIn = false;
@@ -384,6 +390,14 @@ async function mockAPI(
         software: "PAPER",
         minecraft_version: "1.21.1",
       });
+    if (path.endsWith("/catalog/installed")) return reply({ projects: [] });
+    if (path.includes("/catalog/operations/"))
+      return reply({
+        status: "PENDING",
+        phase: "Downloading and checking files",
+        completed: 1,
+        total: 2,
+      });
     if (path.endsWith("/catalog/viaversion") && request.method() === "GET")
       return reply({
         project: "viaversion",
@@ -526,9 +540,9 @@ test("order request sends approved choices without resource or price fields", as
   await expect(
     page.getByText("New servers require Microsoft accounts", { exact: false }),
   ).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Minecraft version", exact: true })).toHaveValue(
-    "26.3",
-  );
+  await expect(
+    page.getByRole("combobox", { name: "Minecraft version", exact: true }),
+  ).toHaveAttribute("data-value", "26.3");
   await page.getByRole("button", { name: "Continue to checkout" }).click();
   await expect(page).toHaveURL(new RegExp(`/checkout/${orderID}$`));
   const call = calls.find((c) => c.path === "/orders" && c.method === "POST");
@@ -655,7 +669,7 @@ test("settings save actual values and revision while preserving plan allocations
   await openServer(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByRole("textbox", { name: /Server message/ }).fill("Our next adventure");
-  await page.getByRole("combobox", { name: "Difficulty" }).selectOption("hard");
+  await selectValue(page, page.getByRole("combobox", { name: "Difficulty" }), "hard");
   await page.getByRole("spinbutton", { name: "Maximum players" }).fill("30");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByRole("status")).toContainText("Settings saved");
@@ -823,7 +837,7 @@ test("beta operator creates the latest configured Paper server without checkout"
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
   await page.getByLabel("Server name", { exact: true }).fill("Latest world");
-  await page.getByLabel("Minecraft version").selectOption("26.3");
+  await selectValue(page, page.getByLabel("Minecraft version"), "26.3");
   await page.getByRole("button", { name: "Create beta server" }).click();
   await expect(page).toHaveURL(new RegExp(`/servers/${serverID}$`));
   const create = calls.find((call) => call.path === "/admin/beta-servers");
@@ -859,10 +873,10 @@ test("owner must type the server name before deletion is queued", async ({ page 
   expect(deletion.body.confirmation).toBe(serverID);
   await expect(page.getByRole("status")).toContainText("being deleted");
   await expect(page.locator(`a.server-card[href="/servers/${serverID}"]`)).toHaveCount(0);
-  await page.getByLabel("Server view").selectOption("all");
+  await selectValue(page, page.getByLabel("Server view"), "all");
   await expect(page.getByText("Deleting", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByLabel("Server view").selectOption("all");
+  await selectValue(page, page.getByLabel("Server view"), "all");
   await expect(page.getByText("Deleting", { exact: true })).toBeVisible();
 });
 
@@ -997,14 +1011,14 @@ test("owner adds members, updates their role, and confirms removal", async ({ pa
   await openServer(page);
   await page.getByRole("link", { name: "Members", exact: true }).click();
   await page.getByLabel("Member email").fill("sam@example.com");
-  await page.getByLabel("Server role", { exact: true }).selectOption("MODERATOR");
+  await selectValue(page, page.getByLabel("Server role", { exact: true }), "MODERATOR");
   await page.getByRole("button", { name: "Add member" }).click();
   await expect(page.getByText("sam@example.com", { exact: true })).toBeVisible();
   expect(calls.find((c) => c.path.endsWith("/members") && c.method === "POST").body).toEqual({
     email: "sam@example.com",
     role: "MODERATOR",
   });
-  await page.getByLabel("Role for Sam").selectOption("ADMIN");
+  await selectValue(page, page.getByLabel("Role for Sam"), "ADMIN");
   await expect(page.getByRole("status")).toContainText("Member role updated");
   await page.getByRole("button", { name: "Remove member", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("sam@example.com");
@@ -1045,9 +1059,9 @@ for (const type of ["VANILLA", "SPIGOT", "PURPUR", "FABRIC", "FORGE", "NEOFORGE"
     const calls = await mockAPI(page);
     await login(page);
     await page.getByRole("link", { name: "New server", exact: true }).click();
-    await page.getByLabel("Server software").selectOption(type);
+    await selectValue(page, page.getByLabel("Server software"), type);
     await page.getByLabel("Server name", { exact: true }).fill("Custom world");
-    await expect(page.getByLabel("Minecraft version")).toHaveValue("1.21.1");
+    await expect(page.getByLabel("Minecraft version")).toHaveAttribute("data-value", "1.21.1");
     await page.getByRole("button", { name: "Continue to checkout" }).click();
     await expect(page).toHaveURL(/checkout/);
     expect(calls.find((c) => c.path === "/orders" && c.method === "POST").body.server_type).toBe(
@@ -1291,7 +1305,7 @@ test("current servers come first and cancelled hosting stays available in histor
   await expect(page.locator(".server-card")).toHaveCount(2);
   await expect(page.locator(".server-card").first()).toContainText(baseServer.name);
   await expect(page.getByRole("heading", { name: "Old world", exact: true })).toHaveCount(0);
-  await page.getByLabel("Server view").selectOption("all");
+  await selectValue(page, page.getByLabel("Server view"), "all");
   await expect(page.locator(".server-card")).toHaveCount(3);
   await page.getByLabel("Search servers").fill("Old world");
   await expect(page.locator(".server-card")).toHaveCount(1);
@@ -1554,7 +1568,10 @@ test("beta feedback retries safely and displays host replies on mobile", async (
     (id) => window.history.replaceState(null, "", "/feedback?server=" + id),
     serverID,
   );
-  await expect(page.getByLabel("Related server (optional)")).toHaveValue(serverID);
+  await expect(page.getByLabel("Related server (optional)")).toHaveAttribute(
+    "data-value",
+    serverID,
+  );
   await page.getByLabel("Short summary").fill("Cannot join the world");
   await page
     .getByLabel("What happened?")
@@ -1592,7 +1609,7 @@ test("admin reviews reports without rendering submitted markup", async ({ page }
   await expect(page.getByRole("article")).toContainText("<img src=x");
   expect(await page.evaluate(() => window.reportExecuted)).toBeUndefined();
   await page.getByRole("button", { name: "Review report", exact: true }).click();
-  await page.getByLabel("Report status").selectOption("RESOLVED");
+  await selectValue(page, page.getByLabel("Report status"), "RESOLVED");
   await page.getByLabel("Reply to tester").fill("This is fixed. Try joining again.");
   await page.getByRole("button", { name: "Save response", exact: true }).click();
   await expect(page.getByRole("article")).toContainText("Resolved");
@@ -1622,8 +1639,10 @@ test("feedback only offers accessible servers and paginates personal reports", a
     (id) => window.history.replaceState(null, "", "/feedback?server=" + id),
     serverID,
   );
-  await expect(page.getByLabel("Related server (optional)")).toHaveValue("");
-  await expect(page.getByLabel("Related server (optional)").locator("option")).toHaveCount(1);
+  await expect(page.getByLabel("Related server (optional)")).toHaveAttribute("data-value", "");
+  await page.getByLabel("Related server (optional)").click();
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await page.getByRole("combobox", { name: "Related server (optional)" }).press("Escape");
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByText("Page 2", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
@@ -2029,13 +2048,15 @@ for (const width of [320, 1366]) {
     await page.setViewportSize({ width, height: 900 });
     await openServer(page);
     await page.getByRole("link", { name: "Plugins", exact: true }).click();
-    await expect(page.getByLabel("Sort catalog")).toHaveValue("downloads", { timeout: 1500 });
+    await expect(page.getByLabel("Sort catalog")).toHaveAttribute("data-value", "downloads", {
+      timeout: 1500,
+    });
     await expect(
       page.locator(".addon-catalog").getByText("ViaVersion", { exact: true }),
     ).toBeVisible();
     expect(searches[0]).toEqual({ q: "", sort: "downloads", category: "", offset: "0" });
-    await page.getByLabel("Category filter").selectOption("utility");
-    await page.getByLabel("Sort catalog").selectOption("updated");
+    await selectValue(page, page.getByLabel("Category filter"), "utility");
+    await selectValue(page, page.getByLabel("Sort catalog"), "updated");
     await page.getByLabel("Search plugins", { exact: true }).fill("versions");
     await page.getByRole("button", { name: "Search Modrinth" }).click();
     await expect
@@ -2055,8 +2076,8 @@ for (const width of [320, 1366]) {
       offset: "12",
     });
     await page.getByRole("button", { name: "Reset filters" }).click();
-    await expect(page.getByLabel("Sort catalog")).toHaveValue("downloads");
-    await expect(page.getByLabel("Category filter")).toHaveValue("");
+    await expect(page.getByLabel("Sort catalog")).toHaveAttribute("data-value", "downloads");
+    await expect(page.getByLabel("Category filter")).toHaveAttribute("data-value", "");
     await expect(page.getByLabel("Search plugins", { exact: true })).toHaveValue("");
     await expect(
       page.locator(".addon-catalog").getByText("Second plugin", { exact: true }),
@@ -2095,8 +2116,8 @@ test("catalog ignores late responses from earlier sorting choices", async ({ pag
   );
   await openServer(page);
   await page.getByRole("link", { name: "Plugins", exact: true }).click();
-  await page.getByLabel("Sort catalog").selectOption("newest");
-  await page.getByLabel("Sort catalog").selectOption("updated");
+  await selectValue(page, page.getByLabel("Sort catalog"), "newest");
+  await selectValue(page, page.getByLabel("Sort catalog"), "updated");
   await expect(page.getByText("Current response", { exact: true })).toBeVisible();
   await page.waitForTimeout(500);
   await expect(page.getByText("Old response", { exact: true })).toHaveCount(0);
@@ -2289,3 +2310,165 @@ for (const status of ["FAILED", "SKIPPED"])
     await expect(card).toContainText(status === "FAILED" ? "Failed" : "Skipped");
     await expect(card).toContainText("preserved");
   });
+
+for (const viewport of [
+  { name: "laptop", width: 1366, height: 900 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`visual audit of every page at ${viewport.name} size`, async ({ page }, testInfo) => {
+    test.setTimeout(120000);
+    await page.setViewportSize(viewport);
+    await mockAPI(page, { isAdmin: true });
+    for (const route of [
+      "/",
+      "/login",
+      "/register",
+      "/forgot-password",
+      "/reset-password",
+      "/verify",
+    ]) {
+      await page.goto(route);
+      await expect(page.locator("h1").first()).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath(`${viewport.name}-${route.replaceAll("/", "") || "home"}.png`),
+        fullPage: true,
+      });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        route,
+      ).toBe(true);
+    }
+    await login(page);
+    for (const route of [
+      "/dashboard",
+      "/servers",
+      "/servers/new",
+      "/billing",
+      `/checkout/${orderID}`,
+      "/account",
+      "/guide",
+      "/feedback",
+      "/admin",
+      `/servers/${serverID}`,
+      ...["console", "files", "members", "worlds", "players", "plugins", "settings", "backups"].map(
+        (section) => `/servers/${serverID}/${section}`,
+      ),
+    ]) {
+      await page.goto(route);
+      await expect(page.locator("main h1").first()).toBeVisible();
+      await expect(page.getByText("Loading…", { exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `${viewport.name}-${route.replace(serverID, "server").replace(orderID, "order").replaceAll("/", "-")}.png`,
+        ),
+        fullPage: true,
+      });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        route,
+      ).toBe(true);
+    }
+    await page.goto("/admin");
+    for (const tab of ["Plans", "Users", "Orders", "Nodes", "Audit", "Invitations", "Feedback"]) {
+      await page
+        .getByRole("navigation", { name: "Admin sections" })
+        .getByRole("button", { name: tab, exact: true })
+        .click();
+      await expect(page.getByText("Loading…", { exact: true })).toHaveCount(0);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({
+        path: testInfo.outputPath(`${viewport.name}-admin-${tab.toLowerCase()}.png`),
+        fullPage: true,
+      });
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        tab,
+      ).toBe(true);
+    }
+    // Mods use the same catalog but their own software and content guidance.
+    await page.route(`http://localhost:8080/servers/${serverID}`, (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ...baseServer, server_type: "FABRIC" }),
+      }),
+    );
+    await page.goto(`/servers/${serverID}/mods`);
+    await expect(page.getByRole("heading", { name: "Find mods" })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`${viewport.name}-mods.png`),
+      fullPage: true,
+    });
+  });
+}
+
+test("custom dropdown supports keyboard selection and keeps its menu inside a phone viewport", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/settings`);
+  const control = page.getByRole("combobox", { name: "Difficulty" });
+  await control.focus();
+  await control.press("Enter");
+  await expect(control).toHaveAttribute("aria-expanded", "true");
+  await control.press("End");
+  await control.press("Enter");
+  await expect(control).toContainText("hard");
+  await control.click();
+  const bounds = await page.getByRole("listbox").boundingBox();
+  await page.screenshot({ path: testInfo.outputPath("custom-dropdown.png") });
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  await control.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(control).toBeFocused();
+});
+
+test("catalog shows actual installation progress and a durable installed badge", async ({
+  page,
+}, testInfo) => {
+  await mockAPI(page);
+  let installed = false;
+  let release;
+  const waiting = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog/installed`, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ projects: installed ? ["viaversion"] : [] }),
+    }),
+  );
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/viaversion`,
+    async (route) => {
+      if (route.request().method() === "GET") return route.fallback();
+      await waiting;
+      installed = true;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "installed",
+          files: [{ project_id: "viaversion", filename: "ViaVersion.jar", size: 6500000 }],
+        }),
+      });
+    },
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Review install" }).click();
+  await page.getByRole("button", { name: "Install now" }).click();
+  const progress = page.getByRole("progressbar", { name: "Installation progress" });
+  await expect(progress).toHaveAttribute("value", "1");
+  await expect(progress).toHaveAttribute("max", "2");
+  await expect(page.getByText("Downloading and checking files", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("installation-progress.png") });
+  release();
+  await expect(page.getByRole("button", { name: "Installed", exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Installed", exact: true })).toBeDisabled();
+  installed = false;
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Review install" })).toBeEnabled();
+});

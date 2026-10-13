@@ -274,7 +274,7 @@ func (s *Service) mutate(ctx context.Context, user, id, key uuid.UUID, p server.
 		return nil, control.ErrUnknown
 	}
 	defer finish.Rollback(context.Background())
-	if _, err = finish.Exec(clean, "UPDATE management_operations SET status=$2,result=$3,updated_at=now() WHERE id=$1", operation, outcome, data); err != nil {
+	if _, err = finish.Exec(clean, "UPDATE management_operations SET status=$2,result=CASE WHEN action='catalog.install' AND $3::jsonb='null'::jsonb THEN result ELSE $3::jsonb END,updated_at=now() WHERE id=$1", operation, outcome, data); err != nil {
 		return nil, control.ErrUnknown
 	}
 	if err = audit.Record(clean, finish, user, id, "management.completed", requestID, map[string]any{"operation_id": operation, "action": action, "outcome": outcome}); err != nil {

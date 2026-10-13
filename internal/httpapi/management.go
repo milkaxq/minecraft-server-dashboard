@@ -51,6 +51,9 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 		"GET /servers/{id}/backups/{backup}/download": a.download(true),
 	}
 	for _, collection := range []string{"plugins", "mods"} {
+		for suffix, handler := range map[string]http.HandlerFunc{"installed": a.catalogInstalled, "operations/{operation}": a.catalogProgress} {
+			mux.HandleFunc("GET /servers/{id}/"+collection+"/catalog/"+suffix, a.protected(a.liveLimit("management", 240, func(w http.ResponseWriter, r *http.Request) { r.SetPathValue("collection", collection); handler(w, r) })))
+		}
 		for method, handler := range map[string]http.HandlerFunc{"GET": a.catalogPreview, "POST": a.catalogInstall} {
 			mux.HandleFunc(method+" /servers/{id}/"+collection+"/catalog/{project}", a.protected(a.liveLimit("catalog", 30, func(w http.ResponseWriter, r *http.Request) { r.SetPathValue("collection", collection); handler(w, r) })))
 		}
