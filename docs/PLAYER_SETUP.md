@@ -112,3 +112,10 @@ Instructions refer to official documentation:
 - https://docs.skmedix.pl/faq/launcher-related (3.x manual files; 4.x mod management)
 - https://prismlauncher.org/wiki/help-pages/Zip-import/ (Prism `.mrpack` import)
 - https://support.modrinth.com/en/articles/8802250-modpacks-on-modrinth
+
+Launcher selector deployment check: seven focused browser tests passed, including
+SKlauncher selection, remembered choice, pinned links and mobile layout. Go race
+tests for playerjoin and HTTP API, vet/staticcheck, frontend lint/build/format
+passed. A live mobile browser selected SKlauncher and displayed all five pinned
+Private Beta client downloads with no horizontal overflow; readiness returned 200.
+No launcher was installed or Minecraft client launched during these checks.
