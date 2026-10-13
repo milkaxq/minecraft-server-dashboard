@@ -86,3 +86,10 @@ channel for client pack resolution: pinned release matching, loader/game checks,
 required dependencies, approved CDN URLs, and hashes still apply. Alpha builds
 remain excluded. Public setup notes disclose beta files. Server catalog install
 policy is unchanged.
+
+Beta opt-in live check: Private Beta was republished with `include_beta=true`.
+The public pack endpoint returns a valid ZIP manifest for Minecraft 26.3 and
+Fabric Loader 0.19.5, with Simple Voice Chat 2.6.24, compatible optional client
+builds, and required dependencies. All manifest downloads have SHA-1/SHA-512
+hashes. The public page discloses beta builds. Actual launcher import and joining
+remain a player-side test.
