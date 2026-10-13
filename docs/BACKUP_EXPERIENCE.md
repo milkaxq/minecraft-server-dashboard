@@ -26,3 +26,7 @@ backups, acknowledgement before restore, server startup during confirmation,
 mobile/laptop layout and daily-backup access for suspended owners/moderators.
 Frontend lint, production build and formatting checks passed. Live verification
 for this change is read-only: no customer backup is created, restored or deleted.
+
+Deployment checks: production readiness and the backup page returned 200. The
+backup API returned 401 without a session, confirming that backup data still
+requires authentication. No live backup mutations were submitted.
