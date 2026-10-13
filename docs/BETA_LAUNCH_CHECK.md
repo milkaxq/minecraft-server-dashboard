@@ -143,3 +143,17 @@ GET /servers/:id/{plugins|mods}/catalog/updates, GET /notifications,
 POST /notifications/:id/read. Expensive scans/update checks have per-user rate
 limits and share the existing two-operation work bound. No game-world changes or
 server restarts are needed to deploy this dashboard release.
+
+Follow-up validation: 132 browser tests passed; management/server/HTTP/migration
+race suites passed against disposable PostgreSQL; Go vet, staticcheck, import
+formatting and frontend lint/format/build passed. Additional addon tests verified
+same-filename replacement and retained UNKNOWN outcomes after an interrupted
+old-file removal, without repeating remote writes.
+
+Deployment: code commit `4c1fa1e` deployed; migration 017 applied before API start.
+HTTPS readiness passed. Authorized live domain checks returned 16 activity events,
+one unread notification, six tracked addon checks, and 287479956 bytes server
+disk usage against 10737418240 bytes quota. Storage reported partial=true rather
+than claiming a complete folder scan. Minecraft status responded with one player
+online and startup help found zero recognized issues. Production addon files,
+worlds and game power state were not modified by these checks.
