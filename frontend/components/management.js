@@ -154,9 +154,6 @@ export function ManagementPage({ id, section }) {
           <FeatureLinks id={id} server={server} advanced={section === "files"} active={section} />
           <ContextHelp topic={section} />
           <ErrorMessage error={info.error || error} />
-          {section === "backups" && server.permissions?.includes("backups") && (
-            <BackupSchedule key={id} id={id} limit={server.backup_limit} />
-          )}
           {!server.permissions?.includes(
             section === "mods" ? "files" : section === "players" ? "settings" : section,
           ) ? (
@@ -199,6 +196,9 @@ export function ManagementPage({ id, section }) {
                 <Backups id={id} offline={offline} limit={server.backup_limit} />
               )}
             </>
+          )}
+          {section === "backups" && server.permissions?.includes("backups") && (
+            <BackupSchedule key={id} id={id} limit={server.backup_limit} />
           )}
         </>
       )}
@@ -1322,6 +1322,19 @@ function Backups({ id, offline, limit }) {
   const action = useAction(resource.refresh);
   const [name, setName] = useState("");
   const [target, setTarget] = useState(null);
+  const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
+  const usable = (resource.data || []).filter(
+    (backup) => backup.is_successful && backup.completed_at,
+  );
+  const latest = [...usable].sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))[0];
+  const pending = (resource.data || []).filter((backup) => !backup.completed_at).length;
+  const selectedReady =
+    target &&
+    !resource.error &&
+    resource.data?.some(
+      (backup) => backup.uuid === target.backup.uuid && backup.is_successful && backup.completed_at,
+    );
+
   async function create(e) {
     e.preventDefault();
     if (
@@ -1338,6 +1351,8 @@ function Backups({ id, offline, limit }) {
       setName("");
   }
   async function change() {
+    if (target?.action === "restore" && (!offline || !restoreAcknowledged || !selectedReady))
+      return;
     const v = target;
     if (
       await action.run(
@@ -1361,6 +1376,40 @@ function Backups({ id, offline, limit }) {
     <>
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
+      <section className="panel backup-protection" aria-label="Backup protection">
+        <span className="eyebrow">PROTECT YOUR WORLD</span>
+        <h2>
+          {resource.loading
+            ? "Checking your backups…"
+            : resource.error
+              ? "Backup status unavailable"
+              : latest
+                ? "You have a recovery copy"
+                : pending
+                  ? "Your first recovery copy is being created"
+                  : "No usable recovery copy yet"}
+        </h2>
+        <p>
+          {resource.error
+            ? "We could not check backup history. Refresh it before relying on a recovery copy."
+            : latest
+              ? `${usable.length} completed ${usable.length === 1 ? "backup is" : "backups are"} available. Your latest successful backup finished on ${new Date(latest.completed_at).toLocaleString()}.`
+              : pending
+                ? "Wait for a backup to finish successfully before relying on it."
+                : "Create a backup before changing your world, installing add-ons or updating Minecraft."}
+        </p>
+        <p className="field-help">
+          Backups save your server’s worlds, settings and add-on files. Files excluded by backup
+          rules are not included. A ready backup is a recovery option; it does not prove that a
+          restore has been tested.
+        </p>
+        {latest && (
+          <p className="field-help">
+            Changes made since the backup are not protected by that copy. Download a copy to keep it
+            somewhere you control.
+          </p>
+        )}
+      </section>
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -1377,6 +1426,12 @@ function Backups({ id, offline, limit }) {
           For a consistent world backup, stop your server first. You can create backups while it is
           online, but files may change during the backup.
         </p>
+        {limit <= 0 && (
+          <p className="notice">
+            This server’s plan has no backup slots. Ask your host about backup access before making
+            changes you want to recover from.
+          </p>
+        )}
         <form className="backup-create" onSubmit={create}>
           <label className="field">
             Backup name
@@ -1397,6 +1452,12 @@ function Backups({ id, offline, limit }) {
             Create backup
           </button>
         </form>
+        {limit > 0 && resource.data && resource.data.length >= limit && (
+          <p className="notice">
+            Your backup slots are full. Download any copy you want to keep before deleting it to
+            free a slot. Backups are not removed automatically by this page.
+          </p>
+        )}
         {resource.loading ? (
           <Loading />
         ) : !resource.data?.length ? (
@@ -1444,7 +1505,10 @@ function Backups({ id, offline, limit }) {
                         </button>
                         <button
                           disabled={!offline || action.busy || !b.is_successful || !b.completed_at}
-                          onClick={() => setTarget({ action: "restore", backup: b })}
+                          onClick={() => {
+                            setRestoreAcknowledged(false);
+                            setTarget({ action: "restore", backup: b });
+                          }}
                         >
                           Restore
                         </button>
@@ -1473,6 +1537,9 @@ function Backups({ id, offline, limit }) {
           }
           label={target.action === "restore" ? "Restore backup" : "Delete backup"}
           busy={action.busy}
+          confirmDisabled={
+            target.action === "restore" && (!offline || !selectedReady || !restoreAcknowledged)
+          }
           onCancel={() => setTarget(null)}
           onConfirm={change}
         >
@@ -1481,6 +1548,44 @@ function Backups({ id, offline, limit }) {
               ? `Restoring “${target.backup.name}” replaces all current server files, including your world, settings and plugins. Changes made after this backup will be lost.`
               : `“${target.backup.name}” will be permanently deleted.`}
           </p>
+          {target.action === "delete" &&
+            usable.length === 1 &&
+            latest?.uuid === target.backup.uuid && (
+              <p className="notice">
+                This is your only completed recovery copy. Download it before deleting if you want
+                to keep a way back.
+              </p>
+            )}
+          {target.action === "restore" && (
+            <>
+              <p>
+                Selected backup: <strong>{target.backup.name}</strong> · created{" "}
+                {new Date(target.backup.created_at).toLocaleString()}.
+              </p>
+              <p>
+                First download or create a backup of the current files if you want to keep them.
+                Files excluded from the selected backup cannot be recovered by this restore.
+              </p>
+              {!offline && (
+                <p className="notice">Stop the server and wait for Offline before restoring.</p>
+              )}
+              {!selectedReady && (
+                <p className="notice">
+                  This backup is no longer available for restore. Close this dialog and refresh the
+                  history.
+                </p>
+              )}
+              <label className="restore-acknowledgement">
+                <input
+                  type="checkbox"
+                  checked={restoreAcknowledged}
+                  disabled={action.busy}
+                  onChange={(event) => setRestoreAcknowledged(event.target.checked)}
+                />
+                I understand that the current server files will be replaced.
+              </label>
+            </>
+          )}
           <ErrorMessage error={action.error} />
         </Confirm>
       )}

@@ -5098,3 +5098,23 @@ input {
 .launcher-download-list a {
   overflow-wrap: anywhere;
 }
+
+.backup-protection {
+  margin-bottom: 20px;
+}
+.backup-protection h2 {
+  margin: 8px 0 12px;
+}
+.restore-acknowledgement {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  line-height: 1.6;
+}
+.restore-acknowledgement input {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  margin-top: 3px;
+}

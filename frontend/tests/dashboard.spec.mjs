@@ -856,6 +856,10 @@ test("backup restore replaces files only after explicit confirmation", async ({ 
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("replaces all current server files");
   expect(calls.filter((c) => c.path.endsWith("/restore"))).toHaveLength(0);
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Restore backup", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("I understand that the current server files will be replaced.").check();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Restore backup", exact: true })
@@ -3743,4 +3747,71 @@ test("expired owner invitation offers refresh and never copies its expired link"
   await expect(panel.getByText("Invite link expired", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Refresh player setup" })).toBeEnabled();
+});
+
+test("failed and unfinished backups never imply a usable recovery copy", async ({ page }) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let pending = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    route.fulfill({
+      json: [
+        ...(pending
+          ? [
+              {
+                uuid: "pending",
+                name: "New copy",
+                is_successful: false,
+                completed_at: null,
+                created_at: "2026-10-14T10:00:00Z",
+                bytes: 0,
+              },
+            ]
+          : []),
+        {
+          uuid: "failed",
+          name: "Failed copy",
+          is_successful: false,
+          created_at: "2026-10-13T10:00:00Z",
+          completed_at: "2026-10-13T10:01:00Z",
+          bytes: 0,
+        },
+      ],
+    }),
+  );
+  await openServer(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  const protection = page.getByRole("region", { name: "Backup protection" });
+  await expect(
+    protection.getByRole("heading", { name: "No usable recovery copy yet" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restore", exact: true })).toBeDisabled();
+  pending = true;
+  await page.clock.fastForward(11000);
+  await expect(
+    protection.getByRole("heading", { name: "Your first recovery copy is being created" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restore", exact: true }).first()).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Restore", exact: true }).last()).toBeDisabled();
+});
+
+test("restore confirmation stops when the server starts while the dialog is open", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const calls = await mockAPI(page);
+  let power = "offline";
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({ json: { power_state: power } }),
+  );
+  await openServer(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  await page.getByRole("button", { name: "Restore", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("I understand that the current server files will be replaced.").check();
+  await expect(dialog.getByRole("button", { name: "Restore backup", exact: true })).toBeEnabled();
+  power = "running";
+  await page.clock.fastForward(11000);
+  await expect(dialog.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled();
+  expect(calls.filter((call) => call.path.endsWith("/restore"))).toHaveLength(0);
 });
