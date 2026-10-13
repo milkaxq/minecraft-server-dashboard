@@ -475,6 +475,9 @@ export function ServerDetail({ id, advanced = false }) {
                 server={server}
                 ready={ready}
                 powerState={displayPowerState}
+                usage={usage}
+                usageError={usageError}
+                eula={eula.data?.accepted}
               />
             )}
             {!advanced && (

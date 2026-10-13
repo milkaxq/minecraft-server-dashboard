@@ -3223,7 +3223,9 @@ test("startup help shows safe actionable issues and preserves the console fallba
   await expect(page.locator(".startup-check")).toHaveCount(1);
   await expect(page.getByText("An addon is missing a dependency", { exact: true })).toBeVisible();
   await expect(
-    page.locator(".startup-check").getByRole("link", { name: "Open Console →" }),
+    page
+      .getByRole("region", { name: "Server health" })
+      .getByRole("link", { name: "Open Console →" }),
   ).toHaveAttribute("href", `/servers/${serverID}/console`);
 });
 
@@ -3862,4 +3864,87 @@ test("backup shortcuts choose the newest usable snapshot rather than a failed or
   await expect(dialog).toContainText("Newest world copy");
   await expect(dialog.getByRole("button", { name: "Restore backup", exact: true })).toBeDisabled();
   expect(calls.filter((call) => call.path.endsWith("/restore"))).toHaveLength(0);
+});
+
+test("server health explains pressure without claiming measured lag or player ping", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({
+      json: {
+        power_state: "running",
+        cpu_percent: 10,
+        memory_bytes: 100,
+        disk_bytes: 20 * 1024 * 1024 * 1024,
+      },
+    }),
+  );
+  await openServer(page);
+  const card = page.getByRole("region", { name: "Server health" });
+  await expect(card.getByRole("heading", { name: "Storage is nearly full" })).toBeVisible();
+  await card.getByText("Players are experiencing lag?", { exact: true }).click();
+  await expect(card).toContainText("does not measure Minecraft tick rate or each player’s ping");
+});
+test("health support links attach safe dashboard state and check time to a reviewed report", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let submitted;
+  await page.route("http://localhost:8080/feedback", (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { ...feedbackFixture, id: orderID } });
+  });
+  await openServer(page);
+  await page
+    .getByRole("region", { name: "Server health" })
+    .getByRole("link", { name: "Report a problem →" })
+    .click();
+  await expect(page.getByText("Attached dashboard state:", { exact: false })).toBeVisible();
+  await page.getByLabel("Short summary").fill("Minecraft did not start");
+  await page.getByLabel("What happened?").fill("I pressed Start and the world stayed offline.");
+  await page.getByRole("button", { name: "Send report", exact: true }).click();
+  expect(submitted.server_id).toBe(serverID);
+  expect(submitted.message).toContain("Displayed state: offline");
+  expect(submitted.message).toContain("Startup check time:");
+  expect(submitted).not.toHaveProperty("logs");
+});
+
+test("unavailable live readings never claim online and support uses the failing request reference", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  const reference = "066aa59b-590d-4296-951c-81d70922d4f9";
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({
+      status: 502,
+      headers: { "X-Request-ID": reference },
+      json: { error: "Live readings unavailable", request_id: reference },
+    }),
+  );
+  await openServer(page);
+  const card = page.getByRole("region", { name: "Server health" });
+  await expect(card.getByRole("heading", { name: "Live status unavailable" })).toBeVisible();
+  await expect(card.getByRole("link", { name: "Report a problem →" })).toHaveAttribute(
+    "href",
+    new RegExp(`reference=${reference}`),
+  );
+});
+test("health report context rejects arbitrary query values", async ({ page }) => {
+  await mockAPI(page);
+  let submitted;
+  await page.route("http://localhost:8080/feedback", (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ status: 201, json: { ...feedbackFixture, id: orderID } });
+  });
+  await login(page);
+  await page.goto(
+    `/feedback?server=${serverID}&observed_state=private-health-value&checked_at=private-time-value`,
+  );
+  await page.getByLabel("Short summary").fill("Check dashboard state");
+  await page.getByLabel("What happened?").fill("The live dashboard reading did not load.");
+  await page.getByRole("button", { name: "Send report", exact: true }).click();
+  expect(submitted.message).toBe("The live dashboard reading did not load.");
+  expect(JSON.stringify(submitted)).not.toContain("private-health-value");
+  expect(JSON.stringify(submitted)).not.toContain("private-time-value");
 });

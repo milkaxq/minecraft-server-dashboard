@@ -5134,3 +5134,23 @@ input {
     width: 100%;
   }
 }
+
+.server-health {
+  margin: 18px 0;
+}
+.server-health h2 {
+  margin: 8px 0 12px;
+}
+.server-health > details {
+  margin: 16px 0;
+}
+.server-health .startup-check {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.server-health .file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

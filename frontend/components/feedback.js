@@ -38,6 +38,33 @@ export function Feedback() {
     )
       ? sourcePage
       : "";
+  const allowedStates = [
+    "running",
+    "offline",
+    "starting",
+    "stopping",
+    "unavailable",
+    "RUNNING",
+    "PENDING_PAYMENT",
+    "PAYMENT_CONFIRMED",
+    "PROVISIONING",
+    "SUSPENDED",
+    "FAILED",
+    "CANCELLED",
+  ];
+  const observedState = allowedStates.includes(params.get("observed_state"))
+    ? params.get("observed_state")
+    : "";
+  const rawCheck = params.get("checked_at") || "";
+  const checkedAt =
+    rawCheck.length <= 40 &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(rawCheck) &&
+    Number.isFinite(Date.parse(rawCheck))
+      ? new Date(rawCheck).toISOString()
+      : "";
+  const healthContext = observedState
+    ? `\n\nDashboard context (reported by browser):\nDisplayed state: ${observedState}${checkedAt ? `\nStartup check time: ${checkedAt}` : ""}`
+    : "";
   const selection = serverId ?? (servers.data?.some((s) => s.id === requested) ? requested : "");
   async function submit(e) {
     e.preventDefault();
@@ -48,7 +75,7 @@ export function Feedback() {
     const body = {
       category,
       title: title.trim(),
-      message: message.trim(),
+      message: message.trim() + healthContext,
       server_id: selection || null,
       request_reference: reference,
       source_page: safePage,
@@ -97,6 +124,12 @@ export function Feedback() {
             Attached context: {safePage && <code>{safePage}</code>}{" "}
             {reference && <span>Support reference: {reference}</span>}. No logs or files are
             attached.
+          </p>
+        )}
+        {healthContext && (
+          <p className="feedback-context">
+            Attached dashboard state: {observedState}
+            {checkedAt ? ` · Startup check: ${checkedAt}` : ""}. No console contents are attached.
           </p>
         )}
         <form className="feedback-form" onSubmit={submit}>
@@ -150,7 +183,7 @@ export function Feedback() {
             <textarea
               required
               minLength={10}
-              maxLength={4000}
+              maxLength={4000 - healthContext.length}
               rows={6}
               value={message}
               disabled={busy}
