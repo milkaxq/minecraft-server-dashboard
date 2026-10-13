@@ -28,3 +28,7 @@ Validation: the full 145-test browser regression run passed, followed by seven
 focused checks including unavailable metrics, safe support context and rejecting
 arbitrary query values. Frontend lint, production build and formatting passed.
 No Minecraft client or gameplay test was performed for this dashboard change.
+
+Deployment verification: production readiness and the overview route returned
+200. Usage and startup-check API routes returned 401 without a session. Checks
+were read-only; no live support report or Minecraft command was submitted.
