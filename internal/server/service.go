@@ -42,6 +42,9 @@ func (s Service) Create(ctx context.Context, owner uuid.UUID, input CreateInput,
 // CreateTx lets billing create the server and its order atomically using the same
 // plan/software checks as a standalone pending request.
 func (s Service) CreateTx(ctx context.Context, tx pgx.Tx, owner uuid.UUID, input CreateInput, requestID string) (Server, error) {
+	if !NewSoftware(input.ServerType) {
+		return Server{}, ErrInvalid
+	}
 	if err := input.Validate(); err != nil {
 		return Server{}, err
 	}

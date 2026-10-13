@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Table, Shell, PageHeading } from "./ui";
-import { SOFTWARE } from "../lib/software";
+import { NEW_SERVER_TYPES, SOFTWARE } from "../lib/software";
 
 const goals = {
   classic: [
@@ -15,7 +15,7 @@ const goals = {
   ],
   mods: [
     "New blocks, machines or a modpack",
-    "Read the mod or modpack’s requirements first. Choose its exact loader: Fabric, Forge or NeoForge. They are separate ecosystems, and players often need the same pack installed.",
+    "Choose Fabric for mods made for Fabric. Players may need the same mods installed. Check the pack’s loader first: Forge and NeoForge packs cannot be installed on Fabric. Existing servers using those loaders remain supported.",
   ],
 };
 export function Guide() {
@@ -75,7 +75,7 @@ export function Guide() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(SOFTWARE).map(([key, value]) => (
+                {NEW_SERVER_TYPES.map((key) => [key, SOFTWARE[key]]).map(([key, value]) => (
                   <tr key={key}>
                     <td>
                       <strong>{value.name}</strong>
@@ -94,9 +94,9 @@ export function Guide() {
             </Table>
           </div>
           <p className="field-help">
-            Paper-specific plugins may require Paper or Purpur and will not work on Spigot. Forge
-            mods do not automatically work on NeoForge. Availability and Minecraft versions are
-            shown when creating a server.
+            Choose Paper for plugins, Vanilla for the original game, or Fabric for Fabric mods.
+            Match addons to your chosen software. Only configured Minecraft versions appear when
+            creating a server.
           </p>
           <Link className="button primary" href="/servers/new">
             Choose a plan and create a server

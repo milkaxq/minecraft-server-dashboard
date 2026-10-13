@@ -76,3 +76,16 @@ func TestSoftwareCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestNewOfferingPreservesLegacyCapabilities(t *testing.T) {
+	for _, kind := range []string{"VANILLA", "PAPER", "FABRIC"} {
+		if !NewSoftware(kind) {
+			t.Fatal(kind)
+		}
+	}
+	for _, kind := range []string{"SPIGOT", "PURPUR", "FORGE", "NEOFORGE"} {
+		if NewSoftware(kind) || !ValidSoftware(kind) {
+			t.Fatal(kind)
+		}
+	}
+}

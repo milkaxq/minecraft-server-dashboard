@@ -16,3 +16,9 @@ func SupportsPlugins(kind string) bool {
 func SupportsMods(kind string) bool {
 	return kind == "FABRIC" || kind == "FORGE" || kind == "NEOFORGE"
 }
+
+// NewSoftware keeps the customer offering small without removing support for
+// existing servers or their provisioning retries.
+func NewSoftware(kind string) bool {
+	return kind == "VANILLA" || kind == "PAPER" || kind == "FABRIC"
+}

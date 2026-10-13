@@ -1,6 +1,6 @@
 "use client";
 import { Select } from "./select";
-import { SOFTWARE, softwareName, supportsMods } from "../lib/software";
+import { NEW_SERVER_TYPES, SOFTWARE, softwareName, supportsMods } from "../lib/software";
 import Link from "next/link";
 import { ContextHelp } from "./context-help";
 import { useState, useRef } from "react";
@@ -15,7 +15,10 @@ export function NewServer({ initialPlan = "" }) {
   const { api, session } = useAuth();
   const router = useRouter();
   const { data: plans, error: plansError, loading } = useResource("/plans");
-  const { data: options, error: optionsError } = useResource("/minecraft/options");
+  const { data: availableOptions, error: optionsError } = useResource("/minecraft/options");
+  const options = availableOptions?.filter((option) =>
+    NEW_SERVER_TYPES.includes(option.server_type),
+  );
   const [chosenPlan, setPlanID] = useState(initialPlan);
   const [chosenType, setType] = useState("PAPER");
   const [chosenVersion, setVersion] = useState("");

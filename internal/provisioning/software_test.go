@@ -20,9 +20,21 @@ func TestApprovedLoaderPinsAndProvisioningSnapshot(t *testing.T) {
 			if err := ConfigureSoftware(ctx, f.db, f.admin, template); err != nil {
 				t.Fatal(err)
 			}
-			s, err := (server.Service{DB: f.db}).Create(ctx, f.owner, server.CreateInput{PlanID: uuid.MustParse("10000000-0000-4000-8000-000000000001"), Name: "Modded world", MinecraftVersion: "1.21.1", ServerType: kind}, "test")
+			creationKind := kind
+			if !server.NewSoftware(kind) {
+				creationKind = "PAPER"
+			}
+			s, err := (server.Service{DB: f.db}).Create(ctx, f.owner, server.CreateInput{PlanID: uuid.MustParse("10000000-0000-4000-8000-000000000001"), Name: "Modded world", MinecraftVersion: "1.21.1", ServerType: creationKind}, "test")
 			if err != nil {
 				t.Fatal(err)
+			}
+			// Seed an existing legacy record: new purchases no longer offer these types,
+			// but pending provisioning and retries must still honor their templates.
+			if creationKind != kind {
+				if _, err = f.db.Exec(ctx, "UPDATE servers SET server_type=$2 WHERE id=$1", s.ID, kind); err != nil {
+					t.Fatal(err)
+				}
+				s.ServerType = kind
 			}
 			f.enqueue(t, s, jobs.Provision)
 			f.once(t)

@@ -1,3 +1,4 @@
+export const NEW_SERVER_TYPES = ["PAPER", "VANILLA", "FABRIC"];
 export const SOFTWARE = {
   VANILLA: {
     name: "Vanilla",

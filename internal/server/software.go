@@ -20,7 +20,9 @@ func (s Service) SoftwareOptions(ctx context.Context) ([]SoftwareOption, error) 
 		if err = rows.Scan(&v.ServerType, &v.MinecraftVersion, &v.LoaderVersion); err != nil {
 			return nil, err
 		}
-		result = append(result, v)
+		if NewSoftware(v.ServerType) {
+			result = append(result, v)
+		}
 	}
 	return result, rows.Err()
 }

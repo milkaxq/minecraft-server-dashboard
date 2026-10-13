@@ -53,7 +53,7 @@ installing addons and creating/restoring backups retain their existing permissio
 | Backup limits, completion, ownership and explicit install choice | Automated tests passed |
 | Feedback context validation, privacy and retry idempotency | Automated tests passed |
 | Frontend lint, formatting, production build | Passed |
-| Browser regression suite | 132 passed, including mobile history/storage, addon update review, notifications and player checklist |
+| Browser regression suite | 130 passed after simplifying new-server choices; mobile history/storage, addon update review, notifications and player checklist covered |
 | Real Panel backup/restore on a disposable stopped server | Passed: synthetic world marker backed up, changed and restored through Panel |
 | Current public Minecraft protocol/connectivity check | Passed: production Minecraft status responds from VPS, 0/10 players |
 | Real player joining and authenticating | Passed joining: owner reports SKlauncher, Forge profile, Java 26.3; voice connected and microphone test works (second-person audio still pending) |
@@ -157,3 +157,18 @@ disk usage against 10737418240 bytes quota. Storage reported partial=true rather
 than claiming a complete folder scan. Minecraft status responded with one player
 online and startup help found zero recognized issues. Production addon files,
 worlds and game power state were not modified by these checks.
+
+## Simplified new-server offering
+
+New creation offers only Vanilla, Paper and Fabric. Public software/version options
+filter the configured catalog to those types; creation enforces the same offering
+server-side. The frontend filters stale options defensively and the beginner Guide
+compares only those three choices. Paper remains the default. Legacy types stay
+recognized in management, client setup and provisioning so existing Spigot, Purpur,
+Forge and NeoForge records and pending provisioning jobs remain supported. No
+templates, eggs or customer files were deleted or disabled.
+
+Validation: 130 browser tests passed, including all offered choices and stale-option
+filtering. PostgreSQL race tests passed for server, billing and provisioning; the
+legacy provisioning fixture verifies existing loader snapshots still work. Go vet,
+staticcheck, import formatting, frontend lint, formatting and production build passed.

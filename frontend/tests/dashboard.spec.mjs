@@ -1154,20 +1154,23 @@ test("guide explains software ecosystems and custom code", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "New blocks, machines or a modpack" }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("NeoForge", { exact: true })).toBeVisible();
+  await expect(page.getByText("Fabric", { exact: true })).toBeVisible();
   await expect(page.getByText("/premium", { exact: true })).toBeVisible();
   await expect(page.getByText(/future visits skip the server password/)).toBeVisible();
   await page.getByText("Can I write my own plugin or mod?", { exact: true }).click();
   await expect(page.getByText(/build a .jar with the correct plugin descriptor/)).toBeVisible();
 });
-for (const type of ["VANILLA", "SPIGOT", "PURPUR", "FABRIC", "FORGE", "NEOFORGE"]) {
+for (const type of ["VANILLA", "PAPER", "FABRIC"]) {
   test(`purchase resolves ${type} from approved software options`, async ({ page }) => {
     const calls = await mockAPI(page);
     await login(page);
     await page.getByRole("link", { name: "New server", exact: true }).click();
     await selectValue(page, page.getByLabel("Server software"), type);
     await page.getByLabel("Server name", { exact: true }).fill("Custom world");
-    await expect(page.getByLabel("Minecraft version")).toHaveAttribute("data-value", "1.21.1");
+    await expect(page.getByLabel("Minecraft version")).toHaveAttribute(
+      "data-value",
+      type === "PAPER" ? "26.3" : "1.21.1",
+    );
     await page.getByRole("button", { name: "Continue to checkout" }).click();
     await expect(page).toHaveURL(/checkout/);
     expect(calls.find((c) => c.path === "/orders" && c.method === "POST").body.server_type).toBe(
@@ -3458,4 +3461,14 @@ test("player checklist download contains requirements and no automatic install c
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("minecraft-player-setup.txt");
   await expect(page.getByText("Forge can report missing", { exact: false })).toBeVisible();
+});
+
+test("new server selector hides legacy loaders even in stale options", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto("/servers/new");
+  await page.getByLabel("Server software").click();
+  await expect(page.getByRole("option")).toHaveCount(3);
+  for (const kind of ["SPIGOT", "PURPUR", "FORGE", "NEOFORGE"])
+    await expect(page.locator(`[role="option"][data-value="${kind}"]`)).toHaveCount(0);
 });
