@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
 import { useResource } from "./data";
 import { ErrorMessage } from "./ui";
 export function StartupCheck({ server, ready, powerState }) {
-  const [requested, setRequested] = useState(false);
-  const active = ready && (requested || powerState === "starting" || powerState === "offline");
-  const resource = useResource(active ? `/servers/${server.id}/startup-check` : null, 15000);
+  const active = ready;
+  const resource = useResource(
+    active ? `/servers/${server.id}/startup-check` : null,
+    powerState === "starting" ? 15000 : 60000,
+  );
   const issues = resource.error ? [] : resource.data?.issues || [];
   return (
     <details className="startup-check panel" open={issues.length ? true : undefined}>
@@ -27,7 +28,7 @@ export function StartupCheck({ server, ready, powerState }) {
                 "Startup could not be checked. Open Console for live output."}
             </p>
           ) : issues.length ? (
-            <ul>
+            <ul role="status" aria-label="Startup alerts">
               {issues.map((issue) => (
                 <li key={issue.code}>
                   <strong>{issue.title}</strong>
@@ -57,7 +58,6 @@ export function StartupCheck({ server, ready, powerState }) {
           className="button secondary"
           disabled={!ready || resource.loading}
           onClick={() => {
-            setRequested(true);
             resource.refresh();
           }}
         >

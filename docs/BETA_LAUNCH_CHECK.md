@@ -53,10 +53,10 @@ installing addons and creating/restoring backups retain their existing permissio
 | Backup limits, completion, ownership and explicit install choice | Automated tests passed |
 | Feedback context validation, privacy and retry idempotency | Automated tests passed |
 | Frontend lint, formatting, production build | Passed |
-| Browser regression suite | 128 passed, including mobile backup flow and contextual reports |
+| Browser regression suite | 132 passed, including mobile history/storage, addon update review, notifications and player checklist |
 | Real Panel backup/restore on a disposable stopped server | Passed: synthetic world marker backed up, changed and restored through Panel |
 | Current public Minecraft protocol/connectivity check | Passed: production Minecraft status responds from VPS, 0/10 players |
-| Real player joining and authenticating | Pending: owner has no Minecraft client available |
+| Real player joining and authenticating | Passed joining: owner reports SKlauncher, Forge profile, Java 26.3; voice connected and microphone test works (second-person audio still pending) |
 | Deployment and production readiness after migration | Passed: migration 016 applied; backend/frontend deployed; HTTPS readiness and authorized startup check pass |
 
 The existing production world has not been stopped, restored or modified for these
@@ -106,3 +106,40 @@ startup check returned checked=true with zero recognized issues.
    the new API, then verify readiness and authenticated feature requests.
 6. When a real client is available, match the Minecraft version and required client
    mods; test whitelist/login and voice chat with that player. Record actual results.
+
+## Customer beta improvements — follow-up
+
+- Server overview now has a member-authorized activity timeline (latest 50 events)
+  and an on-demand storage breakdown. Only safe labels, display names, outcomes
+  and timestamps leave the audit service. Commands, paths, metadata and email
+  addresses are not exposed. Storage uses Panel/Wings only, skips symbolic links,
+  scans at most 200 folders / 5000 entries / eight seconds, and labels partial
+  results. Live disk usage remains authoritative; backup bytes are separate.
+- Dashboard notifications poll durable lifecycle and automatic-backup audit events
+  for the last 30 days. Read state is persistent and individual to each user
+  (migration 017). Authorization is embedded in list/read queries. Direct failed
+  completed Panel backups and recognized startup errors are also shown on the
+  server overview. These are in-app alerts, not email or browser push.
+- Addon update checks compare up to 20 catalog-tracked projects against stable
+  releases for the saved server software/version. Required dependencies still
+  resolve through the existing catalog client. Reviews list old JARs to replace.
+  Only successful receipts for the exact Panel identity can identify replacement
+  candidates; old files are hash-verified twice before mutation. Modified uploads
+  are rejected, idempotency and backup choices remain mandatory, and the server
+  must be stopped. New files upload before obsolete filenames are removed. This
+  multi-file operation is not atomic: uncertain results need inspection and backup
+  recovery before starting. Untracked JARs are not automatically deleted.
+- Downloadable player setup is a plain-text checklist with project links and
+  unknown-file caveats. It does not silently install client mods, redistribute
+  JARs or promise a complete modpack. Forge handshakes may report incompatibility;
+  syncing mods requires a compatible launcher/helper already on the client.
+- Voice client help explains V, device selection, microphone testing, keybind
+  conflicts and microphone permissions. Owner reported successful real joining,
+  connected voice and a working microphone test; another person's audio has not
+  been tested.
+
+New API: GET /servers/:id/activity, GET /servers/:id/storage,
+GET /servers/:id/{plugins|mods}/catalog/updates, GET /notifications,
+POST /notifications/:id/read. Expensive scans/update checks have per-user rate
+limits and share the existing two-operation work bound. No game-world changes or
+server restarts are needed to deploy this dashboard release.

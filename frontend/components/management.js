@@ -958,12 +958,15 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     setLoaded({ filterKey, response: resource.data, items: results });
   }
   const [preview, setPreview] = useState(null);
+  const [checkUpdates, setCheckUpdates] = useState(false);
+  const updates = useResource(checkUpdates ? `/servers/${id}/${collection}/catalog/updates` : null);
   const attempt = useRef(null);
   const [safety, setSafety] = useState(null);
   const installed = useResource(`/servers/${id}/${collection}/catalog/installed`);
   const action = useAction(() => {
     onInstalled();
     installed.refresh();
+    if (checkUpdates) updates.refresh();
   });
   const [activeInstall, setActiveInstall] = useState(null);
   const progress = useResource(
@@ -1049,6 +1052,62 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
       )}
       <Feedback action={action} />
       <ErrorMessage error={resource.error || installed.error} />
+      <details className="addon-updates">
+        <summary>Updates for installed addons</summary>
+        <p className="field-help">
+          Checks up to 20 catalog-tracked projects per request, using stable releases for your
+          server version and software. Uploaded JARs need manual review. An author’s compatible
+          release can still change gameplay; read its release notes.
+        </p>
+        <button
+          className="button secondary"
+          disabled={updates.loading || action.busy}
+          onClick={() => {
+            setCheckUpdates(true);
+            updates.refresh();
+          }}
+        >
+          Check addon updates
+        </button>
+        <ErrorMessage error={updates.error} />
+        {updates.loading && <p>Checking installed releases…</p>}
+        {Array.isArray(updates.data) && (
+          <ul className="plugin-list">
+            {updates.data.map((item) => (
+              <li key={item.project}>
+                <div>
+                  <strong>{item.title}</strong>
+                  <small>
+                    {item.current || "Recorded release"} → {item.latest || "Not verified"}
+                  </small>
+                  <p>
+                    {
+                      {
+                        current: "Latest compatible release installed",
+                        available: "Compatible update available",
+                        unavailable: "No installable release could be verified",
+                        unchecked: "Not checked — check this project individually",
+                      }[item.status]
+                    }
+                  </p>
+                </div>
+                {item.status === "available" && (
+                  <button
+                    className="button secondary"
+                    disabled={action.busy}
+                    onClick={() => review(item.project)}
+                  >
+                    Review update
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {Array.isArray(updates.data) && updates.data.length === 0 && (
+          <p>No catalog-tracked addons found. Uploaded JARs are not checked automatically.</p>
+        )}
+      </details>
       <form onSubmit={browse} className="catalog-controls">
         <label>
           Search {collection}
@@ -1188,8 +1247,8 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
       {preview && (
         <Confirm
           confirmVariant="primary"
-          title="Review installation"
-          label="Install now"
+          title={preview.replaces?.length ? "Review addon update" : "Review installation"}
+          label={preview.replaces?.length ? "Update now" : "Install now"}
           busy={action.busy}
           confirmDisabled={!offline || !safety}
           onCancel={() => setPreview(null)}
@@ -1197,8 +1256,9 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
         >
           <p>
             For {preview.software} {preview.minecraft_version}. Required dependencies are included.
-            Existing files with different contents will not be overwritten. Remove older versions of
-            these projects first to avoid duplicates.
+            Catalog-tracked files listed below can be replaced after their contents are verified.
+            Untracked or modified files are not automatically removed. Stop the server and read the
+            project’s release notes first.
           </p>
           <ul>
             {preview.files.map((file) => (
@@ -1208,6 +1268,22 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
               </li>
             ))}
           </ul>
+          {preview.replaces?.length > 0 && (
+            <div className="notice">
+              <strong>Files to replace</strong>
+              <ul>
+                {preview.replaces.map((file) => (
+                  <li key={file.filename}>
+                    {file.filename} · {file.name}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Keep a backup to recover the original files if the update fails. File replacement is
+                not atomic; an interrupted update needs inspection before restarting.
+              </p>
+            </div>
+          )}
           <ChangeSafety
             key={`${preview.project}:${preview.revision}`}
             server={server}

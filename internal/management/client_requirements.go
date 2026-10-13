@@ -17,6 +17,8 @@ import (
 type ClientAddon struct {
 	Filename        string `json:"filename"`
 	Title           string `json:"title"`
+	VersionID       string `json:"version_id,omitempty"`
+	VersionName     string `json:"version_name,omitempty"`
 	ProjectID       string `json:"project_id,omitempty"`
 	ClientSide      string `json:"client_side"`
 	ConfigurationID string `json:"configuration_id,omitempty"`
@@ -97,6 +99,8 @@ func (s *Service) ClientRequirements(ctx context.Context, user, id uuid.UUID) (C
 		addon := ClientAddon{Filename: file.Name, Title: file.Name, ClientSide: "unknown"}
 		if meta, ok := known[file.Name]; ok && meta.Size == file.Size {
 			addon.ProjectID = meta.ProjectID
+			addon.VersionID = meta.VersionID
+			addon.VersionName = meta.Name
 			addon.ClientSide = catalog.ClientRequirement("", meta.ClientSide)
 			if meta.Title != "" {
 				addon.Title = meta.Title

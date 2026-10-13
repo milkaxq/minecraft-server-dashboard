@@ -1,5 +1,6 @@
 "use client";
 import { softwareName } from "../lib/software";
+import { ServerInsights } from "./server-insights";
 import { JoinServer } from "./join-server";
 import { FirstServerChecklist } from "./first-server";
 import { FeatureLinks } from "./management";
@@ -468,8 +469,14 @@ export function ServerDetail({ id, advanced = false }) {
               </p>
             )}
             {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
-              <StartupCheck key={id} server={server} ready={ready} powerState={displayPowerState} />
+              <StartupCheck
+                key={`startup:${id}`}
+                server={server}
+                ready={ready}
+                powerState={displayPowerState}
+              />
             )}
+            {!advanced && <ServerInsights key={`insights:${id}`} server={server} ready={ready} />}
             <FeatureLinks id={id} server={server} advanced={advanced} />
             {!advanced && (
               <FirstServerChecklist

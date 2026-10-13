@@ -19,9 +19,13 @@ import (
 )
 
 func (a *API) managementRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /servers/{id}/storage", a.protected(a.liveLimit("storage", 6, a.storage)))
+	mux.HandleFunc("GET /notifications", a.protected(a.liveLimit("notifications", 60, a.notifications)))
+	mux.HandleFunc("POST /notifications/{notification}/read", a.protected(a.liveLimit("notifications", 60, a.readNotification)))
 	mux.HandleFunc("POST /servers/{id}/plugins/check", a.protected(a.liveLimit("plugin-check", 6, a.checkPlugins)))
 	mux.HandleFunc("POST /servers/{id}/addons/simple-voice-chat/network", a.protected(a.liveLimit("addon-network", 10, a.prepareVoicePort)))
 	routes := map[string]http.HandlerFunc{
+		"GET /servers/{id}/activity":                         a.activity,
 		"GET /servers/{id}/startup-check":                    a.startupCheck,
 		"GET /servers/{id}/client-requirements":              a.clientRequirements,
 		"GET /servers/{id}/addons/simple-voice-chat":         a.voiceChat,
@@ -58,6 +62,10 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 		"GET /servers/{id}/backups/{backup}/download":        a.download(true),
 	}
 	for _, collection := range []string{"plugins", "mods"} {
+		mux.HandleFunc("GET /servers/{id}/"+collection+"/catalog/updates", a.protected(a.liveLimit("catalog-updates", 6, func(w http.ResponseWriter, r *http.Request) {
+			r.SetPathValue("collection", collection)
+			a.catalogUpdates(w, r)
+		})))
 		for suffix, handler := range map[string]http.HandlerFunc{"installed": a.catalogInstalled, "operations/{operation}": a.catalogProgress} {
 			mux.HandleFunc("GET /servers/{id}/"+collection+"/catalog/"+suffix, a.protected(a.liveLimit("management", 240, func(w http.ResponseWriter, r *http.Request) { r.SetPathValue("collection", collection); handler(w, r) })))
 		}

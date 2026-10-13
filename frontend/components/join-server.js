@@ -99,6 +99,21 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
       setCopying(false);
     }
   }
+  function downloadSetup() {
+    const text = joinInstructions(
+      server,
+      address,
+      powerState,
+      saved,
+      setup.error ? null : setup.data,
+    );
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "minecraft-player-setup.txt";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
   const problems = {
     session: {
       title: "Invalid session or failed to verify username",
@@ -155,6 +170,26 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
           {copying ? "Copying…" : "Copy join instructions"}
         </button>
       </div>
+      <details className="player-install-help">
+        <summary>Missing mods or automatic downloads?</summary>
+        <p>
+          Missing a required mod? Install it in your launcher’s profile before joining, then restart
+          Minecraft. Forge can report missing or incompatible mods, but it does not automatically
+          download and install the server’s mod list.
+        </p>
+        <p className="field-help">
+          An in-game download page needs a helper mod or launcher already installed on the player’s
+          computer. Resource-pack prompts do not install mods. This checklist contains project
+          links, not executable downloads, and unknown uploads must be checked with the host.
+        </p>
+        <button
+          className="button secondary"
+          disabled={!address || setup.loading}
+          onClick={downloadSetup}
+        >
+          Download player setup checklist
+        </button>
+      </details>
       {copied && <p role="status">Join instructions copied. Send them to your friends.</p>}
       {fallback && (
         <label className="clipboard-fallback">

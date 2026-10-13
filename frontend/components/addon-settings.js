@@ -367,9 +367,17 @@ function ClientSetup({ server }) {
         </li>
         <li>Add it to that profile’s mods folder, then relaunch Minecraft.</li>
         <li>
-          Join your server and press <kbd>V</kbd> to configure the microphone.
+          Join your server and press <kbd>V</kbd> to select microphone and speakers. Choose
+          push-to-talk or voice activation, then use Enable microphone testing. Check that your
+          microphone is not muted.
         </li>
       </ol>
+      <p className="field-help">
+        If V does nothing, check Minecraft’s key bindings. A disconnected plug icon means voice has
+        not connected; ask your host to check the voice connection separately. On macOS, allow
+        microphone access for the launcher or Java application in System Settings → Privacy &amp;
+        Security → Microphone.
+      </p>
       <a
         className="button primary"
         href={validVersion ? download : undefined}

@@ -1,4 +1,5 @@
 "use client";
+import { Notifications } from "./server-insights";
 import { Select } from "./select";
 import { BetaGettingStarted } from "./first-server";
 import { softwareName } from "../lib/software";
@@ -114,6 +115,7 @@ export function Dashboard({ serversOnly = false }) {
           )
         }
       />
+      {!serversOnly && <Notifications />}
       {!serversOnly && beta && servers && <BetaGettingStarted servers={servers} />}
       {!serversOnly && (
         <>

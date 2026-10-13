@@ -261,6 +261,23 @@ async function mockAPI(
         minecraft_version: server.minecraft_version,
         addons: [],
       });
+    if (path === "/notifications") return reply([]);
+    if (path === `/servers/${serverID}/activity`) return reply([]);
+    if (path === `/servers/${serverID}/storage`)
+      return reply({
+        used_bytes: 0,
+        limit_bytes: 10737418240,
+        backup_bytes: 0,
+        backup_count: 0,
+        backup_limit: 2,
+        categories: [],
+        partial: false,
+      });
+    if (
+      path === `/servers/${serverID}/plugins/catalog/updates` ||
+      path === `/servers/${serverID}/mods/catalog/updates`
+    )
+      return reply([]);
     if (path === "/plans") return reply([plan]);
     if (path === "/account") return reply(authUser);
 
@@ -3186,6 +3203,7 @@ test("startup help shows safe actionable issues and preserves the console fallba
     }),
   );
   await openServer(page);
+  await expect(page.locator(".startup-check")).toHaveCount(1);
   await expect(page.getByText("An addon is missing a dependency", { exact: true })).toBeVisible();
   await expect(
     page.locator(".startup-check").getByRole("link", { name: "Open Console →" }),
@@ -3302,4 +3320,142 @@ test("known backup preflight failures retry with a new key while uncertain write
   await install.click();
   await expect.poll(() => keys.length).toBe(3);
   expect(keys[2]).toBe(keys[1]);
+});
+
+test("server activity and bounded storage show safe results on mobile", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/activity`, (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "event",
+          actor: "Alex",
+          title: "Stop requested",
+          outcome: "SUCCEEDED",
+          created_at: "2026-10-13T12:00:00Z",
+        },
+      ],
+    }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/storage`, (route) =>
+    route.fulfill({
+      json: {
+        used_bytes: 950,
+        limit_bytes: 1000,
+        backup_bytes: 50,
+        backup_count: 1,
+        backup_limit: 2,
+        categories: [
+          { name: "Worlds", bytes: 900 },
+          { name: "Addons", bytes: 50 },
+        ],
+        partial: true,
+      },
+    }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}`);
+  await page.getByText("Activity history", { exact: true }).click();
+  await expect(page.getByText("Stop requested", { exact: true })).toBeVisible();
+  await page.getByText("Storage overview", { exact: true }).click();
+  await expect(page.getByText("Storage is nearly full.", { exact: false })).toBeVisible();
+  await expect(page.getByText("This scan is partial:", { exact: false })).toBeVisible();
+  await page
+    .locator(".server-insights-grid")
+    .screenshot({ path: testInfo.outputPath("server-insights-mobile.png") });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("notifications mark read through authenticated API and disappear", async ({ page }) => {
+  await mockAPI(page);
+  let read = false;
+  const notificationID = "60000000-0000-4000-8000-000000000001";
+  await page.route("http://localhost:8080/notifications", (route) =>
+    route.fulfill({
+      json: read
+        ? []
+        : [
+            {
+              id: notificationID,
+              server_id: serverID,
+              server_name: baseServer.name,
+              title: "Your server is ready",
+              created_at: "2026-10-13T12:00:00Z",
+            },
+          ],
+    }),
+  );
+  await page.route(`http://localhost:8080/notifications/${notificationID}/read`, (route) => {
+    expect(route.request().method()).toBe("POST");
+    read = true;
+    return route.fulfill({ json: { read: true } });
+  });
+  await login(page);
+  await page.goto("/dashboard");
+  await page.getByText("Notifications · 1 unread", { exact: true }).click();
+  await expect(page.getByText("Your server is ready", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Mark read" }).click();
+  await expect(page.getByText("You’re all caught up.")).toBeVisible();
+});
+
+test("addon update review names replaced files and requires backup choice", async ({ page }) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog/updates`, (route) =>
+    route.fulfill({
+      json: [
+        {
+          project: "update-project",
+          title: "Test addon",
+          current: "1.0",
+          latest: "2.0",
+          status: "available",
+        },
+      ],
+    }),
+  );
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/update-project`,
+    (route) =>
+      route.fulfill({
+        json: {
+          project: "update-project",
+          software: "PAPER",
+          minecraft_version: "1.21.1",
+          revision: "a".repeat(64),
+          files: [
+            { version_id: "v2", filename: "Test-2.jar", size: 100, client_side: "unsupported" },
+          ],
+          replaces: [{ filename: "Test-1.jar", name: "1.0" }],
+        },
+      }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Updates for installed addons", { exact: true }).click();
+  await page.getByRole("button", { name: "Check addon updates" }).click();
+  await page.getByRole("button", { name: "Review update" }).click();
+  const dialog = page.getByRole("dialog", { name: "Review addon update" });
+  await expect(dialog.getByText("Test-1.jar · 1.0")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Update now" })).toBeDisabled();
+});
+
+test("player checklist download contains requirements and no automatic install claim", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}`);
+  const help = page.getByText("Missing mods or automatic downloads?", { exact: true });
+  await help.click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download player setup checklist" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("minecraft-player-setup.txt");
+  await expect(page.getByText("Forge can report missing", { exact: false })).toBeVisible();
 });

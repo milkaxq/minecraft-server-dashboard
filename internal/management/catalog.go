@@ -25,6 +25,7 @@ type InstallPreview struct {
 	Software         string            `json:"software"`
 	MinecraftVersion string            `json:"minecraft_version"`
 	Files            []catalog.Package `json:"files"`
+	Replaces         []catalog.Package `json:"replaces"`
 	Revision         string            `json:"revision"`
 }
 
@@ -80,6 +81,10 @@ func (s *Service) resolvePreview(ctx context.Context, t Target, collection, proj
 		return InstallPreview{}, err
 	}
 	preview := InstallPreview{Project: project, Software: t.Type, MinecraftVersion: t.Version, Files: files}
+	preview.Replaces, err = s.catalogReplacements(ctx, t, collection, files)
+	if err != nil {
+		return InstallPreview{}, err
+	}
 	data, _ := json.Marshal(preview)
 	preview.Revision = revision(data)
 	return preview, nil
@@ -135,6 +140,13 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 		if preview.Revision != expected {
 			return nil, ErrChanged
 		}
+		replacing := map[string]bool{}
+		for _, old := range preview.Replaces {
+			if err = s.verifyCatalogFile(ctx, t, collection, old); err != nil {
+				return nil, err
+			}
+			replacing[old.Filename] = true
+		}
 		folder := "/" + collection
 		f, err := s.inspect(ctx, t, folder, true)
 		if err != nil {
@@ -157,7 +169,7 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 				if err != nil {
 					return nil, err
 				}
-				if existing != nil {
+				if existing != nil && !replacing[file.Filename] {
 					if !existing.IsFile || existing.Size != file.Size {
 						return nil, ErrChanged
 					}
@@ -211,6 +223,11 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 		if err = s.checkBackupDecision(ctx, t, safety); err != nil {
 			return nil, err
 		}
+		for _, old := range preview.Replaces {
+			if err = s.verifyCatalogFile(ctx, t, collection, old); err != nil {
+				return nil, err
+			}
+		}
 		if f == nil {
 			if err = s.Panel.CreateFolder(ctx, t.Identifier, "/", collection); err != nil {
 				return nil, err
@@ -224,6 +241,18 @@ func (s *Service) CatalogInstall(ctx context.Context, user, id, key uuid.UUID, c
 				return nil, control.ErrUnknown
 			}
 			completed++
+		}
+		newNames := map[string]bool{}
+		for _, file := range preview.Files {
+			newNames[file.Filename] = true
+		}
+		for _, old := range preview.Replaces {
+			if newNames[old.Filename] {
+				continue
+			}
+			if err = s.Panel.DeleteFile(ctx, t.Identifier, folder, old.Filename); err != nil {
+				return nil, control.ErrUnknown
+			}
 		}
 		return map[string]any{"collection": collection, "project": project, "identifier": t.Identifier, "phase": "Installed", "completed": units, "total": units, "status": "installed", "files": preview.Files, "restart_required": true}, nil
 	})
