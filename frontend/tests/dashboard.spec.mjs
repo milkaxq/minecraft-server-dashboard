@@ -3584,6 +3584,7 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   const panel = page.getByRole("region", { name: "Invite your friends" });
   await expect(panel.getByLabel("Include optional client features")).not.toBeChecked();
   await expect(panel.getByLabel("Include beta client builds")).not.toBeChecked();
+  await panel.getByText("Player download options", { exact: true }).click();
   await panel.getByLabel("Include beta client builds").check();
   await panel.getByRole("button", { name: "Prepare invite link" }).click();
   await expect
@@ -3699,3 +3700,47 @@ for (const width of [390, 1366])
       true,
     );
   });
+
+test("owner invite polling reflects changed server setup instead of a cached published result", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let current = { slug: playerSlug, expires_at: "2077-11-13T12:00:00Z", setup: playerSetup };
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) =>
+    route.fulfill({ json: current }),
+  );
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveClass(/primary/);
+  await expect(panel.getByLabel("Include optional client features")).not.toBeVisible();
+  await panel.getByRole("button", { name: "Refresh player setup" }).click();
+  await expect(panel.getByText("Player download ready", { exact: true })).toBeVisible();
+  current = {
+    ...current,
+    setup: {
+      ...playerSetup,
+      pack_ready: false,
+      pack_reason: "The server setup changed. Ask your host to refresh the player setup.",
+    },
+  };
+  await page.clock.fastForward(31000);
+  await expect(panel.getByText("Player setup needs a check", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Refresh player setup" })).toHaveClass(/primary/);
+  await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveClass(/secondary/);
+});
+test("expired owner invitation offers refresh and never copies its expired link", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) =>
+    route.fulfill({
+      json: { slug: playerSlug, expires_at: "2000-01-01T00:00:00Z", setup: playerSetup },
+    }),
+  );
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(panel.getByText("Invite link expired", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Refresh player setup" })).toBeEnabled();
+});

@@ -173,3 +173,22 @@ lint/build/format passed. A live 390px browser selected SKlauncher 4 and display
 the player-pack download and import instructions with the manual ZIP hidden;
 there was no horizontal overflow, and readiness returned 200. Actual import and
 Minecraft launch remain a client-side acceptance test.
+
+## Owner invitation card
+
+The owner card makes copying a ready invitation the primary action. Player
+download options and detailed inclusion notes are collapsed; changed choices,
+blocked setup and expiry bring refreshing back to the foreground. Expired invite
+URLs are not offered for copying or previewing.
+
+The card now reads the saved invitation every 30 seconds and after publishing or
+revoking. It does not retain a separate publish response that could mask later
+backend invalidation. During initial loading, copying/publishing is disabled.
+Public access rules and backend compatibility checks remain unchanged.
+
+Focused browser tests cover normal publication/revocation, changed setup polling,
+expired links, guest download paths, and SKlauncher 4 with its manual fallback.
+
+Owner-card validation: all 140 browser tests passed, including mobile/laptop
+visual checks, with frontend lint, production build and formatting checks passing.
+This is a dashboard improvement; no Minecraft client gameplay test was performed.

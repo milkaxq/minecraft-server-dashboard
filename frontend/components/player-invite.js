@@ -10,28 +10,38 @@ import { request } from "../lib/api";
 export function PlayerInvite({ server, ready }) {
   const { api } = useAuth();
   const permitted = server.permissions?.includes("members");
-  const resource = useResource(permitted ? `/servers/${server.id}/player-invite` : null);
+  const resource = useResource(permitted ? `/servers/${server.id}/player-invite` : null, 30000);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
   const [optionalChoice, setOptionalChoice] = useState(null);
   const [betaChoice, setBetaChoice] = useState(null);
   const [copied, setCopied] = useState(false);
-  const invite = result || resource.data;
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!permitted) return;
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, [permitted]);
+  const invite = resource.data;
   const includeOptional = optionalChoice ?? invite?.setup?.include_optional ?? false;
   const includeBeta = betaChoice ?? invite?.setup?.include_beta ?? false;
-  const href = invite?.slug ? `/join/${invite.slug}` : null;
+  const expired = invite && new Date(invite.expires_at).getTime() <= now;
+  const optionsChanged =
+    invite &&
+    (includeBeta !== !!invite.setup?.include_beta ||
+      includeOptional !== !!invite.setup?.include_optional);
+  const shareReady =
+    invite && !expired && !optionsChanged && !invite.setup?.pack_reason && !resource.error && ready;
+  const href = invite?.slug && !expired ? `/join/${invite.slug}` : null;
   async function publish() {
     setBusy(true);
     setError(null);
     setCopied(false);
     try {
-      setResult(
-        await api(`/servers/${server.id}/player-invite`, {
-          method: "POST",
-          body: { include_beta: includeBeta, include_optional: includeOptional },
-        }),
-      );
+      await api(`/servers/${server.id}/player-invite`, {
+        method: "POST",
+        body: { include_beta: includeBeta, include_optional: includeOptional },
+      });
       resource.refresh();
     } catch (e) {
       setError(e);
@@ -52,7 +62,6 @@ export function PlayerInvite({ server, ready }) {
     setError(null);
     try {
       await api(`/servers/${server.id}/player-invite`, { method: "DELETE" });
-      setResult(null);
       setCopied(false);
       resource.refresh();
     } catch (e) {
@@ -73,57 +82,78 @@ export function PlayerInvite({ server, ready }) {
         <Icon name="user" size={28} />
       </div>
       <ErrorMessage error={error || resource.error} />
+      {resource.loading && <p role="status">Checking your player invitation…</p>}
       {invite && (
         <div className="invite-preview">
           <strong>
-            {invite.setup?.pack_ready
-              ? "Player download ready"
-              : invite.setup?.pack_reason
-                ? "Player setup needs a check"
-                : "Player page ready"}
+            {expired
+              ? "Invite link expired"
+              : optionsChanged
+                ? "Save your player download choices"
+                : invite.setup?.pack_ready
+                  ? "Player download ready"
+                  : invite.setup?.pack_reason
+                    ? "Player setup needs a check"
+                    : "Player page ready"}
           </strong>
           <p>
-            {invite.setup?.pack_reason ||
-              (invite.setup?.pack_ready
-                ? "Their launcher can download the verified client mods."
-                : "Friends get the address, version and join steps.")}
+            {expired
+              ? "Refresh player setup to create a new working invite."
+              : optionsChanged
+                ? "Refresh player setup to apply these choices before sharing."
+                : invite.setup?.pack_reason ||
+                  (invite.setup?.pack_ready
+                    ? "Their launcher can download the verified client mods."
+                    : "Friends get the address, version and join steps.")}
           </p>
-          {invite.setup?.notes?.map((note) => (
-            <p key={note}>{note}</p>
-          ))}
+          {!!invite.setup?.notes?.length && (
+            <details>
+              <summary>What is included in the player setup?</summary>
+              {invite.setup.notes.map((note) => (
+                <p key={note}>{note}</p>
+              ))}
+            </details>
+          )}
           <small>
             Published {new Date(invite.setup?.published_at).toLocaleString()}. Refresh after
             changing addons or access settings.
           </small>
         </div>
       )}
-      <label className="checkbox-label">
-        <input
-          type="checkbox"
-          checked={includeBeta}
-          disabled={busy}
-          onChange={(event) => setBetaChoice(event.target.checked)}
-        />
-        Include beta client builds
-      </label>
-      <p>
-        Allows matching beta downloads from Modrinth. Version, loader and file checks still apply.
-      </p>
-      <label className="checkbox-label">
-        <input
-          type="checkbox"
-          checked={includeOptional}
-          disabled={busy}
-          onChange={(event) => setOptionalChoice(event.target.checked)}
-        />
-        Include optional client features
-      </label>
-      <p>
-        Off by default: friends download only required client mods and their dependencies. Server
-        plugins stay installed.
-      </p>
+      <details className="invite-options">
+        <summary>Player download options</summary>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={includeBeta}
+            disabled={busy}
+            onChange={(event) => setBetaChoice(event.target.checked)}
+          />
+          Include beta client builds
+        </label>
+        <p>
+          Allows matching beta downloads from Modrinth. Version, loader and file checks still apply.
+        </p>
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={includeOptional}
+            disabled={busy}
+            onChange={(event) => setOptionalChoice(event.target.checked)}
+          />
+          Include optional client features
+        </label>
+        <p>
+          Off by default: friends download only required client mods and their dependencies. Server
+          plugins stay installed.
+        </p>
+      </details>
       <div className="invite-actions">
-        <button className="button primary" disabled={!ready || busy} onClick={publish}>
+        <button
+          className={`button ${shareReady ? "secondary" : "primary"}`}
+          disabled={!ready || busy || resource.loading}
+          onClick={publish}
+        >
           {busy
             ? "Preparing player setup…"
             : invite
@@ -132,7 +162,11 @@ export function PlayerInvite({ server, ready }) {
         </button>
         {href && (
           <>
-            <button className="button secondary" disabled={busy} onClick={copy}>
+            <button
+              className={`button ${shareReady ? "primary" : "secondary"}`}
+              disabled={busy || !ready || resource.loading || !!resource.error}
+              onClick={copy}
+            >
               Copy invite link
             </button>
             <Link className="button secondary" href={href} target="_blank" rel="noreferrer">
