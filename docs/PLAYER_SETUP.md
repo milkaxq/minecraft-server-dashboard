@@ -78,3 +78,11 @@ client builds for Minecraft 26.3 are marked beta by Modrinth (Fabric, Forge, and
 NeoForge). The stable-only client resolver now reports that exact reason instead
 of describing the source as unverified. Private Beta's required voice client
 still prevents a stable-only automatic pack; its server plugins remain installed.
+
+Owners can now select **Include beta client builds** before publishing or
+refreshing an invitation. The API accepts `{ "include_beta": true }`; the choice
+is saved with the published snapshot and audit event. It only relaxes the release
+channel for client pack resolution: pinned release matching, loader/game checks,
+required dependencies, approved CDN URLs, and hashes still apply. Alpha builds
+remain excluded. Public setup notes disclose beta files. Server catalog install
+policy is unchanged.

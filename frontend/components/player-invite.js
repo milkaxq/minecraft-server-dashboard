@@ -13,15 +13,22 @@ export function PlayerInvite({ server, ready }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [betaChoice, setBetaChoice] = useState(null);
   const [copied, setCopied] = useState(false);
   const invite = result || resource.data;
+  const includeBeta = betaChoice ?? invite?.setup?.include_beta ?? false;
   const href = invite?.slug ? `/join/${invite.slug}` : null;
   async function publish() {
     setBusy(true);
     setError(null);
     setCopied(false);
     try {
-      setResult(await api(`/servers/${server.id}/player-invite`, { method: "POST" }));
+      setResult(
+        await api(`/servers/${server.id}/player-invite`, {
+          method: "POST",
+          body: { include_beta: includeBeta },
+        }),
+      );
       resource.refresh();
     } catch (e) {
       setError(e);
@@ -87,6 +94,18 @@ export function PlayerInvite({ server, ready }) {
           </small>
         </div>
       )}
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={includeBeta}
+          disabled={busy}
+          onChange={(event) => setBetaChoice(event.target.checked)}
+        />
+        Include beta client builds
+      </label>
+      <p>
+        Allows matching beta downloads from Modrinth. Version, loader and file checks still apply.
+      </p>
       <div className="invite-actions">
         <button className="button primary" disabled={!ready || busy} onClick={publish}>
           {busy

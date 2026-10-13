@@ -3566,16 +3566,26 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await mockAPI(page);
   let invite = null;
+  let publishedOptions = null;
   await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) => {
     const method = route.request().method();
-    if (method === "POST")
-      invite = { slug: playerSlug, expires_at: "2026-11-13T12:00:00Z", setup: playerSetup };
+    if (method === "POST") {
+      publishedOptions = route.request().postDataJSON();
+      invite = {
+        slug: playerSlug,
+        expires_at: "2026-11-13T12:00:00Z",
+        setup: { ...playerSetup, include_beta: publishedOptions.include_beta },
+      };
+    }
     if (method === "DELETE") invite = null;
     return route.fulfill({ json: method === "DELETE" ? { revoked: true } : invite });
   });
   await openServer(page);
   const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(panel.getByLabel("Include beta client builds")).not.toBeChecked();
+  await panel.getByLabel("Include beta client builds").check();
   await panel.getByRole("button", { name: "Prepare invite link" }).click();
+  await expect.poll(() => publishedOptions).toEqual({ include_beta: true });
   await expect(panel.getByText("Player download ready")).toBeVisible();
   await panel.getByRole("button", { name: "Copy invite link" }).click();
   await expect

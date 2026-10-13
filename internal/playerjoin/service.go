@@ -53,7 +53,12 @@ type PackFile struct {
 	Size        int64             `json:"fileSize"`
 	Environment map[string]string `json:"env"`
 }
+type PublishOptions struct {
+	IncludeBeta bool `json:"include_beta"`
+}
+
 type Snapshot struct {
+	IncludeBeta   bool       `json:"include_beta"`
 	Name          string     `json:"name"`
 	Address       string     `json:"address"`
 	Version       string     `json:"minecraft_version"`
@@ -119,7 +124,7 @@ func (s Service) fabricLoader(ctx context.Context, game string) (string, error) 
 	return "", ErrUnavailable
 }
 
-func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, error) {
+func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID, options PublishOptions) (Snapshot, error) {
 	domain := server.Service{DB: s.DB}
 	v, err := domain.Get(ctx, actor, id)
 	if err != nil {
@@ -136,7 +141,7 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 	if err != nil {
 		return Snapshot{}, err
 	}
-	out := Snapshot{Name: v.Name, Address: net.JoinHostPort(*v.Hostname, strconv.Itoa(*v.Port)), Version: v.MinecraftVersion, VerifiedLogin: settings.OnlineMode, Whitelist: settings.Whitelist, Addons: []Addon{}, PublishedAt: time.Now().UTC(), Files: []PackFile{}}
+	out := Snapshot{IncludeBeta: options.IncludeBeta, Name: v.Name, Address: net.JoinHostPort(*v.Hostname, strconv.Itoa(*v.Port)), Version: v.MinecraftVersion, VerifiedLogin: settings.OnlineMode, Whitelist: settings.Whitelist, Addons: []Addon{}, PublishedAt: time.Now().UTC(), Files: []PackFile{}}
 	roots := []management.ClientAddon{}
 	unverified := []string{}
 	for _, addon := range requirements.Addons {
@@ -188,7 +193,7 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 	filenames := map[string]bool{}
 	var total int64
 	for _, root := range roots {
-		files, e := s.client().ResolveClient(ctx, root.ProjectID, root.VersionID, out.Loader, out.Version)
+		files, e := s.client().ResolveClientWithBeta(ctx, root.ProjectID, root.VersionID, out.Loader, out.Version, options.IncludeBeta)
 		if e != nil {
 			required := root.ClientSide == "required" || root.VoiceRequired != nil && *root.VoiceRequired
 			if !required {
@@ -224,6 +229,9 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 				out.PackReason = "Some client files could not be verified."
 				return out, nil
 			}
+			if file.Beta {
+				out.Notes = append(out.Notes, root.Title+": this player pack includes a beta client build from Modrinth.")
+			}
 			total += file.Size
 			if len(out.Files) >= 40 || total > 128<<20 {
 				out.Files = nil
@@ -240,6 +248,10 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID) (Snapshot, e
 }
 
 func (s Service) Publish(ctx context.Context, actor, id uuid.UUID, rid string) (Link, error) {
+	return s.PublishWithOptions(ctx, actor, id, rid, PublishOptions{})
+}
+
+func (s Service) PublishWithOptions(ctx context.Context, actor, id uuid.UUID, rid string, options PublishOptions) (Link, error) {
 	domain := server.Service{DB: s.DB}
 	if err := domain.Authorize(ctx, actor, id, server.Members); err != nil {
 		return Link{}, err
@@ -267,7 +279,7 @@ func (s Service) Publish(ctx context.Context, actor, id uuid.UUID, rid string) (
 			_ = conn.Conn().Close(clean)
 		}
 	}()
-	snapshot, err := s.snapshot(ctx, actor, id)
+	snapshot, err := s.snapshot(ctx, actor, id, options)
 	if err != nil {
 		return Link{}, err
 	}
@@ -301,7 +313,7 @@ func (s Service) Publish(ctx context.Context, actor, id uuid.UUID, rid string) (
 	if err != nil {
 		return Link{}, err
 	}
-	if err = audit.Record(ctx, tx, actor, id, "players.invite.published", rid, map[string]any{"pack_ready": snapshot.PackReady, "addons": len(snapshot.Addons)}); err != nil {
+	if err = audit.Record(ctx, tx, actor, id, "players.invite.published", rid, map[string]any{"include_beta": options.IncludeBeta, "pack_ready": snapshot.PackReady, "addons": len(snapshot.Addons)}); err != nil {
 		return Link{}, err
 	}
 	return out, tx.Commit(ctx)

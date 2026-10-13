@@ -115,10 +115,11 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	clientChannel := "release"
 	c := catalog.New()
 	c.HTTP.Transport = transport(func(r *http.Request) (*http.Response, error) {
 		var result any
-		v := catalog.Version{ID: "client-release", ProjectID: "9eGKb6K1", Number: "fabric-2.6.24+1.21.1", Type: "release", Loaders: []string{"fabric"}, Games: []string{"1.21.1"}, Files: []catalog.File{{Filename: "client-voice.jar", URL: "https://cdn.modrinth.com/client.jar", Size: 10, Primary: true, Hashes: map[string]string{"sha512": strings.Repeat("a", 128), "sha1": strings.Repeat("b", 40)}}}}
+		v := catalog.Version{ID: "client-release", ProjectID: "9eGKb6K1", Number: "fabric-2.6.24+1.21.1", Type: clientChannel, Loaders: []string{"fabric"}, Games: []string{"1.21.1"}, Files: []catalog.File{{Filename: "client-voice.jar", URL: "https://cdn.modrinth.com/client.jar", Size: 10, Primary: true, Hashes: map[string]string{"sha512": strings.Repeat("a", 128), "sha1": strings.Repeat("b", 40)}}}}
 		switch r.URL.Path {
 		case "/v2/version/optional-version":
 			return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("{}"))}, nil
@@ -190,6 +191,17 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	if len(files) != 1 || files[0].(map[string]any)["path"] != "mods/client-voice.jar" {
 		t.Fatal(files)
 	}
+
+	clientChannel = "beta"
+	blockedBeta, err := s.Publish(ctx, owner, id, "test")
+	if err != nil || blockedBeta.Snapshot.PackReady || !strings.Contains(blockedBeta.Snapshot.PackReason, "marked beta") {
+		t.Fatal("default allowed beta", blockedBeta, err)
+	}
+	enabledBeta, err := s.PublishWithOptions(ctx, owner, id, "test", PublishOptions{IncludeBeta: true})
+	if err != nil || !enabledBeta.Snapshot.PackReady || !enabledBeta.Snapshot.IncludeBeta || !strings.Contains(strings.Join(enabledBeta.Snapshot.Notes, " "), "beta client build") {
+		t.Fatal("beta option was not published", enabledBeta, err)
+	}
+	clientChannel = "release"
 	settings, err := m.Settings(ctx, owner, id)
 	if err != nil {
 		t.Fatal(err)

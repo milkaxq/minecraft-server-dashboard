@@ -50,6 +50,21 @@ func TestClientPackPinsVoiceReleaseAndIncludesClientOnlyDependencies(t *testing.
 	if _, err = c.ResolveClient(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3"); !errors.Is(err, ErrPreviewClient) {
 		t.Fatal("beta client build did not explain the stable-only policy", err)
 	}
+
+	files, err = c.ResolveClientWithBeta(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3", true)
+	if err != nil || len(files) != 2 || !files[1].Beta {
+		t.Fatal("opted-in beta client failed", files, err)
+	}
+	clientVersion.Type = "alpha"
+	if _, err = c.ResolveClientWithBeta(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3", true); err == nil {
+		t.Fatal("beta option permitted alpha")
+	}
+	clientVersion.Type = "beta"
+	clientVersion.Games = []string{"1.21.1"}
+	if _, err = c.ResolveClientWithBeta(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3", true); err == nil {
+		t.Fatal("beta option bypassed game compatibility")
+	}
+	clientVersion.Games = []string{"26.3"}
 	clientVersion.Type = "release"
 	clientVersion.Number = "fabric-2.6.25+26.3"
 	if _, err = c.ResolveClient(context.Background(), "9eGKb6K1", "server-release", "fabric", "26.3"); err == nil {

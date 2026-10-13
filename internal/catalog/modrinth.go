@@ -66,6 +66,7 @@ type Version struct {
 	Dependencies []Dependency `json:"dependencies"`
 }
 type Package struct {
+	Beta       bool   `json:"beta,omitempty"`
 	ClientSide string `json:"client_side"`
 	Title      string `json:"title,omitempty"`
 	VersionID  string `json:"version_id"`
@@ -238,6 +239,10 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 }
 
 func (c *Client) resolve(ctx context.Context, project, pin, loader, game string, client bool) ([]Package, error) {
+	return c.resolveWithBeta(ctx, project, pin, loader, game, client, false)
+}
+
+func (c *Client) resolveWithBeta(ctx context.Context, project, pin, loader, game string, client, allowBeta bool) ([]Package, error) {
 	out := []Package{}
 	seen := map[string]bool{}
 	projects := map[string]string{}
@@ -257,7 +262,7 @@ func (c *Client) resolve(ctx context.Context, project, pin, loader, game string,
 		} else {
 			v, err = c.latest(ctx, project, loader, game)
 		}
-		if err != nil || !identifier.MatchString(v.ID) || !identifier.MatchString(v.ProjectID) || !Compatible(v, loader, game) {
+		if err != nil || !identifier.MatchString(v.ID) || !identifier.MatchString(v.ProjectID) || !clientCompatible(v, loader, game, client && allowBeta) {
 			return ErrUnavailable
 		}
 		if seen[v.ID] {
@@ -324,7 +329,7 @@ func (c *Client) resolve(ctx context.Context, project, pin, loader, game string,
 				return ErrUnavailable
 			}
 		}
-		out = append(out, Package{ClientSide: clientRequirementForVersion(v.Environment, meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], SHA1: f.Hashes["sha1"], URL: f.URL})
+		out = append(out, Package{Beta: v.Type == "beta", ClientSide: clientRequirementForVersion(v.Environment, meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], SHA1: f.Hashes["sha1"], URL: f.URL})
 		return nil
 	}
 	if err := visit(project, pin, 0); err != nil {

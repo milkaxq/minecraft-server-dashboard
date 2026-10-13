@@ -41,6 +41,13 @@ func (a *API) publishPlayerInvite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var options playerjoin.PublishOptions
+	if r.ContentLength != 0 {
+		if err := decode(w, r, &options); err != nil {
+			a.fail(w, r, err)
+			return
+		}
+	}
 	select {
 	case a.uploadSlots <- struct{}{}:
 		defer func() { <-a.uploadSlots }()
@@ -49,7 +56,7 @@ func (a *API) publishPlayerInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(time.Minute))
-	result, err := a.playerJoin().Publish(r.Context(), currentUser(r).ID, id, requestID(r))
+	result, err := a.playerJoin().PublishWithOptions(r.Context(), currentUser(r).ID, id, requestID(r), options)
 	if err != nil {
 		a.fail(w, r, err)
 		return
