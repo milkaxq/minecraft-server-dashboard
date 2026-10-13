@@ -3582,10 +3582,13 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   });
   await openServer(page);
   const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(panel.getByLabel("Include optional client features")).not.toBeChecked();
   await expect(panel.getByLabel("Include beta client builds")).not.toBeChecked();
   await panel.getByLabel("Include beta client builds").check();
   await panel.getByRole("button", { name: "Prepare invite link" }).click();
-  await expect.poll(() => publishedOptions).toEqual({ include_beta: true });
+  await expect
+    .poll(() => publishedOptions)
+    .toEqual({ include_beta: true, include_optional: false });
   await expect(panel.getByText("Player download ready")).toBeVisible();
   await panel.getByRole("button", { name: "Copy invite link" }).click();
   await expect
@@ -3641,10 +3644,14 @@ for (const width of [390, 1366])
         ],
       }),
     );
+    await page.route(`http://localhost:8080/join/${playerSlug}/bundle`, (route) =>
+      route.fulfill({ body: Buffer.from("test zip"), contentType: "application/zip" }),
+    );
     await page.goto(`/join/${playerSlug}`);
     const selector = page.getByRole("combobox", { name: "Your Minecraft launcher" });
     await selectValue(page, selector, "sklauncher");
     await expect(page.getByRole("heading", { name: "Set up SKlauncher" })).toBeVisible();
+    await page.getByText("Individual downloads", { exact: true }).click();
     await expect(
       page.getByRole("link", { name: "Download voicechat-fabric.jar ↗" }),
     ).toHaveAttribute("href", "https://cdn.modrinth.com/voicechat.jar");
@@ -3652,6 +3659,15 @@ for (const width of [390, 1366])
     await expect(
       page.getByText("Modrinth App requires a Microsoft account that owns Minecraft Java Edition."),
     ).toHaveCount(0);
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download client mods ZIP" }).click();
+    expect((await downloadPromise).suggestedFilename()).toBe("blockyard-client-mods.zip");
+    await expect(
+      page.getByText(
+        "ZIP downloaded. Extract it and copy the mods folder into your installation.",
+        { exact: true },
+      ),
+    ).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: "Set up SKlauncher" })).toBeVisible();
     await selectValue(page, selector, "prism");

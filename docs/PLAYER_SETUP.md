@@ -119,3 +119,23 @@ tests for playerjoin and HTTP API, vet/staticcheck, frontend lint/build/format
 passed. A live mobile browser selected SKlauncher and displayed all five pinned
 Private Beta client downloads with no horizontal overflow; readiness returned 200.
 No launcher was installed or Minecraft client launched during these checks.
+
+## Required-only player packs and manual ZIP
+
+New and refreshed invitations omit optional client roots by default. Required
+mods still resolve their required dependencies. Simple Voice Chat follows its
+actual `Require voice chat` setting; optional voice downloads are included only
+when the owner enables **Include optional client features**. This only changes
+player downloads and leaves server plugins/mods installed.
+
+Manual launchers now offer **Download client mods ZIP**. `GET /join/{slug}/bundle`
+fetches the published files from the approved Modrinth CDN, checks file sizes and
+SHA-512/SHA-1, then builds `mods/*.jar`, `README.txt`, and `client-files.json`.
+Paths, file count and total size are bounded. Bundle work shares the two transfer
+slots, has a separate six-per-minute public budget and a 90-second timeout.
+Expiry/revocation/setup validity is checked again after file downloads. Individual
+CDN downloads remain available under a collapsed section.
+
+The ZIP does not install the Minecraft loader or launch the game. Extract it and
+copy the `mods` folder into a separate installation using the displayed version
+and loader. Do not put the ZIP itself in the mods folder.

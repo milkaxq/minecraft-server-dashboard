@@ -63,6 +63,8 @@ export function LauncherSetup({ launcher, setup, slug }) {
   const manual = ["sklauncher", "official", "other"].includes(launcher);
   const [files, setFiles] = useState(null);
   const [error, setError] = useState(null);
+  const [bundleBusy, setBundleBusy] = useState(false);
+  const [bundleDownloaded, setBundleDownloaded] = useState(false);
   useEffect(() => {
     if (!manual) return;
     const controller = new AbortController();
@@ -78,6 +80,26 @@ export function LauncherSetup({ launcher, setup, slug }) {
       });
     return () => controller.abort();
   }, [manual, slug]);
+
+  async function downloadBundle() {
+    setBundleBusy(true);
+    setError(null);
+    setBundleDownloaded(false);
+    try {
+      const blob = await request(`/join/${encodeURIComponent(slug)}/bundle`, { download: true });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "blockyard-client-mods.zip";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setBundleDownloaded(true);
+    } catch (error) {
+      setError(error);
+    } finally {
+      setBundleBusy(false);
+    }
+  }
   if (launcher === "modrinth")
     return (
       <>
@@ -121,6 +143,19 @@ export function LauncherSetup({ launcher, setup, slug }) {
   return (
     <>
       <h2>{launcher === "sklauncher" ? "Set up SKlauncher" : "Set up your installation"}</h2>
+      <button className="button primary wide" disabled={bundleBusy} onClick={downloadBundle}>
+        {bundleBusy ? "Preparing verified ZIP…" : "Download client mods ZIP"}
+      </button>
+      {bundleBusy && (
+        <p role="status">
+          Downloading and checking the published client files. This can take a moment.
+        </p>
+      )}
+      {bundleDownloaded && (
+        <p role="status">
+          ZIP downloaded. Extract it and copy the mods folder into your installation.
+        </p>
+      )}
       <ol className="launcher-install-steps">
         <li>
           Create a separate installation for <strong>Minecraft {setup.minecraft_version}</strong>{" "}
@@ -136,8 +171,8 @@ export function LauncherSetup({ launcher, setup, slug }) {
             : "Open that installation’s game directory. Open or create its mods folder."}
         </li>
         <li>
-          Download every file below and put the JARs in that mods folder. Use this installation’s
-          folder to keep other profiles separate.
+          Extract the downloaded ZIP, then copy its mods folder into the installation directory. Use
+          this installation’s folder to keep other profiles separate.
         </li>
         <li>Launch this installation, then join using the server address.</li>
       </ol>
@@ -150,16 +185,19 @@ export function LauncherSetup({ launcher, setup, slug }) {
       ) : !files ? (
         <p role="status">Getting matching client downloads…</p>
       ) : (
-        <ul className="launcher-download-list">
-          {files.map((file) => (
-            <li key={file.path}>
-              <a href={file.downloads[0]} target="_blank" rel="noreferrer">
-                Download {file.path.split("/").pop()} ↗
-              </a>
-              <small>{(file.fileSize / 1048576).toFixed(1)} MB</small>
-            </li>
-          ))}
-        </ul>
+        <details>
+          <summary>Individual downloads</summary>
+          <ul className="launcher-download-list">
+            {files.map((file) => (
+              <li key={file.path}>
+                <a href={file.downloads[0]} target="_blank" rel="noreferrer">
+                  Download {file.path.split("/").pop()} ↗
+                </a>
+                <small>{(file.fileSize / 1048576).toFixed(1)} MB</small>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {launcher === "sklauncher" && (
         <>

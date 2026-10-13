@@ -54,24 +54,26 @@ type PackFile struct {
 	Environment map[string]string `json:"env"`
 }
 type PublishOptions struct {
-	IncludeBeta bool `json:"include_beta"`
+	IncludeBeta     bool `json:"include_beta"`
+	IncludeOptional bool `json:"include_optional"`
 }
 
 type Snapshot struct {
-	IncludeBeta   bool       `json:"include_beta"`
-	Name          string     `json:"name"`
-	Address       string     `json:"address"`
-	Version       string     `json:"minecraft_version"`
-	Loader        string     `json:"loader,omitempty"`
-	LoaderVersion string     `json:"loader_version,omitempty"`
-	VerifiedLogin bool       `json:"verified_login"`
-	Whitelist     bool       `json:"whitelist"`
-	Addons        []Addon    `json:"addons"`
-	PackReady     bool       `json:"pack_ready"`
-	PackReason    string     `json:"pack_reason,omitempty"`
-	Notes         []string   `json:"notes,omitempty"`
-	Files         []PackFile `json:"-"`
-	PublishedAt   time.Time  `json:"published_at"`
+	IncludeOptional bool       `json:"include_optional"`
+	IncludeBeta     bool       `json:"include_beta"`
+	Name            string     `json:"name"`
+	Address         string     `json:"address"`
+	Version         string     `json:"minecraft_version"`
+	Loader          string     `json:"loader,omitempty"`
+	LoaderVersion   string     `json:"loader_version,omitempty"`
+	VerifiedLogin   bool       `json:"verified_login"`
+	Whitelist       bool       `json:"whitelist"`
+	Addons          []Addon    `json:"addons"`
+	PackReady       bool       `json:"pack_ready"`
+	PackReason      string     `json:"pack_reason,omitempty"`
+	Notes           []string   `json:"notes,omitempty"`
+	Files           []PackFile `json:"-"`
+	PublishedAt     time.Time  `json:"published_at"`
 }
 type storedSnapshot struct {
 	Snapshot
@@ -141,7 +143,7 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID, options Publ
 	if err != nil {
 		return Snapshot{}, err
 	}
-	out := Snapshot{IncludeBeta: options.IncludeBeta, Name: v.Name, Address: net.JoinHostPort(*v.Hostname, strconv.Itoa(*v.Port)), Version: v.MinecraftVersion, VerifiedLogin: settings.OnlineMode, Whitelist: settings.Whitelist, Addons: []Addon{}, PublishedAt: time.Now().UTC(), Files: []PackFile{}}
+	out := Snapshot{IncludeOptional: options.IncludeOptional, IncludeBeta: options.IncludeBeta, Name: v.Name, Address: net.JoinHostPort(*v.Hostname, strconv.Itoa(*v.Port)), Version: v.MinecraftVersion, VerifiedLogin: settings.OnlineMode, Whitelist: settings.Whitelist, Addons: []Addon{}, PublishedAt: time.Now().UTC(), Files: []PackFile{}}
 	roots := []management.ClientAddon{}
 	unverified := []string{}
 	for _, addon := range requirements.Addons {
@@ -149,6 +151,10 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID, options Publ
 			if addon.VoiceRequired == nil {
 				out.PackReason = "Simple Voice Chat settings could not be read. Refresh the setup after checking its configuration."
 				return out, nil
+			}
+			if !*addon.VoiceRequired && !options.IncludeOptional {
+				out.Notes = append(out.Notes, "Simple Voice Chat is optional on this server and is not included in the required player download.")
+				continue
 			}
 			out.Addons = append(out.Addons, Addon{Title: "Simple Voice Chat", Project: addon.ProjectID, Required: addon.VoiceRequired != nil && *addon.VoiceRequired})
 			roots = append(roots, addon)
@@ -158,6 +164,10 @@ func (s Service) snapshot(ctx context.Context, actor, id uuid.UUID, options Publ
 		case "unsupported":
 			continue
 		case "required", "optional":
+			if addon.ClientSide == "optional" && !options.IncludeOptional {
+				out.Notes = append(out.Notes, addon.Title+": optional client features are not included in the required player download. The server addon stays installed.")
+				continue
+			}
 			out.Addons = append(out.Addons, Addon{Title: addon.Title, Project: addon.ProjectID, Required: addon.ClientSide == "required"})
 			roots = append(roots, addon)
 		default:
@@ -313,7 +323,7 @@ func (s Service) PublishWithOptions(ctx context.Context, actor, id uuid.UUID, ri
 	if err != nil {
 		return Link{}, err
 	}
-	if err = audit.Record(ctx, tx, actor, id, "players.invite.published", rid, map[string]any{"include_beta": options.IncludeBeta, "pack_ready": snapshot.PackReady, "addons": len(snapshot.Addons)}); err != nil {
+	if err = audit.Record(ctx, tx, actor, id, "players.invite.published", rid, map[string]any{"include_optional": options.IncludeOptional, "include_beta": options.IncludeBeta, "pack_ready": snapshot.PackReady, "addons": len(snapshot.Addons)}); err != nil {
 		return Link{}, err
 	}
 	return out, tx.Commit(ctx)

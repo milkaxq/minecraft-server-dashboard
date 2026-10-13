@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
@@ -115,13 +116,26 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	clientBytes := []byte("client jar")
+	clientHash := sha512.Sum512(clientBytes)
+	clientSHA1 := sha1.Sum(clientBytes)
+	optionalLookups := 0
+	expireDuringDownload := false
 	clientChannel := "release"
 	c := catalog.New()
 	c.HTTP.Transport = transport(func(r *http.Request) (*http.Response, error) {
 		var result any
-		v := catalog.Version{ID: "client-release", ProjectID: "9eGKb6K1", Number: "fabric-2.6.24+1.21.1", Type: clientChannel, Loaders: []string{"fabric"}, Games: []string{"1.21.1"}, Files: []catalog.File{{Filename: "client-voice.jar", URL: "https://cdn.modrinth.com/client.jar", Size: 10, Primary: true, Hashes: map[string]string{"sha512": strings.Repeat("a", 128), "sha1": strings.Repeat("b", 40)}}}}
+		v := catalog.Version{ID: "client-release", ProjectID: "9eGKb6K1", Number: "fabric-2.6.24+1.21.1", Type: clientChannel, Loaders: []string{"fabric"}, Games: []string{"1.21.1"}, Files: []catalog.File{{Filename: "client-voice.jar", URL: "https://cdn.modrinth.com/client.jar", Size: 10, Primary: true, Hashes: map[string]string{"sha512": hex.EncodeToString(clientHash[:]), "sha1": hex.EncodeToString(clientSHA1[:])}}}}
 		switch r.URL.Path {
+		case "/client.jar":
+			if expireDuringDownload {
+				if _, err := db.Exec(ctx, "UPDATE player_invites SET expires_at=now()-interval '1 second' WHERE server_id=$1", id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(clientBytes))}, nil
 		case "/v2/version/optional-version":
+			optionalLookups++
 			return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("{}"))}, nil
 		case "/v2/version/server-release":
 			v.ID = "server-release"
@@ -157,6 +171,9 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 
 	if len(invite.Snapshot.Notes) != 2 || !strings.Contains(strings.Join(invite.Snapshot.Notes, " "), "VeinMiner") || len(invite.Snapshot.Addons) != 1 {
 		t.Fatal("unknown catalog metadata or unavailable optional plugin blocked or polluted pack", invite.Snapshot)
+	}
+	if optionalLookups != 0 {
+		t.Fatal("default pack resolved optional plugins")
 	}
 	public, err := s.Public(ctx, invite.Slug)
 	if err != nil {
@@ -197,6 +214,10 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 		t.Fatal(files)
 	}
 
+	optionalInvite, err := s.PublishWithOptions(ctx, owner, id, "test", PublishOptions{IncludeOptional: true})
+	if err != nil || !optionalInvite.Snapshot.IncludeOptional || optionalLookups != 1 {
+		t.Fatal("optional feature choice not honored", optionalInvite, err)
+	}
 	clientChannel = "beta"
 	blockedBeta, err := s.Publish(ctx, owner, id, "test")
 	if err != nil || blockedBeta.Snapshot.PackReady || !strings.Contains(blockedBeta.Snapshot.PackReason, "marked beta") {
@@ -207,6 +228,46 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 		t.Fatal("beta option was not published", enabledBeta, err)
 	}
 	clientChannel = "release"
+
+	bundle, err := s.Bundle(ctx, invite.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := zip.NewReader(bytes.NewReader(bundle), int64(len(bundle)))
+	if err != nil || len(archive.File) != 3 {
+		t.Fatal("bad client bundle", err)
+	}
+	for _, f := range archive.File {
+		r, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if f.Name == "mods/client-voice.jar" && !bytes.Equal(b, clientBytes) {
+			t.Fatal("wrong bundled jar")
+		}
+		if f.Name == "README.txt" && !strings.Contains(string(b), "play.example.com:25565") {
+			t.Fatal("missing join instructions")
+		}
+	}
+	expireDuringDownload = true
+	if _, err = s.Bundle(ctx, invite.Slug); !errors.Is(err, server.ErrNotFound) {
+		t.Fatal("expired invite served during bundle construction", err)
+	}
+	expireDuringDownload = false
+	if _, err = db.Exec(ctx, "UPDATE player_invites SET expires_at=now()+interval '30 days' WHERE server_id=$1", id); err != nil {
+		t.Fatal(err)
+	}
+	originalBytes := bytes.Clone(clientBytes)
+	clientBytes = []byte("wrong file")
+	if _, err = s.Bundle(ctx, invite.Slug); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("bad download checksum trusted", err)
+	}
+	clientBytes = originalBytes
 	settings, err := m.Settings(ctx, owner, id)
 	if err != nil {
 		t.Fatal(err)
@@ -220,6 +281,9 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	}
 	if _, err = s.ClientDownloads(ctx, invite.Slug); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("invalidated manual downloads remain available", err)
+	}
+	if _, err = s.Bundle(ctx, invite.Slug); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("invalidated bundle remains downloadable", err)
 	}
 	if err = s.Revoke(ctx, other, id, "test"); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal(err)
@@ -259,6 +323,9 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 		t.Fatal("manual upload incorrectly treated as catalog addon", blocked, err)
 	}
 	delete(p.files, "/plugins/uploaded.jar")
+	if _, err = s.Bundle(ctx, invite.Slug); !errors.Is(err, server.ErrNotFound) {
+		t.Fatal("revoked bundle remains downloadable", err)
+	}
 	if _, err = s.ClientDownloads(ctx, invite.Slug); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal("revoked manual downloads remain available", err)
 	}

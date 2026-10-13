@@ -14,9 +14,11 @@ export function PlayerInvite({ server, ready }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [optionalChoice, setOptionalChoice] = useState(null);
   const [betaChoice, setBetaChoice] = useState(null);
   const [copied, setCopied] = useState(false);
   const invite = result || resource.data;
+  const includeOptional = optionalChoice ?? invite?.setup?.include_optional ?? false;
   const includeBeta = betaChoice ?? invite?.setup?.include_beta ?? false;
   const href = invite?.slug ? `/join/${invite.slug}` : null;
   async function publish() {
@@ -27,7 +29,7 @@ export function PlayerInvite({ server, ready }) {
       setResult(
         await api(`/servers/${server.id}/player-invite`, {
           method: "POST",
-          body: { include_beta: includeBeta },
+          body: { include_beta: includeBeta, include_optional: includeOptional },
         }),
       );
       resource.refresh();
@@ -106,6 +108,19 @@ export function PlayerInvite({ server, ready }) {
       </label>
       <p>
         Allows matching beta downloads from Modrinth. Version, loader and file checks still apply.
+      </p>
+      <label className="checkbox-label">
+        <input
+          type="checkbox"
+          checked={includeOptional}
+          disabled={busy}
+          onChange={(event) => setOptionalChoice(event.target.checked)}
+        />
+        Include optional client features
+      </label>
+      <p>
+        Off by default: friends download only required client mods and their dependencies. Server
+        plugins stay installed.
       </p>
       <div className="invite-actions">
         <button className="button primary" disabled={!ready || busy} onClick={publish}>

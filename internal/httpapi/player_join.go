@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -22,6 +23,7 @@ func (a *API) playerJoinRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /servers/{id}/player-invite", a.protected(a.liveLimit("player-invite", 10, a.publishPlayerInvite)))
 	mux.HandleFunc("DELETE /servers/{id}/player-invite", a.protected(a.liveLimit("player-invite", 10, a.revokePlayerInvite)))
 	mux.HandleFunc("GET /join/{slug}", a.publicPlayerJoin("setup"))
+	mux.HandleFunc("GET /join/{slug}/bundle", a.publicPlayerJoin("bundle"))
 	mux.HandleFunc("GET /join/{slug}/files", a.publicPlayerJoin("files"))
 	mux.HandleFunc("GET /join/{slug}/pack", a.publicPlayerJoin("pack"))
 }
@@ -88,6 +90,36 @@ func (a *API) publicPlayerJoin(kind string) http.HandlerFunc {
 			return
 		}
 
+		if kind == "bundle" {
+			if err := a.Auth.RateLimitWindow(r.Context(), "public-player-bundle", 6, time.Minute); err != nil {
+				w.Header().Set("Retry-After", "60")
+				a.fail(w, r, err)
+				return
+			}
+			select {
+			case a.uploadSlots <- struct{}{}:
+				defer func() { <-a.uploadSlots }()
+			default:
+				a.fail(w, r, auth.ErrRateLimited)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+			defer cancel()
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(2 * time.Minute))
+			data, err := a.playerJoin().Bundle(ctx, r.PathValue("slug"))
+			if err != nil {
+				if errors.Is(err, playerjoin.ErrUnavailable) {
+					err = control.ErrUnavailable
+				}
+				a.fail(w, r, err)
+				return
+			}
+			w.Header().Set("Content-Type", "application/zip")
+			w.Header().Set("Content-Disposition", `attachment; filename="blockyard-client-mods.zip"`)
+			w.WriteHeader(200)
+			_, _ = w.Write(data)
+			return
+		}
 		if kind == "files" {
 			files, err := a.playerJoin().ClientDownloads(r.Context(), r.PathValue("slug"))
 			if err != nil {
