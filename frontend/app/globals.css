@@ -4738,16 +4738,24 @@ input {
 .change-safety p {
   line-height: 1.65;
 }
-.change-safety .checkbox-label {
+.change-safety .checkbox-label,
+.invite-friends .checkbox-label {
   margin-top: 18px;
   display: flex;
   gap: 10px;
   align-items: flex-start;
 }
-.change-safety .checkbox-label input {
+.change-safety .checkbox-label input,
+.invite-friends .checkbox-label input {
   width: auto;
   flex-shrink: 0;
   margin-top: 4px;
+}
+.invite-friends .checkbox-label input {
+  min-height: 20px;
+  height: 20px;
+  width: 20px;
+  accent-color: var(--green);
 }
 .startup-check {
   margin: 16px 0;
