@@ -4601,3 +4601,58 @@ input {
     justify-content: center;
   }
 }
+
+.client-requirement-tag {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 5px 9px;
+  margin-top: 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #43564a;
+  background: #eef3ee;
+}
+.client-requirement-required {
+  color: #8d321f;
+  background: #fff0e9;
+}
+.client-requirement-optional {
+  color: #30558b;
+  background: #edf3ff;
+}
+.client-requirement-unknown {
+  color: #765918;
+  background: #fff8df;
+}
+.client-setup-notice {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.client-setup-notice > strong {
+  font-size: 17px;
+}
+.client-setup-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+.client-setup-list li {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.client-setup-list li > strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.client-setup-list .text-link {
+  display: block;
+  margin-top: 8px;
+}
+.plugin-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

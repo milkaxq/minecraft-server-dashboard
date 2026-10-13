@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ClientRequirementsNotice } from "./client-compatibility";
 import { useResource } from "./data";
 import { softwareName, supportsMods } from "../lib/software";
 
@@ -26,13 +27,14 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
                 : "Finish setup and start your server before connecting."}
         </p>
       </div>
+      <ClientRequirementsNotice server={server} ready={ready} />
       <ol className="join-steps">
         <li>
           <strong>Open Minecraft Java {server.minecraft_version}</strong>
           <p>
             {supportsMods(server.server_type)
-              ? `Install ${softwareName(server.server_type)}${server.loader_version ? ` ${server.loader_version}` : ""} and the mods required by this server on your computer. Match the server’s Minecraft version.`
-              : "Use the matching Java Edition version. Server plugins do not need to be installed on your computer."}
+              ? `For required client mods, install ${softwareName(server.server_type)}${server.loader_version ? ` ${server.loader_version}` : ""} and those mods on your computer. Match the server’s Minecraft version and check each addon’s instructions.`
+              : "Use the matching Java Edition version. Most plugins work with vanilla; check the player setup below for addons that need a client mod."}
           </p>
         </li>
         <li>

@@ -59,7 +59,7 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 				}
 				content, _ = json.Marshal([]catalog.Version{v})
 			case "/v2/project/project":
-				content = []byte(`{"server_side":"required"}`)
+				content = []byte(`{"server_side":"required","client_side":"required","title":"Test addon"}`)
 			default:
 				t.Fatal("unexpected catalog endpoint", r.URL)
 			}
@@ -116,6 +116,10 @@ func TestCatalogOwnershipCompatibilityInstallAndReplay(t *testing.T) {
 	}
 	if _, err = f.s.CatalogProgress(ctx, f.admin, f.id, key, "plugins"); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal("another actor read private operation", err)
+	}
+	requirements, err := f.s.ClientRequirements(ctx, f.mod, f.id)
+	if err != nil || len(requirements.Addons) != 1 || requirements.Addons[0].ClientSide != "required" || requirements.Addons[0].Title != "Test addon" {
+		t.Fatal("installation lost client metadata", requirements, err)
 	}
 	installed, err := f.s.CatalogInstalled(ctx, f.owner, f.id, "plugins")
 	if err != nil || len(installed.(map[string]any)["projects"].([]string)) != 1 {

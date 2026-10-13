@@ -99,3 +99,16 @@ func (a *API) voiceNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, v)
 }
+
+func (a *API) clientRequirements(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.managementID(w, r)
+	if !ok {
+		return
+	}
+	v, err := a.Management.ClientRequirements(r.Context(), currentUser(r).ID, id)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, http.StatusOK, v)
+}

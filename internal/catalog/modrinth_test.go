@@ -221,3 +221,20 @@ func TestResolveNoMatchingReleaseReturnsPublicUnavailableError(t *testing.T) {
 		t.Fatalf("incompatible release error changed: %v", err)
 	}
 }
+
+func TestClientRequirementMetadata(t *testing.T) {
+	for _, tc := range []struct{ environment, legacy, want string }{
+		{"client_and_server", "unsupported", "required"},
+		{"server_only", "required", "unsupported"},
+		{"server_only_client_optional", "required", "optional"},
+		{"client_or_server", "required", "optional"},
+		{"", "required", "required"},
+		{"unknown", "optional", "optional"},
+		{"", "", "unknown"},
+		{"future_environment", "unsupported", "unknown"},
+	} {
+		if got := ClientRequirement(tc.environment, tc.legacy); got != tc.want {
+			t.Errorf("%q/%q: got %q, want %q", tc.environment, tc.legacy, got, tc.want)
+		}
+	}
+}

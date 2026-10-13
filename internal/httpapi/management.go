@@ -21,6 +21,7 @@ import (
 func (a *API) managementRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /servers/{id}/addons/simple-voice-chat/network", a.protected(a.liveLimit("addon-network", 10, a.prepareVoicePort)))
 	routes := map[string]http.HandlerFunc{
+		"GET /servers/{id}/client-requirements":              a.clientRequirements,
 		"GET /servers/{id}/addons/simple-voice-chat":         a.voiceChat,
 		"PUT /servers/{id}/addons/simple-voice-chat":         a.saveVoiceChat,
 		"GET /servers/{id}/addons/simple-voice-chat/network": a.voiceNetwork,

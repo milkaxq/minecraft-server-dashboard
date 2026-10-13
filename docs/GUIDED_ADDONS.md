@@ -48,3 +48,29 @@ Official references: [server configuration](https://modrepo.de/minecraft/voicech
 - `POST /servers/{id}/addons/simple-voice-chat/network`: empty JSON + UUID `Idempotency-Key`.
 
 OWNER/ADMIN with settings permission can use these endpoints; moderators and foreign users cannot. Migration `015_addon_ports.sql` adds the reservation and capability records. Run migrations before starting updated API/worker processes. Use normal Go tests with `TEST_DATABASE_URL` for database integration tests, including concurrent allocation, ownership, lost-response reconciliation, state/entitlement checks and property preservation. Frontend tests include guided settings, polling/stale edits, role checks, client links, and mobile/laptop screenshots.
+
+
+## Player client requirements
+
+The catalog, install preview, and installed lists label addons as client required,
+client optional, server only, or unknown. Modrinth environment metadata takes
+precedence over its legacy client-side field. Metadata for each dependency is
+saved in the existing successful installation receipt; no external API lookup is
+needed to render the installed server checklist.
+
+`GET /servers/{id}/client-requirements` requires authenticated server `view`
+permission, including moderators. It reconciles receipts with current non-symlink
+JAR names and sizes through Panel, omits deleted files, and returns only player
+setup metadata. Uploaded JARs and legacy receipts without metadata stay unknown.
+Receipt matches are advisory metadata, not a cryptographic integrity check or a
+live plugin-load check. Failed lookups never imply vanilla compatibility.
+
+For catalog-identified Simple Voice Chat, the checklist reads only its fixed
+configuration path and exposes `force_voice_chat` as a boolean. Raw settings,
+credentials, and network allocation details are never returned. Missing or invalid
+configuration leaves the join rule unknown. Saved configuration describes the next
+startup; the UI reminds owners that a restart may be needed. A client mod is always
+needed for voice, but required to join only when that option is enabled.
+
+References: [Modrinth project metadata](https://docs.modrinth.com/api/operations/getproject/)
+and [Simple Voice Chat configuration](https://modrepo.de/minecraft/voicechat/wiki/server_config).

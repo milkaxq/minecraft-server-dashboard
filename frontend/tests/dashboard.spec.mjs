@@ -248,6 +248,12 @@ async function mockAPI(
     if (path === "/auth/verify-email") return route.fulfill({ status: 204 });
     if (path === "/auth/resend-verification")
       return reply({ message: "Verification email sent." }, 202);
+    if (path === `/servers/${serverID}/client-requirements`)
+      return reply({
+        software: server.server_type,
+        minecraft_version: server.minecraft_version,
+        addons: [],
+      });
     if (path === "/plans") return reply([plan]);
     if (path === "/account") return reply(authUser);
 
@@ -2774,3 +2780,120 @@ for (const [software, collection, width] of [
     await expect(page).toHaveURL(new RegExp(`/servers/${serverID}/addons/simple-voice-chat$`));
   });
 }
+
+for (const [width, voiceRequired] of [
+  [1366, true],
+  [390, false],
+]) {
+  test(`player setup labels distinguish voice join requirements at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockAPI(page, { initiallyRunning: true });
+    const voice = {
+      filename: "voicechat.jar",
+      title: "Simple Voice Chat",
+      project_id: "9eGKb6K1",
+      configuration_id: "simple-voice-chat",
+      client_side: "optional",
+      voice_required: voiceRequired,
+    };
+    const addons = [voice, { filename: "manual.jar", title: "manual.jar", client_side: "unknown" }];
+    await page.route(`http://localhost:8080/servers/${serverID}/client-requirements`, (route) =>
+      route.fulfill({ json: { addons } }),
+    );
+    await openServer(page);
+    const notice = page.getByLabel("Player client requirements");
+    await expect(
+      notice.getByText(voiceRequired ? "Modded client required" : "Check client requirements", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      notice.getByText(voiceRequired ? "Client mod required to join" : "Client mod for voice", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(notice.getByText("Client requirement unknown", { exact: true })).toBeVisible();
+    await notice.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath(`client-requirements-${width}.png`),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+      route.fulfill({
+        json: [
+          { name: "voicechat.jar", size: 3 },
+          { name: "manual.jar", size: 6 },
+        ],
+      }),
+    );
+    await page.goto(`/servers/${serverID}/plugins`);
+    const row = page.locator(".plugin-list li").filter({ hasText: "voicechat.jar" });
+    await expect(
+      row.getByText(voiceRequired ? "Client mod required to join" : "Client mod for voice", {
+        exact: true,
+      }),
+    ).toBeVisible();
+  });
+}
+
+test("catalog and installation preview show client requirements", async ({ page }) => {
+  await mockAPI(page);
+  const projects = [
+    { project_id: "required", title: "Required addon", client_side: "required" },
+    { project_id: "optional", title: "Optional addon", client_side: "optional" },
+    { project_id: "serveronly", title: "Server addon", client_side: "unsupported" },
+    { project_id: "unknown", title: "Unknown addon" },
+    { project_id: "9eGKb6K1", title: "Simple Voice Chat", client_side: "required" },
+  ];
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog?**`, (route) =>
+    route.fulfill({ json: { projects, has_more: false } }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog/required`, (route) =>
+    route.fulfill({
+      json: {
+        software: "PAPER",
+        minecraft_version: "1.21.1",
+        files: [{ version_id: "v", filename: "required.jar", size: 1, client_side: "required" }],
+      },
+    }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  const row = (title) => page.locator(".plugin-list li").filter({ hasText: title });
+  await expect(
+    row("Required addon").getByText("Client mod required", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    row("Optional addon").getByText("Client mod optional", { exact: true }),
+  ).toBeVisible();
+  await expect(row("Server addon").getByText("Server only", { exact: true })).toBeVisible();
+  await expect(
+    row("Unknown addon").getByText("Client requirement unknown", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    row("Simple Voice Chat").getByText("Client mod for voice · check join rules", { exact: true }),
+  ).toBeVisible();
+  await row("Required addon").getByRole("button", { name: "Review install" }).click();
+  await expect(
+    page.getByRole("dialog").getByText("Client mod required", { exact: true }),
+  ).toBeVisible();
+});
+
+test("failed requirement lookup never claims vanilla compatibility", async ({ page }) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/client-requirements`, (route) =>
+    route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+  );
+  await openServer(page);
+  const notice = page.getByLabel("Player client requirements");
+  await expect(
+    notice.getByText("Player requirements could not be checked", { exact: true }),
+  ).toBeVisible();
+  await expect(notice.getByText("Vanilla Java supported", { exact: true })).toHaveCount(0);
+  await expect(notice.getByRole("button", { name: "Check again" })).toBeVisible();
+});

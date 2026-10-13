@@ -28,6 +28,8 @@ func New() *Client {
 }
 
 type Project struct {
+	ClientSide      string `json:"client_side"`
+	Environment     string `json:"environment,omitempty"`
 	ConfigurationID string `json:"configuration_id,omitempty"`
 	ID              string `json:"project_id"`
 	Slug            string `json:"slug"`
@@ -62,14 +64,16 @@ type Version struct {
 	Dependencies []Dependency `json:"dependencies"`
 }
 type Package struct {
-	VersionID string `json:"version_id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	Filename  string `json:"filename"`
-	Size      int64  `json:"size"`
-	SHA512    string `json:"sha512"`
-	URL       string `json:"-"`
-	Data      []byte `json:"-"`
+	ClientSide string `json:"client_side"`
+	Title      string `json:"title,omitempty"`
+	VersionID  string `json:"version_id"`
+	ProjectID  string `json:"project_id"`
+	Name       string `json:"name"`
+	Filename   string `json:"filename"`
+	Size       int64  `json:"size"`
+	SHA512     string `json:"sha512"`
+	URL        string `json:"-"`
+	Data       []byte `json:"-"`
 }
 
 func (c *Client) get(ctx context.Context, endpoint string, out any) error {
@@ -257,7 +261,10 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 		seen[v.ID] = true
 		projects[v.ProjectID] = v.ID
 		var meta struct {
-			ServerSide string `json:"server_side"`
+			Title       string `json:"title"`
+			ClientSide  string `json:"client_side"`
+			Environment string `json:"environment"`
+			ServerSide  string `json:"server_side"`
 		}
 		if err = c.get(ctx, "project/"+v.ProjectID, &meta); err != nil || (meta.ServerSide != "required" && meta.ServerSide != "optional") {
 			return ErrUnavailable
@@ -302,7 +309,7 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 				return ErrUnavailable
 			}
 		}
-		out = append(out, Package{VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], URL: f.URL})
+		out = append(out, Package{ClientSide: ClientRequirement(meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], URL: f.URL})
 		return nil
 	}
 	if err := visit(project, "", 0); err != nil {
@@ -350,4 +357,22 @@ func SafeIconURL(raw string) bool {
 	}
 	path := strings.ToLower(u.Path)
 	return strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".jpg") || strings.HasSuffix(path, ".jpeg") || strings.HasSuffix(path, ".webp") || strings.HasSuffix(path, ".gif")
+}
+
+// ClientRequirement prefers modern environment metadata; unknown values never imply vanilla compatibility.
+func ClientRequirement(environment, legacy string) string {
+	switch environment {
+	case "client_and_server":
+		return "required"
+	case "server_only", "dedicated_server_only":
+		return "unsupported"
+	case "server_only_client_optional", "client_or_server", "client_or_server_prefers_both":
+		return "optional"
+	case "", "unknown":
+		switch legacy {
+		case "required", "optional", "unsupported":
+			return legacy
+		}
+	}
+	return "unknown"
 }

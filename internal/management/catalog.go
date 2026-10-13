@@ -63,6 +63,7 @@ func (s *Service) CatalogSearch(ctx context.Context, user, id uuid.UUID, collect
 	defer cancel()
 	page, err := s.catalogClient().SearchPage(ctx, loader, t.Version, options)
 	for i := range page.Projects {
+		page.Projects[i].ClientSide = catalog.ClientRequirement(page.Projects[i].Environment, page.Projects[i].ClientSide)
 		page.Projects[i].ConfigurationID = ""
 		if page.Projects[i].ID == "9eGKb6K1" {
 			page.Projects[i].ConfigurationID = VoiceAddon

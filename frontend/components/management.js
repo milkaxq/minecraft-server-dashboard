@@ -1,5 +1,6 @@
 "use client";
 import { Select } from "./select";
+import { ClientRequirementTag } from "./client-compatibility";
 import { BackupSchedule } from "./backup-schedule";
 import { ProjectIcon } from "./project-icon";
 import { supportsPlugins, supportsMods, softwareName } from "../lib/software";
@@ -748,6 +749,11 @@ function Plugins({ id, server, offline, mods = false }) {
   const label = mods ? "mod" : "plugin";
   const { api } = useAuth();
   const resource = useResource(`/servers/${id}/${collection}`);
+  const clientSetup = useResource(`/servers/${id}/client-requirements`, 15000);
+  const refreshClientSetup = clientSetup.refresh;
+  useEffect(() => {
+    refreshClientSetup();
+  }, [resource.data, refreshClientSetup]);
   const action = useAction(resource.refresh);
   const input = useRef(null);
   const [remove, setRemove] = useState(null);
@@ -837,6 +843,11 @@ function Plugins({ id, server, offline, mods = false }) {
                 <span>
                   <strong>{v.name}</strong>
                   <small>{formatBytes(v.size)}</small>
+                  <ClientRequirementTag
+                    addon={
+                      clientSetup.data?.addons?.find((addon) => addon.filename === v.name) || {}
+                    }
+                  />
                 </span>
                 <div className="file-actions installed-addon-actions">
                   {server.permissions?.includes("settings") &&
@@ -1055,6 +1066,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
                 <span>
                   <strong>{project.title}</strong>
                   <small>{project.description}</small>
+                  <ClientRequirementTag addon={project} />
                   <small>
                     {project.downloads?.toLocaleString() || "0"} downloads
                     {project.release_version ? ` · Release ${project.release_version}` : ""}
@@ -1131,6 +1143,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
             {preview.files.map((file) => (
               <li key={file.version_id}>
                 {file.filename} · {formatBytes(file.size)}
+                <ClientRequirementTag addon={file} />
               </li>
             ))}
           </ul>
