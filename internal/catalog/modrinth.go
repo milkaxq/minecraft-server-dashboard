@@ -74,6 +74,7 @@ type Package struct {
 	Filename   string `json:"filename"`
 	Size       int64  `json:"size"`
 	SHA512     string `json:"sha512"`
+	SHA1       string `json:"sha1,omitempty"`
 	URL        string `json:"-"`
 	Data       []byte `json:"-"`
 }
@@ -233,6 +234,10 @@ func (c *Client) latest(ctx context.Context, project, loader, game string) (Vers
 
 // Resolve includes required dependencies only. Bounds prevent dependency cycles and unbounded installs.
 func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]Package, error) {
+	return c.resolve(ctx, project, "", loader, game, false)
+}
+
+func (c *Client) resolve(ctx context.Context, project, pin, loader, game string, client bool) ([]Package, error) {
 	out := []Package{}
 	seen := map[string]bool{}
 	projects := map[string]string{}
@@ -269,7 +274,14 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 			Environment []string `json:"environment"`
 			ServerSide  string   `json:"server_side"`
 		}
-		if err = c.get(ctx, "project/"+v.ProjectID, &meta); err != nil || (meta.ServerSide != "required" && meta.ServerSide != "optional") {
+		if err = c.get(ctx, "project/"+v.ProjectID, &meta); err != nil {
+			return ErrUnavailable
+		}
+		side := meta.ServerSide
+		if client {
+			side = clientRequirementForVersion(v.Environment, meta.Environment, meta.ClientSide)
+		}
+		if side != "required" && side != "optional" {
 			return ErrUnavailable
 		}
 		for _, d := range v.Dependencies {
@@ -312,10 +324,10 @@ func (c *Client) Resolve(ctx context.Context, project, loader, game string) ([]P
 				return ErrUnavailable
 			}
 		}
-		out = append(out, Package{ClientSide: clientRequirementForVersion(v.Environment, meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], URL: f.URL})
+		out = append(out, Package{ClientSide: clientRequirementForVersion(v.Environment, meta.Environment, meta.ClientSide), Title: meta.Title, VersionID: v.ID, ProjectID: v.ProjectID, Name: v.Name, Filename: f.Filename, Size: f.Size, SHA512: f.Hashes["sha512"], SHA1: f.Hashes["sha1"], URL: f.URL})
 		return nil
 	}
-	if err := visit(project, "", 0); err != nil {
+	if err := visit(project, pin, 0); err != nil {
 		return nil, err
 	}
 	return out, nil

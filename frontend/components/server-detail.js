@@ -1,6 +1,7 @@
 "use client";
 import { softwareName } from "../lib/software";
 import { ServerInsights } from "./server-insights";
+import { PlayerInvite } from "./player-invite";
 import { JoinServer } from "./join-server";
 import { FirstServerChecklist } from "./first-server";
 import { FeatureLinks } from "./management";
@@ -476,7 +477,13 @@ export function ServerDetail({ id, advanced = false }) {
                 powerState={displayPowerState}
               />
             )}
-            {!advanced && <ServerInsights key={`insights:${id}`} server={server} ready={ready} />}
+            {!advanced && (
+              <details className="panel">
+                <summary>Server health & activity</summary>
+                <ServerInsights key={`insights:${id}`} server={server} ready={ready} />
+              </details>
+            )}
+            {!advanced && <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />}
             <FeatureLinks id={id} server={server} advanced={advanced} />
             {!advanced && (
               <FirstServerChecklist

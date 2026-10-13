@@ -78,12 +78,12 @@ func TestSoftwareCapabilities(t *testing.T) {
 }
 
 func TestNewOfferingPreservesLegacyCapabilities(t *testing.T) {
-	for _, kind := range []string{"VANILLA", "PAPER", "FABRIC"} {
+	for _, kind := range []string{"FORGE", "PAPER", "FABRIC"} {
 		if !NewSoftware(kind) {
 			t.Fatal(kind)
 		}
 	}
-	for _, kind := range []string{"SPIGOT", "PURPUR", "FORGE", "NEOFORGE"} {
+	for _, kind := range []string{"SPIGOT", "PURPUR", "VANILLA", "NEOFORGE"} {
 		if NewSoftware(kind) || !ValidSoftware(kind) {
 			t.Fatal(kind)
 		}

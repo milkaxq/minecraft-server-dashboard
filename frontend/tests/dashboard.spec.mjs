@@ -1,8 +1,16 @@
 import { test, expect } from "@playwright/test";
 async function selectValue(page, control, value) {
+  await control.waitFor({ state: "attached" });
+  const ancestors = control.locator("xpath=ancestor::details");
+  for (let index = (await ancestors.count()) - 1; index >= 0; index--) {
+    const details = ancestors.nth(index);
+    if (!(await details.evaluate((element) => element.open)))
+      await details.locator("summary").first().click();
+  }
   await control.click();
   await page.locator(`[role="option"][data-value="${value}"]`).click();
 }
+
 const serverID = "30000000-0000-4000-8000-000000000001";
 const orderID = "50000000-0000-4000-8000-000000000001";
 const planID = "10000000-0000-4000-8000-000000000001";
@@ -261,6 +269,7 @@ async function mockAPI(
         minecraft_version: server.minecraft_version,
         addons: [],
       });
+    if (path === `/servers/${serverID}/player-invite`) return reply(null);
     if (path === "/notifications") return reply([]);
     if (path === `/servers/${serverID}/activity`) return reply([]);
     if (path === `/servers/${serverID}/storage`)
@@ -636,14 +645,12 @@ test("order request sends approved choices without resource or price fields", as
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
   await page.getByLabel("Server name", { exact: true }).fill("A new adventure");
+  await expect(page.getByRole("heading", { name: "How do you want to play?" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Which software should I choose?" }),
+    page.getByText("Microsoft verification and whitelist start off", { exact: false }),
   ).toBeVisible();
   await expect(
-    page.getByText("New servers require Microsoft accounts", { exact: false }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("combobox", { name: "Minecraft version", exact: true }),
+    page.getByRole("combobox", { name: "Minecraft version", exact: true, includeHidden: true }),
   ).toHaveAttribute("data-value", "26.3");
   await page.getByRole("button", { name: "Continue to checkout" }).click();
   await expect(page).toHaveURL(new RegExp(`/checkout/${orderID}$`));
@@ -1147,6 +1154,7 @@ test("guide explains software ecosystems and custom code", async ({ page }) => {
   await mockAPI(page);
   await login(page);
   await page.getByRole("link", { name: "Guide", exact: true }).click();
+  await page.getByText("Detailed help, troubleshooting & custom code", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your first server, step by step." }),
   ).toBeVisible();
@@ -1160,7 +1168,7 @@ test("guide explains software ecosystems and custom code", async ({ page }) => {
   await page.getByText("Can I write my own plugin or mod?", { exact: true }).click();
   await expect(page.getByText(/build a .jar with the correct plugin descriptor/)).toBeVisible();
 });
-for (const type of ["VANILLA", "PAPER", "FABRIC"]) {
+for (const type of ["FORGE", "PAPER", "FABRIC"]) {
   test(`purchase resolves ${type} from approved software options`, async ({ page }) => {
     const calls = await mockAPI(page);
     await login(page);
@@ -1207,6 +1215,7 @@ test("guide and software comparison fit a mobile viewport", async ({ page }) => 
   await login(page);
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("link", { name: "Guide", exact: true }).click();
+  await page.getByText("Detailed help, troubleshooting & custom code", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Your first server, step by step." }),
   ).toBeVisible();
@@ -1219,6 +1228,7 @@ test("guide topic links reveal and focus the matching answer", async ({ page }) 
   await mockAPI(page);
   await login(page);
   await page.getByRole("link", { name: "Guide", exact: true }).click();
+  await page.getByText("Detailed help, troubleshooting & custom code", { exact: true }).click();
   await page
     .getByRole("navigation", { name: "Guide topics" })
     .getByRole("link", { name: "Write your own code" })
@@ -3361,6 +3371,7 @@ test("server activity and bounded storage show safe results on mobile", async ({
   );
   await login(page);
   await page.goto(`/servers/${serverID}`);
+  await page.getByText("Server health & activity", { exact: true }).click();
   await page.getByText("Activity history", { exact: true }).click();
   await expect(page.getByText("Stop requested", { exact: true })).toBeVisible();
   await page.getByText("Storage overview", { exact: true }).click();
@@ -3467,9 +3478,10 @@ test("new server selector hides legacy loaders even in stale options", async ({ 
   await mockAPI(page);
   await login(page);
   await page.goto("/servers/new");
+  await page.getByText("Version & advanced choices", { exact: true }).click();
   await page.getByLabel("Server software").click();
   await expect(page.getByRole("option")).toHaveCount(3);
-  for (const kind of ["SPIGOT", "PURPUR", "FORGE", "NEOFORGE"])
+  for (const kind of ["SPIGOT", "PURPUR", "VANILLA", "NEOFORGE"])
     await expect(page.locator(`[role="option"][data-value="${kind}"]`)).toHaveCount(0);
 });
 
@@ -3496,4 +3508,101 @@ test("dashboard polling respects Retry-After after rate limiting", async ({ page
   expect(requests).toBe(1);
   await page.clock.fastForward(50001);
   await expect.poll(() => requests).toBe(2);
+});
+
+const playerSlug = "A".repeat(43);
+const playerSetup = {
+  name: "The Lantern Lodge",
+  address: "play.example.com:25565",
+  minecraft_version: "1.21.1",
+  loader: "fabric",
+  loader_version: "0.19.5",
+  verified_login: false,
+  whitelist: false,
+  addons: [{ title: "Simple Voice Chat", project: "9eGKb6K1", required: true }],
+  pack_ready: true,
+  published_at: "2026-10-13T12:00:00Z",
+};
+
+for (const width of [390, 1366])
+  test(`guest player setup offers download import play at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await mockAPI(page);
+    await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+      route.fulfill({ json: playerSetup }),
+    );
+    await page.route(`http://localhost:8080/join/${playerSlug}/pack`, (route) =>
+      route.fulfill({
+        body: Buffer.from("test download"),
+        contentType: "application/x-modrinth-modpack+zip",
+      }),
+    );
+    await page.goto(`/join/${playerSlug}`);
+    await expect(page.getByRole("heading", { name: "Join The Lantern Lodge" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Import and launch" })).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download player pack" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("blockyard-player-setup.mrpack");
+    await expect(page.getByText("Downloaded. Import it in your launcher next.")).toBeVisible();
+    expect(calls.some((call) => call.path.startsWith("/servers"))).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`player-join-${width}.png`),
+      fullPage: true,
+    });
+  });
+
+test("owner publishes copies and revokes a player invite", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await mockAPI(page);
+  let invite = null;
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) => {
+    const method = route.request().method();
+    if (method === "POST")
+      invite = { slug: playerSlug, expires_at: "2026-11-13T12:00:00Z", setup: playerSetup };
+    if (method === "DELETE") invite = null;
+    return route.fulfill({ json: method === "DELETE" ? { revoked: true } : invite });
+  });
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await panel.getByRole("button", { name: "Prepare invite link" }).click();
+  await expect(panel.getByText("Player download ready")).toBeVisible();
+  await panel.getByRole("button", { name: "Copy invite link" }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain(`/join/${playerSlug}`);
+  await panel.getByText("Link access", { exact: true }).click();
+  await panel.getByRole("button", { name: "Disable invite link" }).click();
+  await expect(panel.getByRole("button", { name: "Prepare invite link" })).toBeVisible();
+});
+
+test("an unverified guest setup never offers an automatic download", async ({ page }) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({
+      json: {
+        ...playerSetup,
+        pack_ready: false,
+        pack_reason: "Your host needs to review an unverified addon.",
+      },
+    }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await expect(page.getByText("Your host needs to review an unverified addon.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
+});
+
+test("revoked guest invite does not require dashboard sign in", async ({ page }) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ status: 404, json: { error: "resource not found" } }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await expect(page.getByRole("heading", { name: "This invite is unavailable" })).toBeVisible();
+  expect(page.url()).toContain(`/join/${playerSlug}`);
 });

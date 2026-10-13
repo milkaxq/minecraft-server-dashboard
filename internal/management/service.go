@@ -277,6 +277,13 @@ func (s *Service) mutate(ctx context.Context, user, id, key uuid.UUID, p server.
 	if _, err = finish.Exec(clean, "UPDATE management_operations SET status=$2,result=CASE WHEN action='catalog.install' AND $3::jsonb='null'::jsonb THEN result ELSE $3::jsonb END,updated_at=now() WHERE id=$1", operation, outcome, data); err != nil {
 		return nil, control.ErrUnknown
 	}
+	// Published player setup must never keep advertising an obsolete pack after
+	// server changes, including writes whose remote outcome is uncertain.
+	if outcome != "REJECTED" && action != "backup.create" && action != "backup.delete" && action != "world.backup" && action != "eula.accept" {
+		if _, err = finish.Exec(clean, `UPDATE player_invites SET snapshot=jsonb_set(jsonb_set(snapshot,'{pack_ready}','false'::jsonb),'{pack_reason}',to_jsonb('The server setup changed. Ask your host to refresh the player setup.'::text)) WHERE server_id=$1`, id); err != nil {
+			return nil, control.ErrUnknown
+		}
+	}
 	if err = audit.Record(clean, finish, user, id, "management.completed", requestID, map[string]any{"operation_id": operation, "action": action, "outcome": outcome}); err != nil {
 		return nil, control.ErrUnknown
 	}

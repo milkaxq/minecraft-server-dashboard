@@ -1,8 +1,6 @@
 "use client";
 import { Select } from "./select";
-import { NEW_SERVER_TYPES, SOFTWARE, softwareName, supportsMods } from "../lib/software";
-import Link from "next/link";
-import { ContextHelp } from "./context-help";
+import { NEW_SERVER_TYPES, softwareName, supportsMods } from "../lib/software";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
@@ -35,9 +33,6 @@ export function NewServer({ initialPlan = "" }) {
       .map((o) => o.minecraft_version)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) || [];
   const version = versions.includes(chosenVersion) ? chosenVersion : versions.at(-1) || "";
-  const loader = options?.find(
-    (o) => o.server_type === type && o.minecraft_version === version,
-  )?.loader_version;
   const selected = plans?.find((p) => p.id === planID);
   const beta = checkoutConfig?.provider === "disabled" && session?.user.is_admin;
   const software = [...new Set(options?.map((o) => o.server_type) || [])];
@@ -81,7 +76,7 @@ export function NewServer({ initialPlan = "" }) {
       <PageHeading
         eyebrow="A NEW ADVENTURE"
         title="Make room for your next world."
-        description="Choose Minecraft, pick a plan, and give your server a name."
+        description="Pick how you want to play. We handle the server setup."
       />
       <ErrorMessage error={plansError || optionsError || checkoutError || error} />
       {loading ? (
@@ -89,11 +84,64 @@ export function NewServer({ initialPlan = "" }) {
       ) : (
         <form onSubmit={submit} className="create-layout">
           <div>
+            <section className="play-style-picker" aria-label="How do you want to play?">
+              <div className="step-heading">
+                <span>01</span>
+                <div>
+                  <h2>How do you want to play?</h2>
+                  <p>You can add extras after setup.</p>
+                </div>
+              </div>
+              <div className="play-style-grid">
+                {[
+                  [
+                    "PAPER",
+                    "🎮",
+                    "Play with friends",
+                    "Normal Minecraft. Add extras like homes, permissions and voice chat later.",
+                  ],
+                  [
+                    "FABRIC",
+                    "🧩",
+                    "Add new blocks & creatures",
+                    "Fabric mods change the game. We help prepare your friends’ player setup.",
+                  ],
+                  [
+                    "FORGE",
+                    "📦",
+                    "Use a Forge modpack",
+                    "Choose this if your pack asks for Forge. Pack installation and settings still need the author’s requirements.",
+                  ],
+                ].map(([value, icon, title, text]) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={`play-style-card ${type === value ? "selected" : ""}`}
+                    aria-pressed={type === value}
+                    disabled={!software.includes(value)}
+                    onClick={() => setType(value)}
+                  >
+                    <span className="play-style-art" aria-hidden="true">
+                      {icon}
+                    </span>
+                    <strong>{title}</strong>
+                    <small>{text}</small>
+                    <span className="play-style-label">
+                      {software.includes(value)
+                        ? type === value
+                          ? "Selected"
+                          : "Choose"
+                        : "Not available yet"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
             <div className="step-heading">
-              <span>01</span>
+              <span>02</span>
               <div>
                 <h2>Choose your plan</h2>
-                <p>Resources reserved just for your server.</p>
+                <p>Choose space for your friends and extras.</p>
               </div>
             </div>
             <div className="plan-picker">
@@ -128,9 +176,9 @@ export function NewServer({ initialPlan = "" }) {
             </div>
             <section className="panel create-settings">
               <div className="step-heading">
-                <span>02</span>
+                <span>03</span>
                 <div>
-                  <h2>Make it yours</h2>
+                  <h2>Name your world</h2>
                   <p>We’ll take care of the setup.</p>
                 </div>
               </div>
@@ -146,75 +194,61 @@ export function NewServer({ initialPlan = "" }) {
                   autoComplete="off"
                 />
               </label>
-              <div className="field-row">
-                <label className="field">
-                  Server software
-                  <Select
-                    aria-label="Server software"
-                    value={type}
-                    onChange={(e) => setType(e.target.value)}
-                    disabled={!software.length}
-                  >
-                    {software.map((v) => (
-                      <option key={v} value={v}>
-                        {`${softwareName(v)} — ${SOFTWARE[v]?.category === "mods" ? "supports mods" : SOFTWARE[v]?.category === "plugins" ? "supports plugins" : "classic Minecraft"}`}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <label className="field">
-                  Minecraft version
-                  <Select
-                    aria-label="Minecraft version"
-                    value={version}
-                    onChange={(e) => setVersion(e.target.value)}
-                    disabled={!versions.length}
-                  >
-                    {versions.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </div>
+              <details className="creation-advanced">
+                <summary>Version & advanced choices</summary>
+                <div className="field-row">
+                  <label className="field">
+                    Server software
+                    <Select
+                      aria-label="Server software"
+                      value={type}
+                      onChange={(e) => setType(e.target.value)}
+                      disabled={!software.length}
+                    >
+                      {software.map((v) => (
+                        <option key={v} value={v}>
+                          {softwareName(v)}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <label className="field">
+                    Minecraft version
+                    <Select
+                      aria-label="Minecraft version"
+                      value={version}
+                      onChange={(e) => setVersion(e.target.value)}
+                      disabled={!versions.length}
+                    >
+                      {versions.map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                </div>
+              </details>
               {options && !options.length && (
                 <p className="notice">
                   No Minecraft versions are available yet. Please contact hosting support.
                 </p>
               )}
-              <p className="field-help">
-                {SOFTWARE[type]?.description} {loader && `Loader version: ${loader}.`}{" "}
-                {supportsMods(type) &&
-                  "Players usually need matching mods and the same loader. Upload server mods on the Mods page after stopping the server."}
-              </p>
-              <div className="creation-guidance">
-                <h3>Which software should I choose?</h3>
-                <p>
-                  <strong>Vanilla:</strong> original Minecraft. <strong>Paper:</strong> survival
-                  with optional server plugins. <strong>Fabric, Forge and NeoForge:</strong> mods
-                  and modpacks; choose the loader required by your pack.
-                </p>
-                <p>
-                  Only versions supported by the selected software are listed. Players should use
-                  the same Minecraft version. Plugins and mods are not installed automatically.
-                </p>
-                <h3>Who can join?</h3>
-                <p>
-                  New servers require Microsoft accounts that own Java Edition. No separate server
-                  password is needed. To support offline accounts, install and configure a
-                  compatible authentication plugin before disabling account verification in
-                  Settings. Offline support is configured after installation.
-                </p>
-                <p>
-                  After setup: review the EULA → start → add allowed players if the whitelist is
-                  enabled → copy the address and join.
-                </p>
+              <div className="create-next-actions" aria-label="What happens next">
+                <span>✓ Automatic server setup</span>
+                <span>✓ Optional extras</span>
+                <span>✓ Invite your friends</span>
               </div>
-              <Link href="/guide" className="button secondary">
-                Help me choose · Setup guide
-              </Link>
-              <ContextHelp topic="software" />
+              {supportsMods(type) && (
+                <p className="field-help">
+                  Players may need matching mods. Your invite page will explain which verified
+                  downloads are available.
+                </p>
+              )}
+              <p className="field-help">
+                Microsoft verification and whitelist start off. Change who can join in Players or
+                Settings. A login plugin is optional; it is not installed automatically.
+              </p>
             </section>
           </div>
           <aside className="panel order-summary">

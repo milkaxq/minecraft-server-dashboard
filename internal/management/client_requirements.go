@@ -15,6 +15,8 @@ import (
 
 // ClientAddon contains player setup information, never raw configuration or credentials.
 type ClientAddon struct {
+	SHA512          string `json:"-"`
+	Size            int64  `json:"-"`
 	Filename        string `json:"filename"`
 	Title           string `json:"title"`
 	VersionID       string `json:"version_id,omitempty"`
@@ -99,6 +101,8 @@ func (s *Service) ClientRequirements(ctx context.Context, user, id uuid.UUID) (C
 		addon := ClientAddon{Filename: file.Name, Title: file.Name, ClientSide: "unknown"}
 		if meta, ok := known[file.Name]; ok && meta.Size == file.Size {
 			addon.ProjectID = meta.ProjectID
+			addon.SHA512 = meta.SHA512
+			addon.Size = file.Size
 			addon.VersionID = meta.VersionID
 			addon.VersionName = meta.Name
 			addon.ClientSide = catalog.ClientRequirement("", meta.ClientSide)
@@ -125,6 +129,37 @@ func (s *Service) ClientRequirements(ctx context.Context, user, id uuid.UUID) (C
 	// Membership may have changed while querying Panel; do not return stale access.
 	if _, err = s.Control.Access(ctx, t.q, user, id, server.View); err != nil {
 		return ClientRequirements{}, err
+	}
+	return out, nil
+}
+
+// VerifiedClientRequirements is reserved for publishing. Normal dashboard polls
+// use metadata only; a shareable player pack hashes its source JARs once.
+func (s *Service) VerifiedClientRequirements(ctx context.Context, user, id uuid.UUID) (ClientRequirements, error) {
+	out, err := s.ClientRequirements(ctx, user, id)
+	if err != nil {
+		return out, err
+	}
+	t, err := s.access(ctx, user, id, server.Files)
+	if err != nil {
+		return out, err
+	}
+	collection := "mods"
+	if server.SupportsPlugins(t.Type) {
+		collection = "plugins"
+	}
+	var total int64
+	for _, addon := range out.Addons {
+		if addon.ProjectID == "" || addon.ClientSide == "unsupported" && addon.ConfigurationID != VoiceAddon {
+			continue
+		}
+		total += addon.Size
+		if total > 128<<20 || addon.Size <= 0 || addon.Size > 64<<20 || len(addon.SHA512) != 128 {
+			return out, ErrChanged
+		}
+		if err = s.verifyCatalogFile(ctx, t, collection, catalog.Package{Filename: addon.Filename, Size: addon.Size, SHA512: addon.SHA512}); err != nil {
+			return out, err
+		}
 	}
 	return out, nil
 }

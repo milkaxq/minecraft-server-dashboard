@@ -4849,3 +4849,219 @@ input {
     flex-wrap: wrap;
   }
 }
+
+/* Play-first setup and player invitations. */
+.play-style-grid,
+.guide-play-flow,
+.player-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0 32px;
+}
+.play-style-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface, #fff);
+  cursor: pointer;
+  min-width: 0;
+}
+.play-style-card.selected {
+  border: 2px solid #739568;
+  background: #f0f6ed;
+  padding: 21px;
+}
+.play-style-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.play-style-card strong {
+  font-size: 1.05rem;
+}
+.play-style-card small {
+  line-height: 1.6;
+  color: var(--muted);
+  flex: 1;
+}
+.play-style-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38px;
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #edf5e8, #d5e5c7);
+}
+.play-style-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #46633c;
+}
+.creation-advanced,
+.guide-detailed-help {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.creation-advanced summary,
+.guide-detailed-help > summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.create-next-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+  color: #46633c;
+  font-size: 13px;
+}
+.invite-friends {
+  margin: 20px 0;
+}
+.invite-preview {
+  padding: 16px;
+  background: #f0f6ed;
+  border-radius: 14px;
+  margin: 16px 0;
+}
+.invite-preview small {
+  display: block;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.invite-actions,
+.setup-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+.guide-action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+.guide-action-card p {
+  flex: 1;
+}
+.guide-action-card h2 {
+  margin: 0;
+}
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  background: #e8f1e2;
+  color: #3f5d36;
+  font-weight: 700;
+}
+.public-player-page {
+  max-width: 1120px;
+  margin: auto;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+.public-player-page header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.public-brand {
+  font-size: 26px;
+  font-weight: 800;
+  color: #213a2c;
+  text-decoration: none;
+}
+.public-brand span {
+  color: #84a06c;
+}
+.public-player-page header > span {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: #69796a;
+}
+.player-hero {
+  text-align: center;
+  padding: 56px 16px 32px;
+}
+.player-hero-art {
+  display: block;
+  font-size: 64px;
+  margin-bottom: 20px;
+}
+.player-hero h1 {
+  font-size: clamp(30px, 5vw, 48px);
+  margin: 12px 0;
+}
+.player-address {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+.player-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+.player-step h2,
+.player-step p {
+  margin: 0;
+}
+.player-step .button {
+  margin-top: auto;
+}
+.player-step details {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.player-step details a {
+  display: block;
+  margin-top: 12px;
+}
+.public-player-page footer {
+  text-align: center;
+  color: #69796a;
+  font-size: 13px;
+  padding: 28px 0;
+}
+@media (max-width: 760px) {
+  .play-style-grid,
+  .guide-play-flow,
+  .player-steps {
+    grid-template-columns: 1fr;
+  }
+  .play-style-card {
+    padding: 18px;
+  }
+  .play-style-card.selected {
+    padding: 17px;
+  }
+  .public-player-page {
+    padding: 18px;
+  }
+  .player-hero {
+    padding: 32px 0;
+  }
+  .invite-actions .button {
+    flex: 1 1 180px;
+  }
+}

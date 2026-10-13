@@ -103,6 +103,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /servers/{id}/commands", a.protected(a.liveLimit("commands", 300, a.command)))
 	mux.HandleFunc("POST /servers/{id}/console-ticket", a.protected(a.liveLimit("tickets", 60, a.ticket)))
 	mux.HandleFunc("GET /servers/{id}/console", a.consoleStream)
+	a.playerJoinRoutes(mux)
 	a.memberRoutes(mux)
 	a.managementRoutes(mux)
 	a.billingRoutes(mux)

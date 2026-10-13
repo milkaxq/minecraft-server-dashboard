@@ -38,7 +38,7 @@ export function FirstServerChecklist({
     {
       done: addressCopied,
       title: "Copy the address and join",
-      text: `In Minecraft Java ${server.minecraft_version}, choose Multiplayer → Add Server. ${supportsMods(server.server_type) ? `Use ${softwareName(server.server_type)} with the matching loader and required mods.` : "A normal Minecraft Java client is enough."}`,
+      text: `In Minecraft Java ${server.minecraft_version}, choose Multiplayer → Add Server. ${supportsMods(server.server_type) ? `Use ${softwareName(server.server_type)} with the matching loader and required mods.` : "Check the player invite page for any required client mods."}`,
     },
   ];
   return (
@@ -52,6 +52,21 @@ export function FirstServerChecklist({
           {steps.filter((s) => s.done).length} of {steps.length} steps complete
         </span>
       </summary>
+      <div className="setup-quick-actions">
+        {server.permissions?.includes(supportsMods(server.server_type) ? "files" : "plugins") && (
+          <Link
+            className="button primary"
+            href={`/servers/${server.id}/${supportsMods(server.server_type) ? "mods" : "plugins"}`}
+          >
+            Add optional extras
+          </Link>
+        )}
+        {server.permissions?.includes("settings") && (
+          <Link className="button secondary" href={`/servers/${server.id}/settings`}>
+            Choose game rules
+          </Link>
+        )}
+      </div>
       <ol>
         {steps.map((step, index) => (
           <li key={step.title}>

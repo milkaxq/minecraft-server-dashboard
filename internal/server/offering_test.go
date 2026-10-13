@@ -33,7 +33,7 @@ func TestOfferingFiltersOptionsAndRejectsNewLegacyServers(t *testing.T) {
 			t.Fatal("legacy option advertised", option)
 		}
 	}
-	for _, kind := range []string{"SPIGOT", "PURPUR", "FORGE", "NEOFORGE"} {
+	for _, kind := range []string{"SPIGOT", "PURPUR", "VANILLA", "NEOFORGE"} {
 		_, err = svc.CreateTx(ctx, nil, uuid.New(), CreateInput{PlanID: uuid.New(), Name: "World", MinecraftVersion: "1.21.1", ServerType: kind}, "test")
 		if !errors.Is(err, ErrInvalid) {
 			t.Fatal("new legacy server accepted", kind, err)
