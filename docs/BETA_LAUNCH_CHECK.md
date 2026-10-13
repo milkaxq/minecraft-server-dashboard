@@ -54,10 +54,10 @@ installing addons and creating/restoring backups retain their existing permissio
 | Feedback context validation, privacy and retry idempotency | Automated tests passed |
 | Frontend lint, formatting, production build | Passed |
 | Browser regression suite | 128 passed, including mobile backup flow and contextual reports |
-| Real Panel backup/restore on a disposable stopped server | Pending: VPS SSH connection times out; no temporary server created |
-| Current public Minecraft protocol/connectivity check | Pending: connection from this machine times out |
+| Real Panel backup/restore on a disposable stopped server | Passed: synthetic world marker backed up, changed and restored through Panel |
+| Current public Minecraft protocol/connectivity check | Passed: production Minecraft status responds from VPS, 0/10 players |
 | Real player joining and authenticating | Pending: owner has no Minecraft client available |
-| Deployment and production readiness after migration | Pending: restore VPS connectivity first |
+| Deployment and production readiness after migration | Passed: migration 016 applied; backend/frontend deployed; HTTPS readiness and authorized startup check pass |
 
 The existing production world has not been stopped, restored or modified for these
 checks. Recovery tests do not reset the operator's production password. A real
@@ -79,7 +79,18 @@ npm --prefix frontend run build
 npm --prefix frontend test
 ```
 
-## Finish live checks once connected
+## Live-check evidence
+
+The disposable server `a7124794-3e14-4dd5-b36c-f81bfed421b0` was provisioned
+through the regular transactional/job path, kept stopped, and tested through Panel.
+A synthetic `/world/beta-restore-check.txt` was backed up, changed, restored, and
+verified. No Minecraft EULA was accepted or game process started for this check.
+Termination succeeded, Panel returned not-found for its original identifier,
+and its node allocation was released. Node usage returned
+to the original 2048 MB RAM, 10240 MB disk and 100 CPU units. The existing server
+startup check returned checked=true with zero recognized issues.
+
+## Live-check procedure
 
 1. Verify HTTPS readiness and the existing server's status without altering it.
 2. Record node allocations and free capacity. Create a separate temporary beta
