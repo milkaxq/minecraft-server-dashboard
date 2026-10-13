@@ -259,8 +259,8 @@ export function PublicPlayerJoin({ slug }) {
                   <p>Includes the matching loader and verified client mod download instructions.</p>
                   {manualLauncher && (
                     <p>
-                      Your launcher uses the individual mod downloads in step 2. The player pack is
-                      also available for compatible import tools.
+                      Download one client mods ZIP in step 2. The player pack is also available
+                      below for compatible import tools.
                     </p>
                   )}
                   {manualLauncher ? (
