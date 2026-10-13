@@ -139,3 +139,11 @@ CDN downloads remain available under a collapsed section.
 The ZIP does not install the Minecraft loader or launch the game. Extract it and
 copy the `mods` folder into a separate installation using the displayed version
 and loader. Do not put the ZIP itself in the mods folder.
+
+Required-only ZIP live check: Private Beta was republished with beta builds enabled
+and optional client features disabled. Its client manifest now contains only
+`voicechat-fabric-2.6.24+26.3.jar`. The public ZIP returned 5,613,921 bytes and exactly
+that JAR, README.txt, and client-files.json; the downloaded JAR matched both stored
+hashes. A live 390px browser displayed the SKlauncher ZIP button without horizontal
+overflow. Readiness returned 200. No server plugins were removed. Go race tests,
+vet/staticcheck, frontend build/lint/format and seven focused browser tests passed.
