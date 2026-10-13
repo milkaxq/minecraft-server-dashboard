@@ -21,8 +21,9 @@ func (a *API) playerJoinRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /servers/{id}/player-invite", a.protected(a.liveLimit("player-invite", 30, a.getPlayerInvite)))
 	mux.HandleFunc("POST /servers/{id}/player-invite", a.protected(a.liveLimit("player-invite", 10, a.publishPlayerInvite)))
 	mux.HandleFunc("DELETE /servers/{id}/player-invite", a.protected(a.liveLimit("player-invite", 10, a.revokePlayerInvite)))
-	mux.HandleFunc("GET /join/{slug}", a.publicPlayerJoin(false))
-	mux.HandleFunc("GET /join/{slug}/pack", a.publicPlayerJoin(true))
+	mux.HandleFunc("GET /join/{slug}", a.publicPlayerJoin("setup"))
+	mux.HandleFunc("GET /join/{slug}/files", a.publicPlayerJoin("files"))
+	mux.HandleFunc("GET /join/{slug}/pack", a.publicPlayerJoin("pack"))
 }
 func (a *API) getPlayerInvite(w http.ResponseWriter, r *http.Request) {
 	id, ok := a.managementID(w, r)
@@ -74,7 +75,7 @@ func (a *API) revokePlayerInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 200, map[string]bool{"revoked": true})
 }
-func (a *API) publicPlayerJoin(pack bool) http.HandlerFunc {
+func (a *API) publicPlayerJoin(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -86,7 +87,20 @@ func (a *API) publicPlayerJoin(pack bool) http.HandlerFunc {
 			a.fail(w, r, err)
 			return
 		}
-		if pack {
+
+		if kind == "files" {
+			files, err := a.playerJoin().ClientDownloads(r.Context(), r.PathValue("slug"))
+			if err != nil {
+				if errors.Is(err, playerjoin.ErrUnavailable) {
+					err = control.ErrUnavailable
+				}
+				a.fail(w, r, err)
+				return
+			}
+			write(w, 200, files)
+			return
+		}
+		if kind == "pack" {
 			data, err := a.playerJoin().Pack(r.Context(), r.PathValue("slug"))
 			if err != nil {
 				if errors.Is(err, playerjoin.ErrUnavailable) {

@@ -93,3 +93,22 @@ Fabric Loader 0.19.5, with Simple Voice Chat 2.6.24, compatible optional client
 builds, and required dependencies. All manifest downloads have SHA-1/SHA-512
 hashes. The public page discloses beta builds. Actual launcher import and joining
 remain a player-side test.
+
+## Launcher selector
+
+The public player page offers Modrinth App, SKlauncher, Prism, the official
+Minecraft Launcher, and another launcher. The browser remembers its selection.
+Modrinth and Prism show `.mrpack` import steps. SKlauncher/official/other show
+manual profile setup and the exact client downloads from the published manifest,
+including dependencies. Selecting a launcher does not change the pack's loader,
+launch Minecraft, or install software. Players must use the displayed loader;
+Fabric client JARs do not belong in a Forge profile.
+
+`GET /join/{slug}/files` serves only the public manifest's approved CDN URLs,
+paths, sizes and hashes. It shares invitation expiry, revocation, invalidation,
+no-store headers, and public rate limiting. It never reads server files directly.
+
+Instructions refer to official documentation:
+- https://docs.skmedix.pl/faq/launcher-related (3.x manual files; 4.x mod management)
+- https://prismlauncher.org/wiki/help-pages/Zip-import/ (Prism `.mrpack` import)
+- https://support.modrinth.com/en/articles/8802250-modpacks-on-modrinth

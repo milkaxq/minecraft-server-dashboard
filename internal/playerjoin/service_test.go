@@ -168,6 +168,11 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 			t.Fatal("private metadata leaked", private)
 		}
 	}
+
+	downloads, err := s.ClientDownloads(ctx, invite.Slug)
+	if err != nil || len(downloads) != 1 || downloads[0].Path != "mods/client-voice.jar" || downloads[0].Downloads[0] != "https://cdn.modrinth.com/client.jar" {
+		t.Fatal("manual downloads differ from verified pack", downloads, err)
+	}
 	data, err := s.Pack(ctx, invite.Slug)
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +218,9 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 	if _, err = s.Pack(ctx, invite.Slug); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("obsolete setup still downloadable", err)
 	}
+	if _, err = s.ClientDownloads(ctx, invite.Slug); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("invalidated manual downloads remain available", err)
+	}
 	if err = s.Revoke(ctx, other, id, "test"); !errors.Is(err, server.ErrNotFound) {
 		t.Fatal(err)
 	}
@@ -251,6 +259,9 @@ func TestInvitationOwnershipPrivacyPackAndRevocation(t *testing.T) {
 		t.Fatal("manual upload incorrectly treated as catalog addon", blocked, err)
 	}
 	delete(p.files, "/plugins/uploaded.jar")
+	if _, err = s.ClientDownloads(ctx, invite.Slug); !errors.Is(err, server.ErrNotFound) {
+		t.Fatal("revoked manual downloads remain available", err)
+	}
 	p.files["/plugins/voice.jar"] = []byte("modified bytes")
 	if _, err = s.Publish(ctx, owner, id, "test"); !errors.Is(err, management.ErrChanged) {
 		t.Fatal("modified JAR trusted", err)

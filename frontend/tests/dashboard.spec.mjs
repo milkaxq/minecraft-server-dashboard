@@ -3621,3 +3621,48 @@ test("revoked guest invite does not require dashboard sign in", async ({ page })
   await expect(page.getByRole("heading", { name: "This invite is unavailable" })).toBeVisible();
   expect(page.url()).toContain(`/join/${playerSlug}`);
 });
+
+for (const width of [390, 1366])
+  test(`launcher selector provides pinned SKlauncher downloads at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await mockAPI(page);
+    await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+      route.fulfill({ json: playerSetup }),
+    );
+    await page.route(`http://localhost:8080/join/${playerSlug}/files`, (route) =>
+      route.fulfill({
+        json: [
+          {
+            path: "mods/voicechat-fabric.jar",
+            downloads: ["https://cdn.modrinth.com/voicechat.jar"],
+            hashes: { sha1: "b".repeat(40), sha512: "a".repeat(128) },
+            fileSize: 1048576,
+          },
+        ],
+      }),
+    );
+    await page.goto(`/join/${playerSlug}`);
+    const selector = page.getByRole("combobox", { name: "Your Minecraft launcher" });
+    await selectValue(page, selector, "sklauncher");
+    await expect(page.getByRole("heading", { name: "Set up SKlauncher" })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Download voicechat-fabric.jar ↗" }),
+    ).toHaveAttribute("href", "https://cdn.modrinth.com/voicechat.jar");
+    await expect(page.getByText("Fabric 0.19.5", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Modrinth App requires a Microsoft account that owns Minecraft Java Edition."),
+    ).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Set up SKlauncher" })).toBeVisible();
+    await selectValue(page, selector, "prism");
+    await expect(page.getByRole("heading", { name: "Import into Prism" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Download voicechat-fabric.jar ↗" })).toHaveCount(
+      0,
+    );
+    await selectValue(page, selector, "official");
+    await expect(page.getByRole("heading", { name: "Set up your installation" })).toBeVisible();
+    expect(calls.some((call) => call.path.startsWith("/servers"))).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });

@@ -408,3 +408,16 @@ func (s Service) Pack(ctx context.Context, slug string) ([]byte, error) {
 	}
 	return buffer.Bytes(), nil
 }
+
+// ClientDownloads exposes only the verified public CDN files already in the pack.
+// It supports launchers that cannot import a .mrpack; no server files are served.
+func (s Service) ClientDownloads(ctx context.Context, slug string) ([]PackFile, error) {
+	stored, err := s.public(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+	if !stored.PackReady {
+		return nil, ErrUnavailable
+	}
+	return stored.PackFiles, nil
+}

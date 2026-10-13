@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Icon } from "./ui";
+import { LauncherSetup, LauncherPicker, useLauncherChoice } from "./player-launcher";
 import { request } from "../lib/api";
 
 export function PlayerInvite({ server, ready }) {
@@ -145,6 +146,8 @@ export function PlayerInvite({ server, ready }) {
 }
 
 export function PublicPlayerJoin({ slug }) {
+  const [launcher, setLauncher] = useLauncherChoice();
+  const manualLauncher = ["sklauncher", "official", "other"].includes(launcher);
   const [setup, setSetup] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -225,58 +228,45 @@ export function PublicPlayerJoin({ slug }) {
               </button>
             </div>
           </section>
+          <LauncherPicker launcher={launcher} onChange={setLauncher} />
           <section className="player-steps" aria-label="Join steps">
             {setup.pack_ready ? (
               <>
                 <article className="panel player-step">
                   <span className="step-number">1</span>
                   <h2>
-                    {setup.addons?.some((addon) => addon.required)
-                      ? "Download your player setup"
-                      : "Add optional player features"}
+                    {manualLauncher
+                      ? "Use this Minecraft profile"
+                      : setup.addons?.some((addon) => addon.required)
+                        ? "Download your player setup"
+                        : "Add optional player features"}
                   </h2>
                   <p>Includes the matching loader and verified client mod download instructions.</p>
-                  <button className="button primary wide" disabled={busy} onClick={download}>
-                    {busy ? "Preparing…" : "Download player pack"}
-                  </button>
+                  {manualLauncher && (
+                    <p>
+                      Your launcher uses the individual mod downloads in step 2. The player pack is
+                      also available for compatible import tools.
+                    </p>
+                  )}
+                  {manualLauncher ? (
+                    <details>
+                      <summary>Download .mrpack for an import tool</summary>
+                      <button className="button secondary wide" disabled={busy} onClick={download}>
+                        {busy ? "Preparing…" : "Download player pack"}
+                      </button>
+                    </details>
+                  ) : (
+                    <button className="button primary wide" disabled={busy} onClick={download}>
+                      {busy ? "Preparing…" : "Download player pack"}
+                    </button>
+                  )}
                   {packDownloaded && (
                     <p role="status">Downloaded. Import it in your launcher next.</p>
                   )}
                 </article>
                 <article className="panel player-step">
                   <span className="step-number">2</span>
-                  <h2>Import and launch</h2>
-                  <p>
-                    Open the downloaded .mrpack in Modrinth App. It creates a profile and downloads
-                    its listed mods. Then click Play.
-                  </p>
-                  <p>Modrinth App requires a Microsoft account that owns Minecraft Java Edition.</p>
-                  <a
-                    className="button secondary"
-                    href="https://modrinth.com/app"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Get Modrinth App ↗
-                  </a>
-                  <details>
-                    <summary>Use another launcher</summary>
-                    <p>
-                      Prism Launcher: Add Instance → Import → select the .mrpack. Other launchers
-                      need support for importing Modrinth packs. Follow your launcher’s account
-                      requirements.
-                    </p>
-                    <a href="https://prismlauncher.org/download/" target="_blank" rel="noreferrer">
-                      Get Prism Launcher ↗
-                    </a>
-                    <a
-                      href="https://docs.skmedix.pl/faq/launcher-related"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      SKlauncher setup ↗
-                    </a>
-                  </details>
+                  <LauncherSetup launcher={launcher} setup={setup} slug={slug} />
                 </article>
               </>
             ) : (

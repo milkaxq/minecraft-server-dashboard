@@ -5073,3 +5073,28 @@ input {
     flex: 1 1 180px;
   }
 }
+
+.player-launcher-picker {
+  max-width: 640px;
+  margin: 0 auto 24px;
+}
+.launcher-install-steps {
+  padding-left: 22px;
+  line-height: 1.65;
+}
+.launcher-install-steps li + li {
+  margin-top: 12px;
+}
+.launcher-download-list {
+  list-style: none;
+  padding: 0;
+}
+.launcher-download-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+}
+.launcher-download-list a {
+  overflow-wrap: anywhere;
+}
