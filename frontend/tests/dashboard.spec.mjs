@@ -3626,22 +3626,33 @@ test("revoked guest invite does not require dashboard sign in", async ({ page })
 });
 
 for (const width of [390, 1366])
-  test(`launcher selector provides pinned SKlauncher downloads at ${width}px`, async ({ page }) => {
+  test(`SKlauncher 4 offers one pack with manual fallback at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     const calls = await mockAPI(page);
+    let fileReads = 0;
     await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
       route.fulfill({ json: playerSetup }),
     );
-    await page.route(`http://localhost:8080/join/${playerSlug}/files`, (route) =>
+    await page.route(
+      `http://localhost:8080/join/${playerSlug}/files`,
+      (route) => (
+        fileReads++,
+        route.fulfill({
+          json: [
+            {
+              path: "mods/voicechat-fabric.jar",
+              downloads: ["https://cdn.modrinth.com/voicechat.jar"],
+              hashes: { sha1: "b".repeat(40), sha512: "a".repeat(128) },
+              fileSize: 1048576,
+            },
+          ],
+        })
+      ),
+    );
+    await page.route(`http://localhost:8080/join/${playerSlug}/pack`, (route) =>
       route.fulfill({
-        json: [
-          {
-            path: "mods/voicechat-fabric.jar",
-            downloads: ["https://cdn.modrinth.com/voicechat.jar"],
-            hashes: { sha1: "b".repeat(40), sha512: "a".repeat(128) },
-            fileSize: 1048576,
-          },
-        ],
+        body: Buffer.from("test pack"),
+        contentType: "application/x-modrinth-modpack+zip",
       }),
     );
     await page.route(`http://localhost:8080/join/${playerSlug}/bundle`, (route) =>
@@ -3650,7 +3661,13 @@ for (const width of [390, 1366])
     await page.goto(`/join/${playerSlug}`);
     const selector = page.getByRole("combobox", { name: "Your Minecraft launcher" });
     await selectValue(page, selector, "sklauncher");
-    await expect(page.getByRole("heading", { name: "Set up SKlauncher" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Import into SKlauncher 4" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download client mods ZIP" })).toHaveCount(0);
+    expect(fileReads).toBe(0);
+    const packDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download player pack" }).click();
+    expect((await packDownload).suggestedFilename()).toBe("blockyard-player-setup.mrpack");
+    await page.getByText("Import failed? Use the manual ZIP", { exact: true }).click();
     await page.getByText("Individual downloads", { exact: true }).click();
     await expect(
       page.getByRole("link", { name: "Download voicechat-fabric.jar ↗" }),
@@ -3669,7 +3686,7 @@ for (const width of [390, 1366])
       ),
     ).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Set up SKlauncher" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Import into SKlauncher 4" })).toBeVisible();
     await selectValue(page, selector, "prism");
     await expect(page.getByRole("heading", { name: "Import into Prism" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Download voicechat-fabric.jar ↗" })).toHaveCount(

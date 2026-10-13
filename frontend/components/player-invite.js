@@ -162,7 +162,7 @@ export function PlayerInvite({ server, ready }) {
 
 export function PublicPlayerJoin({ slug }) {
   const [launcher, setLauncher] = useLauncherChoice();
-  const manualLauncher = ["sklauncher", "official", "other"].includes(launcher);
+  const manualLauncher = ["official", "other"].includes(launcher);
   const [setup, setSetup] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);

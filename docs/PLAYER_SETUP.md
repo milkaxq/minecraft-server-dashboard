@@ -147,3 +147,23 @@ that JAR, README.txt, and client-files.json; the downloaded JAR matched both sto
 hashes. A live 390px browser displayed the SKlauncher ZIP button without horizontal
 overflow. Readiness returned 200. No server plugins were removed. Go race tests,
 vet/staticcheck, frontend build/lint/format and seven focused browser tests passed.
+
+## SKlauncher 4 import-first flow
+
+The SKlauncher choice now targets version 4, with one `.mrpack` download as its
+primary path: drag it into SKlauncher 4, confirm import, wait for setup, and launch
+the new instance. The manual ZIP and individual downloads remain under a closed
+fallback section, and their file list is fetched only when the fallback opens.
+No SKlauncher 3 setup steps appear in the primary flow.
+
+Verification used the official SKlauncher 4.0.54 release from
+https://github.com/sklauncher/binaries/releases/tag/v4.0.54 . Its shipped import
+file filter accepts `mrpack`, `zip`, and `skpack`; its archive detector and parser
+read `modrinth.index.json` and support formatVersion 1 / game minecraft. Only the
+application archive was read from bounded ranges of the official release ZIP;
+no launcher was installed or executed. This verifies format support, not a
+completed real-world import or Minecraft launch.
+
+The official changelog documents drag-and-drop modpack imports from 4.0.30:
+https://next.skmedix.pl/changelog . Current launcher downloads are linked through
+https://next.skmedix.pl/downloads . OS double-click association is not assumed.

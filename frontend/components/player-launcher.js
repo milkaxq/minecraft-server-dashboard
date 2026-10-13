@@ -5,7 +5,7 @@ import { request } from "../lib/api";
 
 const launchers = {
   modrinth: "Modrinth App",
-  sklauncher: "SKlauncher",
+  sklauncher: "SKlauncher 4",
   prism: "Prism Launcher",
   official: "Minecraft Launcher (official)",
   other: "Another launcher",
@@ -60,7 +60,9 @@ export function LauncherPicker({ launcher, onChange }) {
   );
 }
 export function LauncherSetup({ launcher, setup, slug }) {
-  const manual = ["sklauncher", "official", "other"].includes(launcher);
+  const [fallbackOpen, setFallbackOpen] = useState(false);
+  const manual =
+    ["official", "other"].includes(launcher) || (launcher === "sklauncher" && fallbackOpen);
   const [files, setFiles] = useState(null);
   const [error, setError] = useState(null);
   const [bundleBusy, setBundleBusy] = useState(false);
@@ -140,9 +142,9 @@ export function LauncherSetup({ launcher, setup, slug }) {
   const loader =
     { fabric: "Fabric", forge: "Forge", neoforge: "NeoForge", quilt: "Quilt" }[setup.loader] ||
     setup.loader;
-  return (
+  const manualSteps = (
     <>
-      <h2>{launcher === "sklauncher" ? "Set up SKlauncher" : "Set up your installation"}</h2>
+      <h2>{launcher === "sklauncher" ? "Manual setup fallback" : "Set up your installation"}</h2>
       <button className="button primary wide" disabled={bundleBusy} onClick={downloadBundle}>
         {bundleBusy ? "Preparing verified ZIP…" : "Download client mods ZIP"}
       </button>
@@ -167,7 +169,7 @@ export function LauncherSetup({ launcher, setup, slug }) {
         </li>
         <li>
           {launcher === "sklauncher"
-            ? "In SKlauncher, right-click the installation → Open installation directory. Open or create its mods folder."
+            ? "In SKlauncher 4, open your instance’s game folder. Open or create its mods folder."
             : "Open that installation’s game directory. Open or create its mods folder."}
         </li>
         <li>
@@ -202,13 +204,12 @@ export function LauncherSetup({ launcher, setup, slug }) {
       {launcher === "sklauncher" && (
         <>
           <p>
-            SKlauncher 3.x uses Installations Manager for loaders and manual mod files. In 4.x, you
-            can also manage mods in the launcher. These pinned downloads work with either setup
-            method.
+            This fallback is for SKlauncher 4 if importing the player pack fails. Use a separate
+            instance with the exact game version and loader shown above.
           </p>
           <a
             className="text-link"
-            href="https://docs.skmedix.pl/faq/launcher-related"
+            href="https://docs.skmedix.pl/4.0/"
             target="_blank"
             rel="noreferrer"
           >
@@ -222,4 +223,31 @@ export function LauncherSetup({ launcher, setup, slug }) {
       </p>
     </>
   );
+  if (launcher === "sklauncher")
+    return (
+      <>
+        <h2>Import into SKlauncher 4</h2>
+        <p>
+          Drag the downloaded .mrpack file into SKlauncher 4. Confirm the import, wait for setup to
+          finish, then click Play on the new instance.
+        </p>
+        <p className="field-help">
+          The pack specifies the Minecraft version, loader and required client mods. Let the
+          launcher install this new instance; do not add these files to your existing Forge profile.
+        </p>
+        <a
+          className="button secondary"
+          href="https://next.skmedix.pl/downloads"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Get SKlauncher 4 ↗
+        </a>
+        <details onToggle={(event) => setFallbackOpen(event.currentTarget.open)}>
+          <summary>Import failed? Use the manual ZIP</summary>
+          {manualSteps}
+        </details>
+      </>
+    );
+  return manualSteps;
 }
