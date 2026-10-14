@@ -65,3 +65,35 @@ Other addons link to configuration files for users with file access. After addon
 changes, the next-steps message follows the current power state; it does not claim
 a successful start proves the addon loaded. Existing console/plugin checks remain
 the way to confirm runtime status.
+
+## Player invitations: first visit and returning players
+
+The public invitation shows the address and Minecraft version first. Required
+client addons reveal the download/import/play flow for the remembered launcher.
+Optional-only downloads stay behind an explicit optional-features choice. When
+no required download is listed, the main flow simply explains how to join; this
+does not guarantee compatibility with unknown addons or unpublished host changes.
+
+Players can explicitly mark their setup ready in this browser. Downloading alone
+never marks it installed. The browser stores a public setup revision against the
+game address, not an account credential or invitation token. Matching returning
+players get a shorter view and can reopen downloads. A new publication or changed
+published requirements restores current setup instructions. Storage-disabled
+browsers still support confirmation during the current visit.
+
+An open invitation refreshes its public snapshot every 60 seconds, respecting
+longer Retry-After limits. A revoked/expired link or failed snapshot refresh clears
+its actionable content. Published updates clear old download-success guidance.
+The backend still authorizes every public download and validates the snapshot;
+browser preferences are presentation only. This page makes no authenticated
+server-management calls and does not install mods or auto-connect a launcher.
+
+Quick help uses the published version, login rules and whitelist state to explain
+common connection errors. Actual running login settings may differ until the host
+restarts Minecraft and refreshes the invitation. The page does not claim to
+measure whether the player has the right mods installed or whether the game is
+currently Online.
+
+Cross-origin development responses expose `Retry-After` alongside `X-Request-ID`
+to the existing allowed frontend origin, so browser polling can honor the API's
+longer cooldown. This does not broaden the allowed origins or authentication.

@@ -450,9 +450,9 @@ func (a *API) middleware(next http.Handler) http.Handler {
 			}
 			rw.Header().Set("Access-Control-Allow-Origin", origin)
 			rw.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
+			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, Retry-After")
 			rw.Header().Set("Vary", "Origin")
-			rw.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
+			rw.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, Retry-After")
 		}
 		if r.Method == http.MethodOptions {
 			rw.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")

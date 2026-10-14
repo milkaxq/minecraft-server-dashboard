@@ -5,6 +5,8 @@ import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Icon } from "./ui";
 import { LauncherSetup, LauncherPicker, useLauncherChoice } from "./player-launcher";
+import { useReturningPlayer } from "./player-returning";
+import { PlayerJoinHelp } from "./player-join-help";
 import { request } from "../lib/api";
 
 export function PlayerInvite({ server, ready }) {
@@ -207,23 +209,61 @@ export function PublicPlayerJoin({ slug }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [packDownloaded, setPackDownloaded] = useState(false);
+  const [downloadedRevision, setDownloadedRevision] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [reload, setReload] = useState(0);
+  const [showSetup, setShowSetup] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
+  const player = useReturningPlayer(setup);
+  const packDownloaded = downloadedRevision !== null && downloadedRevision === player.revision;
+  const requiredMods = setup?.addons?.some((addon) => addon.required);
+  const setupIssue =
+    setup?.pack_reason ||
+    (requiredMods && !setup?.pack_ready
+      ? "Required client downloads are not ready. Ask your host to refresh player setup."
+      : null);
+  const showDownloadSteps =
+    setup?.pack_ready &&
+    !setupIssue &&
+    (requiredMods || showOptional) &&
+    (!player.returning || showSetup);
   // A public player page deliberately never calls authenticated management APIs.
   useEffect(() => {
     const controller = new AbortController();
-    request(`/join/${encodeURIComponent(slug)}`, { signal: controller.signal })
-      .then((data) => {
-        if (!controller.signal.aborted) setSetup(data);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setError(error);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [slug]);
+    let timer;
+    let inFlight = false;
+    async function refresh() {
+      if (inFlight || controller.signal.aborted) return;
+      inFlight = true;
+      let delay = 60000;
+      try {
+        const data = await request(`/join/${encodeURIComponent(slug)}`, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
+          setSetup(data);
+          setError(null);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setSetup(null);
+          setError(error);
+        }
+        if (error.status === 429) delay = Math.max(delay, error.retryAfterMs || 60000);
+      } finally {
+        inFlight = false;
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          timer = setTimeout(refresh, delay);
+        }
+      }
+    }
+    refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [slug, reload]);
   async function copy() {
     try {
       await navigator.clipboard.writeText(setup.address);
@@ -243,7 +283,7 @@ export function PublicPlayerJoin({ slug }) {
       a.download = "blockyard-player-setup.mrpack";
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setPackDownloaded(true);
+      setDownloadedRevision(player.revision);
     } catch (e) {
       setError(e);
     } finally {
@@ -264,8 +304,27 @@ export function PublicPlayerJoin({ slug }) {
         </section>
       ) : !setup ? (
         <section className="panel">
-          <h1>This invite is unavailable</h1>
-          <p>Ask your host for a fresh invite link.</p>
+          <h1>
+            {error?.status === 404
+              ? "This invite is unavailable"
+              : "Player setup couldn’t be loaded"}
+          </h1>
+          <p>
+            {error?.status === 404
+              ? "Ask your host for a fresh invite link."
+              : "We’ll try again automatically. Your host may also be able to help."}
+          </p>
+          {error?.status !== 404 && error?.status !== 429 && (
+            <button
+              className="button secondary"
+              onClick={() => {
+                setLoading(true);
+                setReload((value) => value + 1);
+              }}
+            >
+              Try again
+            </button>
+          )}
         </section>
       ) : (
         <>
@@ -281,20 +340,69 @@ export function PublicPlayerJoin({ slug }) {
               </button>
             </div>
           </section>
-          <div className="player-setup-heading">
-            <span className="eyebrow">LET’S PLAY</span>
-            <h2>
-              {setup.pack_ready ? "Three steps to your adventure." : "Your way into the world."}
-            </h2>
-            <p>
-              {setup.pack_ready
-                ? "Download once. Import into your launcher. Join your friends."
-                : "Use the matching Minecraft version and the address above."}
+          {player.changed && !setupIssue && (
+            <p className="notice" role="status">
+              Your host published a new player setup.{" "}
+              {requiredMods
+                ? "Download and import the latest pack before joining."
+                : "Review the current version and access rules before joining."}
             </p>
-          </div>
-          {setup.pack_ready && <LauncherPicker launcher={launcher} onChange={setLauncher} />}
+          )}
+          {player.returning && !showSetup && (
+            <section className="panel returning-player" aria-label="Returning player">
+              <h2>Welcome back. Let’s play.</h2>
+              <p>
+                You marked this setup ready in this browser. Open your matching Minecraft profile,
+                then use the address above.
+              </p>
+              {setup.pack_ready && (
+                <button
+                  className="button secondary"
+                  onClick={() => {
+                    setShowSetup(true);
+                    if (!requiredMods) setShowOptional(true);
+                  }}
+                >
+                  Show setup & downloads
+                </button>
+              )}
+            </section>
+          )}
+          {(!player.returning || showSetup) && (
+            <div className="player-setup-heading">
+              <span className="eyebrow">LET’S PLAY</span>
+              <h2>
+                {showDownloadSteps
+                  ? "Three steps to your adventure."
+                  : requiredMods || setupIssue
+                    ? "Your way into the world."
+                    : "Open Minecraft. Join your friends."}
+              </h2>
+              <p>
+                {showDownloadSteps
+                  ? "Download once. Import into your launcher. Join your friends."
+                  : setupIssue
+                    ? "Your host needs to finish the setup below."
+                    : requiredMods
+                      ? "Use your imported player profile and the address above."
+                      : "No required client downloads are listed in this invitation."}
+              </p>
+            </div>
+          )}
+          {setup.pack_ready && !requiredMods && !showOptional && (
+            <button
+              className="button secondary optional-player-extras"
+              onClick={() => {
+                setShowOptional(true);
+                setShowSetup(true);
+              }}
+            >
+              Set up optional player features
+            </button>
+          )}
+          {showDownloadSteps && <LauncherPicker launcher={launcher} onChange={setLauncher} />}
           <section className="player-steps" aria-label="Join steps">
-            {setup.pack_ready ? (
+            {showDownloadSteps ? (
               <>
                 <article className="panel player-step">
                   <span className="step-number">1</span>
@@ -333,35 +441,42 @@ export function PublicPlayerJoin({ slug }) {
                   <LauncherSetup launcher={launcher} setup={setup} slug={slug} />
                 </article>
               </>
-            ) : (
+            ) : setupIssue ? (
               <article className="panel player-step">
                 <span className="step-number">1</span>
-                <h2>
-                  {setup.pack_reason ? "Ask your host to finish player setup" : "Open Minecraft"}
-                </h2>
-                <p>{setup.pack_reason || `Launch Minecraft Java ${setup.minecraft_version}.`}</p>
-                {setup.addons?.map((addon) => (
-                  <p key={addon.project || addon.title}>
-                    <strong>{addon.title}</strong> ·{" "}
-                    {addon.required ? "Required to join" : "Optional features"}
-                    {addon.project && (
-                      <a
-                        className="text-link"
-                        href={`https://modrinth.com/project/${encodeURIComponent(addon.project)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Find download ↗
-                      </a>
-                    )}
-                  </p>
-                ))}
+                <h2>{setupIssue ? "Ask your host to finish player setup" : "Open Minecraft"}</h2>
+                <p>{setupIssue || `Launch Minecraft Java ${setup.minecraft_version}.`}</p>
+                {setup.addons
+                  ?.filter((addon) => setupIssue || addon.required)
+                  .map((addon) => (
+                    <p key={addon.project || addon.title}>
+                      <strong>{addon.title}</strong> ·{" "}
+                      {addon.required ? "Required to join" : "Optional features"}
+                      {addon.project && (
+                        <a
+                          className="text-link"
+                          href={`https://modrinth.com/project/${encodeURIComponent(addon.project)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Find download ↗
+                        </a>
+                      )}
+                    </p>
+                  ))}
               </article>
-            )}
+            ) : null}
             <article className="panel player-step">
-              <span className="step-number">{setup.pack_ready ? "3" : "2"}</span>
+              <span className="step-number">
+                {showDownloadSteps ? "3" : setupIssue ? "2" : "1"}
+              </span>
               <h2>Join and play</h2>
-              <p>Multiplayer → Add Server. Paste the address above, then Join Server.</p>
+              <p>
+                {!requiredMods &&
+                  !showDownloadSteps &&
+                  `Open Minecraft Java ${setup.minecraft_version}. `}
+                Multiplayer → Add Server. Paste the address above, then Join Server.
+              </p>
               <p>Ask your host to start the server before joining.</p>
               {setup.whitelist && (
                 <p className="notice">
@@ -387,8 +502,33 @@ export function PublicPlayerJoin({ slug }) {
               )}
             </article>
           </section>
+          {!setupIssue && (!requiredMods || setup.pack_ready) && !player.returning && (
+            <section className="panel player-ready-check" aria-label="Remember player setup">
+              <h2>
+                {requiredMods
+                  ? "Already imported and launched the player pack?"
+                  : "Have the matching Minecraft version ready?"}
+              </h2>
+              <p>
+                Skip these instructions next time. This is your confirmation; the website cannot
+                check your launcher.
+              </p>
+              <button
+                className="button primary"
+                onClick={() => {
+                  player.ready();
+                  setShowSetup(false);
+                }}
+              >
+                My Minecraft setup is ready
+              </button>
+            </section>
+          )}
+          <PlayerJoinHelp setup={setup} />
           <details className="panel">
-            <summary>What will be installed?</summary>
+            <summary>
+              {setup.pack_ready ? "What will be installed?" : "About this player setup"}
+            </summary>
             {setup.notes?.map((note) => (
               <p key={note}>{note}</p>
             ))}
@@ -400,9 +540,11 @@ export function PublicPlayerJoin({ slug }) {
               ))}
             </ul>
             <p>
-              Published by your host on {new Date(setup.published_at).toLocaleString()}. This pack
-              covers verified client JARs, not arbitrary custom configurations or manually uploaded
-              files. If the host changes the server, ask them to refresh this setup.
+              Published by your host on {new Date(setup.published_at).toLocaleString()}.{" "}
+              {setup.pack_ready
+                ? "This pack covers verified client JARs, not arbitrary custom configurations or manually uploaded files. "
+                : "These are the host’s published joining requirements. "}
+              If the host changes the server, ask them to refresh this setup.
             </p>
             <p>
               Ordinary Minecraft cannot install mods from its connection prompt. A launcher import

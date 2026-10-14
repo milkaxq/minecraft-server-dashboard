@@ -4656,3 +4656,244 @@ for (const online of [false, true]) {
     ).toHaveAttribute("href", `/servers/${serverID}/files`);
   });
 }
+
+for (const width of [390, 1366]) {
+  test(`invite without required client mods keeps joining simple at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await mockAPI(page);
+    await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+      route.fulfill({
+        json: { ...playerSetup, addons: [], pack_ready: false, loader: "", loader_version: "" },
+      }),
+    );
+    await page.goto(`/join/${playerSlug}`);
+    await expect(
+      page.getByRole("heading", { name: "Open Minecraft. Join your friends." }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy address", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Your Minecraft launcher" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
+    expect(calls.some((call) => call.path.startsWith("/servers"))).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`simple-invite-${width}.png`),
+      fullPage: true,
+    });
+  });
+}
+
+test("optional player mods do not turn the basic join path into mandatory installation", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({
+      json: {
+        ...playerSetup,
+        addons: playerSetup.addons.map((addon) => ({ ...addon, required: false })),
+      },
+    }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Set up optional player features" }).click();
+  await expect(page.getByRole("button", { name: "Download player pack" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Add optional player features" })).toBeVisible();
+});
+
+test("returning player explicitly confirms setup and can reopen downloads after refresh", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: playerSetup }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await selectValue(
+    page,
+    page.getByRole("combobox", { name: "Your Minecraft launcher" }),
+    "sklauncher",
+  );
+  await expect(page.getByRole("region", { name: "Returning player" })).toHaveCount(0);
+  await page.getByRole("button", { name: "My Minecraft setup is ready" }).click();
+  await expect(page.getByRole("region", { name: "Returning player" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Returning player" })).toBeVisible();
+  await page.getByRole("button", { name: "Show setup & downloads" }).click();
+  await expect(page.getByRole("combobox", { name: "Your Minecraft launcher" })).toContainText(
+    "SKlauncher 4",
+  );
+  await expect(page.getByRole("button", { name: "Download player pack" })).toBeVisible();
+});
+
+test("republished setup resets returning guidance and requires current player setup", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let setup = playerSetup;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: setup }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await page.getByRole("button", { name: "My Minecraft setup is ready" }).click();
+  setup = { ...playerSetup, published_at: "2026-10-14T12:00:00Z", minecraft_version: "26.3" };
+  await page.reload();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Your host published a new player setup" }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Returning player" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Download player pack" })).toBeVisible();
+});
+
+test("open invite rechecks setup and stops downloads after revocation", async ({ page }) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let revoked = false;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    revoked
+      ? route.fulfill({ status: 404, json: { error: "resource not found" } })
+      : route.fulfill({ json: playerSetup }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await expect(page.getByRole("button", { name: "Download player pack" })).toBeVisible();
+  revoked = true;
+  await page.clock.fastForward(60001);
+  await expect(page.getByRole("heading", { name: "This invite is unavailable" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
+});
+
+test("quick connection help uses published version and login rules without management access", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: { ...playerSetup, verified_login: true, whitelist: true } }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await page.getByText("Can’t join? Find a quick fix", { exact: true }).click();
+  const help = page.locator(".player-connection-help");
+  const control = help.getByRole("combobox", { name: "What does Minecraft show?" });
+  await expect(help.getByText("Open Minecraft Java 1.21.1.", { exact: false })).toBeVisible();
+  await selectValue(page, control, "login");
+  await expect(help.getByText("An offline username cannot pass", { exact: false })).toBeVisible();
+  await selectValue(page, control, "whitelist");
+  await expect(
+    help.getByText("Send your exact Minecraft username", { exact: false }),
+  ).toBeVisible();
+  await selectValue(page, control, "mods");
+  await expect(
+    help.getByText("Downloading the pack alone does not install it.", { exact: false }),
+  ).toBeVisible();
+  expect(calls.some((call) => call.path.startsWith("/servers"))).toBe(false);
+});
+
+test("player readiness works for the current visit when browser storage is blocked", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = () => {
+      throw Error("blocked");
+    };
+    Storage.prototype.setItem = () => {
+      throw Error("blocked");
+    };
+  });
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: playerSetup }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await page.getByRole("button", { name: "My Minecraft setup is ready" }).click();
+  await expect(page.getByRole("region", { name: "Returning player" })).toBeVisible();
+});
+
+test("downloading does not confirm installation and a refreshed pack clears old download guidance", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let setup = playerSetup;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: setup }),
+  );
+  await page.route(`http://localhost:8080/join/${playerSlug}/pack`, (route) =>
+    route.fulfill({ body: Buffer.from("pack"), contentType: "application/x-modrinth-modpack+zip" }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download player pack" }).click();
+  await download;
+  await expect(page.getByText("Downloaded. Import it in your launcher next.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Returning player" })).toHaveCount(0);
+  setup = { ...playerSetup, published_at: "2026-10-14T14:00:00Z" };
+  await page.clock.fastForward(60001);
+  await expect(page.getByText("Downloaded. Import it in your launcher next.")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Download player pack" })).toBeVisible();
+});
+
+test("invite refresh respects rate-limit retry timing", async ({ page }) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let reads = 0;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({
+          status: 429,
+          headers: {
+            "Retry-After": "120",
+            "Access-Control-Expose-Headers": "Retry-After, X-Request-ID",
+          },
+          json: { error: "too many requests" },
+        })
+      : route.fulfill({ json: playerSetup });
+  });
+  await page.goto(`/join/${playerSlug}`);
+  await expect(
+    page.getByRole("heading", { name: "Player setup couldn’t be loaded" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await page.clock.fastForward(60001);
+  expect(reads).toBe(1);
+  await page.clock.fastForward(60001);
+  await expect(page.getByRole("heading", { name: "Join The Lantern Lodge" })).toBeVisible();
+  expect(reads).toBe(2);
+});
+
+test("returning optional-feature players can reopen the optional download path", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({
+      json: {
+        ...playerSetup,
+        addons: playerSetup.addons.map((addon) => ({ ...addon, required: false })),
+      },
+    }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await page.getByRole("button", { name: "My Minecraft setup is ready" }).click();
+  await page.getByRole("button", { name: "Show setup & downloads" }).click();
+  await expect(page.getByRole("button", { name: "Download player pack" })).toBeVisible();
+});
+
+test("required addons without a ready pack cannot be skipped as normal Minecraft", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: { ...playerSetup, pack_ready: false } }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await expect(
+    page.getByRole("heading", { name: "Ask your host to finish player setup" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "My Minecraft setup is ready" })).toHaveCount(0);
+});
