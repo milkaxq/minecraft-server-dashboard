@@ -612,8 +612,43 @@ function Settings({ id, offline }) {
   const form = draft?.source === resource.data ? draft.values : resource.data;
   const set = (key, value) =>
     setDraft({ source: resource.data, values: { ...form, [key]: value } });
+  const labels = {
+    motd: "Server message",
+    difficulty: "Difficulty",
+    gamemode: "Game mode",
+    max_players: "Maximum players",
+    view_distance: "View distance",
+    spawn_protection: "Spawn protection",
+    hardcore: "Hardcore",
+    pvp: "Player vs. player",
+    whitelist: "Whitelist",
+    online_mode: "Verify Minecraft accounts",
+  };
+  const changes =
+    form && resource.data
+      ? Object.keys(labels).filter((key) => form[key] !== resource.data[key])
+      : [];
+  const display = (value) => (typeof value === "boolean" ? (value ? "On" : "Off") : String(value));
+  const presets = [
+    {
+      name: "Survival adventure",
+      help: "Gather resources and survive together.",
+      values: { gamemode: "survival", difficulty: "normal", hardcore: false, pvp: true },
+    },
+    {
+      name: "Peaceful survival",
+      help: "Build and explore without hostile mobs.",
+      values: { gamemode: "survival", difficulty: "peaceful", hardcore: false, pvp: false },
+    },
+    {
+      name: "Creative building",
+      help: "Build freely with unlimited resources.",
+      values: { gamemode: "creative", difficulty: "peaceful", hardcore: false, pvp: false },
+    },
+  ];
   async function save(e) {
     e.preventDefault();
+    if (!offline || action.busy || resource.error || !changes.length) return;
     await action.run(
       () =>
         api(`/servers/${id}/settings`, {
@@ -634,7 +669,11 @@ function Settings({ id, offline }) {
             <h2>Minecraft settings</h2>
             <span>Changes apply on the next server start</span>
           </div>
-          <button className="button secondary" onClick={resource.refresh}>
+          <button
+            className="button secondary"
+            disabled={action.busy || changes.length > 0}
+            onClick={resource.refresh}
+          >
             Reload settings
           </button>
         </div>
@@ -643,6 +682,29 @@ function Settings({ id, offline }) {
         ) : (
           form && (
             <form onSubmit={save} className="settings-form">
+              <div className="gameplay-presets">
+                <h3>How do you want to play?</h3>
+                <p className="field-help">
+                  Choose a starting point, then adjust anything below. Joining rules and player
+                  limits stay as you set them.
+                </p>
+                <div className="gameplay-preset-grid">
+                  {presets.map((preset) => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      className="button secondary gameplay-preset"
+                      disabled={action.busy}
+                      onClick={() =>
+                        setDraft({ source: resource.data, values: { ...form, ...preset.values } })
+                      }
+                    >
+                      <strong>{preset.name}</strong>
+                      <span>{preset.help}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label className="field">
                 Server message (MOTD)
                 <input
@@ -736,7 +798,48 @@ function Settings({ id, offline }) {
                 Your hosting resources stay allocated by your plan. More players or a larger view
                 distance can use more memory and CPU.
               </p>
-              <button className="button primary" disabled={!offline || action.busy}>
+              <section
+                className="settings-review"
+                aria-label="Review settings changes"
+                aria-live="polite"
+              >
+                <h3>
+                  {changes.length
+                    ? `Review ${changes.length} change${changes.length === 1 ? "" : "s"}`
+                    : "No unsaved changes"}
+                </h3>
+                {changes.length > 0 && (
+                  <>
+                    <ul>
+                      {changes.map((key) => (
+                        <li key={key}>
+                          <strong>{labels[key]}:</strong> {display(resource.data[key])} →{" "}
+                          {display(form[key])}
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={action.busy}
+                      onClick={() => setDraft(null)}
+                    >
+                      Discard changes
+                    </button>
+                  </>
+                )}
+                <p className="field-help">
+                  {offline
+                    ? "Save these changes, then start your server to apply them."
+                    : "Stop your server before saving. Your edits are kept on this page."}{" "}
+                  Game mode sets the default for new players; existing players may keep their
+                  current mode.
+                </p>
+              </section>
+              <button
+                className="button primary"
+                disabled={!offline || action.busy || !!resource.error || !changes.length}
+              >
                 {action.busy ? "Saving…" : "Save settings"}
               </button>
             </form>

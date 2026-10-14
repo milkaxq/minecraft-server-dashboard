@@ -3948,3 +3948,71 @@ test("health report context rejects arbitrary query values", async ({ page }) =>
   expect(JSON.stringify(submitted)).not.toContain("private-health-value");
   expect(JSON.stringify(submitted)).not.toContain("private-time-value");
 });
+
+test("gameplay choices review edits and preserve joining rules before saving", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: /Creative building/ }).click();
+  const review = page.getByRole("region", { name: "Review settings changes" });
+  await expect(review).toContainText("survival → creative");
+  await expect(page.getByRole("button", { name: "Reload settings", exact: true })).toBeDisabled();
+  expect(calls.some((call) => call.method === "PUT" && call.path.endsWith("/settings"))).toBe(
+    false,
+  );
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(review).toContainText("No unsaved changes");
+  await expect(page.getByRole("button", { name: "Reload settings", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: /Creative building/ }).click();
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Settings saved");
+  const saved = calls.find((call) => call.method === "PUT" && call.path.endsWith("/settings")).body;
+  expect(saved).toMatchObject({
+    gamemode: "creative",
+    difficulty: "peaceful",
+    hardcore: false,
+    pvp: false,
+    online_mode: true,
+    whitelist: false,
+    max_players: 10,
+    revision: "a".repeat(64),
+  });
+  expect(saved).not.toHaveProperty("cpu_limit");
+});
+
+test("game settings keep offline login defaults and block saves while running", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { initiallyRunning: true });
+  await page.route(`http://localhost:8080/servers/${serverID}/settings`, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({
+      json: {
+        motd: "Welcome",
+        difficulty: "normal",
+        gamemode: "survival",
+        hardcore: false,
+        pvp: true,
+        max_players: 10,
+        whitelist: false,
+        online_mode: false,
+        view_distance: 10,
+        spawn_protection: 16,
+        revision: "a".repeat(64),
+      },
+    });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /Peaceful survival/ }).click();
+  await expect(page.getByRole("checkbox", { name: /Verify Minecraft accounts/ })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /^Whitelist/ })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await expect(page.getByRole("region", { name: "Review settings changes" })).toContainText(
+    "Stop your server before saving",
+  );
+  expect(calls.some((call) => call.path.endsWith("/settings") && call.method === "PUT")).toBe(
+    false,
+  );
+});
