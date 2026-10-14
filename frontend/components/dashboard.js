@@ -32,7 +32,13 @@ export function ServerCard({ server }) {
         <div className="art-overlay">
           <span className="software-tag">{softwareName(server.server_type)}</span>
           <Badge
-            state={server.deletion_pending ? "DELETING" : usage?.power_state || server.status}
+            state={
+              server.deletion_pending
+                ? "DELETING"
+                : error
+                  ? "UNKNOWN"
+                  : usage?.power_state || server.status
+            }
           />
         </div>
       </div>
@@ -57,10 +63,10 @@ export function ServerCard({ server }) {
           <span>
             {server.deletion_pending
               ? "Deleting…"
-              : usage?.players_online != null
-                ? `${usage.players_online} playing`
-                : error
-                  ? "Status unavailable"
+              : error
+                ? "Status unavailable"
+                : usage?.players_available && usage?.players_online != null
+                  ? `${usage.players_online} playing`
                   : "Manage"}{" "}
             <span aria-hidden="true">↗</span>
           </span>
@@ -91,7 +97,7 @@ export function Dashboard({ serversOnly = false }) {
   return (
     <Shell>
       <PageHeading
-        eyebrow={serversOnly ? "YOUR WORLDS" : "YOUR WORKSPACE"}
+        eyebrow={serversOnly ? "YOUR WORLDS" : "YOUR WORLDS"}
         title={
           serversOnly
             ? "Your servers"
@@ -116,83 +122,86 @@ export function Dashboard({ serversOnly = false }) {
         }
       />
       {!serversOnly && <Notifications />}
-      {!serversOnly && beta && servers && <BetaGettingStarted servers={servers} />}
+      {!serversOnly && beta && servers && (
+        <details className="dashboard-hosting-details" open={!servers.length}>
+          <summary>Private beta help</summary>
+          <BetaGettingStarted servers={servers} />
+        </details>
+      )}
       {!serversOnly && (
         <>
-          {servers?.length === 0 && !beta && (
-            <section className="welcome-banner">
-              <div>
-                <span className="banner-kicker">MAKE SOMETHING TOGETHER</span>
-                <h2>
-                  A little space.
-                  <br />
-                  Endless possibilities.
-                </h2>
-                <p>
-                  Build a base, explore the unknown, or just hang out.
-                  <br />
-                  We’ll help you keep your world ready.
-                </p>
-                <Link href="/servers/new" className="button banner-button">
-                  Create your next world <Icon name="arrow" size={16} />
-                </Link>
+          <section className="dashboard-play-hero" aria-label="Your next adventure">
+            <span className="landing-kicker">LESS SETUP. MORE MINECRAFT.</span>
+            <h2>Make tonight an adventure.</h2>
+            <p>
+              Your worlds and friends are one click away. Start playing, or make room for something
+              new.
+            </p>
+            {visible.length > 0 ? (
+              <Link href={`/servers/${visible[0].id}`} className="button">
+                Open my world <Icon name="arrow" size={16} />
+              </Link>
+            ) : !beta || session?.user.is_admin ? (
+              <Link href="/servers/new" className="button">
+                Create your next world <Icon name="arrow" size={16} />
+              </Link>
+            ) : (
+              <Link href="/guide#start-and-join" className="button">
+                Find your first world <Icon name="arrow" size={16} />
+              </Link>
+            )}
+          </section>
+          <details className="dashboard-hosting-details">
+            <summary>Hosting details</summary>
+            <div className="summary-grid">
+              <div className="summary-card">
+                <span className="summary-icon">
+                  <Icon name="server" />
+                </span>
+                <div>
+                  <span>Total servers</span>
+                  <strong>
+                    {servers
+                      ? servers.filter((s) => s.status !== "CANCELLED" && !s.deletion_pending)
+                          .length
+                      : "—"}
+                    <small>in your workspace</small>
+                  </strong>
+                </div>
               </div>
-              <div className="hero-blocks" aria-hidden="true">
-                <span className="block block-a" />
-                <span className="block block-b" />
-                <span className="block block-c" />
-                <span className="block block-d" />
-                <span className="hero-star">✦</span>
+              <div className="summary-card">
+                <span className="summary-icon green">
+                  <Icon name="play" />
+                </span>
+                <div>
+                  <span>Active hosting</span>
+                  <strong>
+                    {servers ? ready : "—"}
+                    <small>activated servers</small>
+                  </strong>
+                </div>
               </div>
-            </section>
-          )}
-          <div className="summary-grid">
-            <div className="summary-card">
-              <span className="summary-icon">
-                <Icon name="server" />
-              </span>
-              <div>
-                <span>Total servers</span>
-                <strong>
-                  {servers
-                    ? servers.filter((s) => s.status !== "CANCELLED" && !s.deletion_pending).length
-                    : "—"}
-                  <small>in your workspace</small>
-                </strong>
-              </div>
-            </div>
-            <div className="summary-card">
-              <span className="summary-icon green">
-                <Icon name="play" />
-              </span>
-              <div>
-                <span>Active hosting</span>
-                <strong>
-                  {servers ? ready : "—"}
-                  <small>activated servers</small>
-                </strong>
-              </div>
-            </div>
-            <div className="summary-card">
-              <span className="summary-icon amber">
-                <Icon name="cpu" />
-              </span>
-              <div>
-                <span>Allocated memory</span>
-                <strong>
-                  {servers
-                    ? formatBytes(
-                        servers
-                          .filter((s) => !["CANCELLED", "FAILED"].includes(s.status))
-                          .reduce((sum, s) => sum + s.ram_mb * 1048576, 0),
-                        0,
-                      )
-                    : "—"}
-                  <small>across your worlds</small>
-                </strong>
+              <div className="summary-card">
+                <span className="summary-icon amber">
+                  <Icon name="cpu" />
+                </span>
+                <div>
+                  <span>Allocated memory</span>
+                  <strong>
+                    {servers
+                      ? formatBytes(
+                          servers
+                            .filter((s) => !["CANCELLED", "FAILED"].includes(s.status))
+                            .reduce((sum, s) => sum + s.ram_mb * 1048576, 0),
+                          0,
+                        )
+                      : "—"}
+                    <small>across your worlds</small>
+                  </strong>
+                </div>
               </div>
             </div>
-          </div>
+          </details>
         </>
       )}
       <div className="section-heading">

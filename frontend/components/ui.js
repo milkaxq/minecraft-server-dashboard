@@ -102,9 +102,9 @@ export function Icon({ name, size = 20 }) {
     </svg>
   );
 }
-export function Brand() {
+export function Brand({ href = "/dashboard" }) {
   return (
-    <Link href="/dashboard" className="brand">
+    <Link href={href} className="brand">
       <span className="brand-mark">
         <span />
         <span />
@@ -196,7 +196,7 @@ export function Shell({ children }) {
         aria-labelledby="mobile-menu-title"
       >
         <div className="mobile-menu-heading">
-          <h2 id="mobile-menu-title">Your workspace</h2>
+          <h2 id="mobile-menu-title">Your worlds</h2>
           <button
             className="mobile-menu-button"
             onClick={() => menu.current?.close()}
@@ -224,12 +224,12 @@ export function Shell({ children }) {
         <div className="workspace">
           <span className="workspace-avatar">{session.user.name.slice(0, 1).toUpperCase()}</span>
           <div>
-            <strong>My workspace</strong>
+            <strong>My worlds</strong>
             <small>Personal hosting</small>
           </div>
           <span className="workspace-dot" />
         </div>
-        <div className="nav-label">WORKSPACE</div>
+        <div className="nav-label">YOUR WORLDS</div>
         <nav aria-label="Main navigation">{navigation}</nav>
         <div className="sidebar-bottom">
           <div className="sidebar-note">
@@ -265,7 +265,7 @@ export function Shell({ children }) {
           </span>
           <span className="topbar-tag">
             <span />
-            Your workspace
+            Your worlds
           </span>
         </header>
         <main id="main-content" tabIndex={-1} className="main-content">

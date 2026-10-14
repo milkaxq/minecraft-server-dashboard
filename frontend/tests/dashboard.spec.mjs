@@ -1397,7 +1397,7 @@ test("mobile navigation exposes every destination and sign-out with keyboard dis
   await login(page);
   const trigger = page.getByRole("button", { name: "Open navigation" });
   await trigger.click();
-  const menu = page.getByRole("dialog", { name: "Your workspace" });
+  const menu = page.getByRole("dialog", { name: "Your worlds" });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("button", { name: "Close navigation" })).toBeFocused();
   for (const label of ["Dashboard", "Servers", "Billing", "Account", "Guide", "Admin"])
@@ -4316,4 +4316,71 @@ test("moderation retries retain the original body and stop when Minecraft goes o
   await page.clock.fastForward(6000);
   await expect(confirm).toBeDisabled();
   expect(attempts).toHaveLength(2);
+});
+
+for (const width of [320, 768, 1366]) {
+  test(`player-first homepage shows database plans and honest beta access at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await mockAPI(page, { inviteRequired: true, paymentDisabled: true });
+    await page.goto("/");
+    await expect(
+      page.getByRole("heading", { name: /Your world.*Your friends.*Just play/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Join with an invitation" }).first(),
+    ).toHaveAttribute("href", "/register");
+    await expect(
+      page.getByText("Public checkout is not open during this beta.", { exact: false }),
+    ).toBeVisible();
+    const plans = page.locator("#hosting-plans");
+    await expect(plans).toContainText("Campfire");
+    await expect(plans).toContainText("$9.75");
+    await expect(plans).toContainText("not paid checkout offers");
+    await page.getByText("Will mods download when someone joins?", { exact: true }).click();
+    await expect(
+      page.getByText("Minecraft does not automatically install executable mods on connection.", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    expect(
+      calls.some(
+        (call) =>
+          call.path.startsWith("/servers") ||
+          call.path.startsWith("/admin") ||
+          call.method === "POST",
+      ),
+    ).toBe(false);
+    const image = await page.request.get("/art/world-night.webp");
+    expect(image.status()).toBe(200);
+    expect(image.headers()["content-type"]).toContain("image/webp");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`homepage-${width}.png`), fullPage: true });
+  });
+}
+
+test("homepage fails safely when plans cannot load and dashboard tucks away hosting totals", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route("http://localhost:8080/plans", (route) =>
+    route.fulfill({ status: 503, json: { error: "Unavailable" } }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Hosting plans could not be loaded" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Create your world", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toHaveAttribute(
+    "href",
+    "/login",
+  );
+  await login(page);
+  await expect(page.getByRole("region", { name: "Your next adventure" })).toBeVisible();
+  await expect(page.getByText("Allocated memory", { exact: true })).not.toBeVisible();
+  await page.getByText("Hosting details", { exact: true }).click();
+  await expect(page.getByText("Allocated memory", { exact: true })).toBeVisible();
 });

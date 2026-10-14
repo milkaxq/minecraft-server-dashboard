@@ -5312,3 +5312,572 @@ input {
   border-radius: 10px;
   background: #edf5ed;
 }
+
+/* Player-first welcome, scoped so management tools stay readable. */
+.landing {
+  --landing-bg: #0b1418;
+  --landing-muted: #a8b8ba;
+  --landing-line: #28363a;
+  background: var(--landing-bg);
+  color: #f1f5ee;
+  min-height: 100vh;
+}
+.landing-nav {
+  max-width: 1240px;
+  margin: auto;
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  position: relative;
+  z-index: 2;
+}
+.landing .brand {
+  color: #f1f5ee;
+}
+.landing-nav nav {
+  display: flex;
+  gap: 30px;
+  color: #c9d3cc;
+  font-size: 14px;
+}
+.landing-nav nav a:hover,
+.landing-text-link:hover {
+  color: #a5ed65;
+}
+.landing .button {
+  min-height: 48px;
+  border-radius: 9px;
+  padding: 14px 22px;
+}
+.landing .landing-primary {
+  background: #a5ed65;
+  color: #14220e;
+  border: 1px solid #a5ed65;
+  font-weight: 750;
+  box-shadow: 0 8px 30px #63a82c20;
+}
+.landing .landing-primary:hover {
+  background: #b9fa80;
+  transform: translateY(-1px);
+}
+.landing .landing-signin {
+  color: #f1f5ee;
+  background: #ffffff08;
+  border: 1px solid #46534d;
+}
+.landing .landing-signin:hover {
+  background: #ffffff12;
+  border-color: #a5ed65;
+}
+.landing-hero {
+  position: relative;
+  min-height: 670px;
+  padding: 76px max(32px, calc((100vw - 1176px) / 2)) 95px;
+  background-image:
+    linear-gradient(90deg, #0b1418ed 0%, #0b1418bb 30%, #0b141820 65%),
+    linear-gradient(0deg, #0b1418 0%, #0b141800 45%), url("/art/world-night.webp");
+  background-size: cover;
+  background-position:
+    center,
+    center,
+    center 56%;
+  border-bottom: 1px solid #ffffff08;
+}
+.landing-hero-content {
+  max-width: 585px;
+  position: relative;
+  z-index: 1;
+}
+.landing-kicker {
+  color: #a5ed65;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  font-weight: 750;
+}
+.landing-kicker > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #a5ed65;
+  box-shadow: 0 0 14px #a5ed65a0;
+}
+.landing h1 {
+  font-size: clamp(54px, 6.5vw, 86px);
+  line-height: 1.01;
+  letter-spacing: -4.5px;
+  margin: 22px 0 25px;
+  font-weight: 800;
+}
+.landing em {
+  color: #a5ed65;
+  font-style: normal;
+}
+.landing-hero p {
+  max-width: 420px;
+  color: #c3cecc;
+  font-size: 17px;
+  line-height: 1.75;
+}
+.landing-actions {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  margin: 30px 0 20px;
+  flex-wrap: wrap;
+}
+.landing-text-link {
+  color: #d0dad4;
+  font-size: 14px;
+}
+.landing-text-link span {
+  margin-left: 8px;
+}
+.landing-hero small {
+  display: block;
+  max-width: 430px;
+  color: #b7c6c2;
+  line-height: 1.6;
+  font-size: 12px;
+}
+.landing-scene-caption {
+  position: absolute;
+  right: max(32px, calc((100vw - 1176px) / 2));
+  bottom: 95px;
+  padding: 12px 18px;
+  background: #0b1418b3;
+  border: 1px solid #ffffff16;
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  font-size: 12px;
+  color: #d9e3d5;
+}
+.landing-scene-caption span {
+  color: #a5ed65;
+  margin-right: 10px;
+}
+.landing-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-around;
+  gap: 20px;
+  max-width: 1176px;
+  margin: -18px auto 0;
+  position: relative;
+  background: #152125;
+  border: 1px solid #314039;
+  border-radius: 14px;
+  padding: 24px 30px;
+}
+.landing-benefits > span {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #d7e2d6;
+  font-size: 14px;
+}
+.landing-benefits svg {
+  color: #a5ed65;
+}
+.landing-section {
+  max-width: 1240px;
+  margin: auto;
+  padding: 85px 32px;
+  scroll-margin-top: 24px;
+}
+.landing-section-heading {
+  max-width: 580px;
+  margin-bottom: 35px;
+}
+.landing h2 {
+  font-size: clamp(32px, 4vw, 46px);
+  line-height: 1.13;
+  letter-spacing: -1.8px;
+  margin: 15px 0 20px;
+}
+.landing-section-heading > p,
+.landing-step-grid p,
+.landing-feature-list p {
+  color: var(--landing-muted);
+  line-height: 1.75;
+}
+.landing-step-grid,
+.landing-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+.landing-step-grid article {
+  padding: 30px;
+  background: linear-gradient(145deg, #1a2827, #111d21);
+  border: 1px solid #2b3c34;
+  border-radius: 16px;
+}
+.landing-step-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #a5ed65;
+  margin-bottom: 26px;
+}
+.landing-step-top > span {
+  color: #637774;
+  font-size: 12px;
+}
+.landing h3 {
+  font-size: 19px;
+  letter-spacing: -0.4px;
+}
+.landing-step-grid p {
+  margin-top: 12px;
+  font-size: 14px;
+}
+.landing-features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 100px;
+  border-top: 1px solid #26362e;
+  border-bottom: 1px solid #26362e;
+}
+.landing-features .landing-section-heading {
+  margin: 0;
+}
+.landing-features .landing-primary {
+  margin-top: 24px;
+}
+.landing-feature-list article {
+  display: flex;
+  gap: 18px;
+  padding: 22px 0;
+  border-bottom: 1px solid #293a32;
+}
+.landing-feature-list article:first-child {
+  padding-top: 0;
+}
+.landing-feature-list svg {
+  color: #a5ed65;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.landing-feature-list p {
+  margin-top: 8px;
+  font-size: 14px;
+}
+.landing-plan {
+  padding: 30px;
+  background: #132024;
+  border: 1px solid #304036;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.landing-plan.featured {
+  border-color: #72964f;
+  background: linear-gradient(145deg, #203522, #132024);
+}
+.landing-plan-icon {
+  color: #a5ed65;
+}
+.landing-plan > p {
+  color: var(--landing-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.landing-plan-price {
+  font-size: 35px;
+  font-weight: 750;
+  letter-spacing: -1px;
+}
+.landing-plan-price small {
+  font-size: 13px;
+  color: var(--landing-muted);
+  font-weight: normal;
+  letter-spacing: 0;
+}
+.landing-plan ul {
+  padding-left: 19px;
+  color: #d0dace;
+  line-height: 2;
+  font-size: 14px;
+  margin: 0 0 auto;
+}
+.landing-plan > small {
+  color: var(--landing-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.landing-faq {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 85px;
+  padding-top: 30px;
+}
+.landing-faq details {
+  border-bottom: 1px solid #304036;
+  padding: 22px 0;
+}
+.landing-faq summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  line-height: 1.5;
+}
+.landing-faq summary::-webkit-details-marker {
+  display: none;
+}
+.landing-faq summary svg {
+  flex-shrink: 0;
+  color: #a5ed65;
+}
+.landing-faq p {
+  margin-top: 15px;
+  color: var(--landing-muted);
+  line-height: 1.7;
+  font-size: 14px;
+}
+.landing-last-call {
+  text-align: center;
+  padding: 75px 24px 90px;
+  background: radial-gradient(ellipse at bottom, #24412b80, transparent 75%);
+}
+.landing-last-call .landing-primary {
+  margin-top: 10px;
+}
+.landing-footer {
+  max-width: 1176px;
+  margin: auto;
+  padding: 30px 0;
+  border-top: 1px solid #2c3e32;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  font-size: 13px;
+  color: var(--landing-muted);
+}
+.landing-footer > small {
+  flex-basis: 100%;
+  font-size: 11px;
+}
+.landing-load-error p {
+  margin-bottom: 18px;
+}
+.dashboard-play-hero {
+  position: relative;
+  border-radius: 22px;
+  padding: 36px;
+  margin: 0 0 28px;
+  min-height: 230px;
+  color: #f5f8ee;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, #0b191ff2, #0b191f80 60%, #0b191f30),
+    url("/art/world-night.webp") center 54% / cover;
+}
+.dashboard-play-hero h2 {
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -1.1px;
+  margin: 12px 0;
+  max-width: 500px;
+}
+.dashboard-play-hero p {
+  color: #d4dfd4;
+  max-width: 390px;
+  line-height: 1.7;
+  margin-bottom: 22px;
+}
+.dashboard-play-hero .button {
+  background: #a5ed65;
+  color: #17280e;
+  border: 0;
+}
+.dashboard-hosting-details {
+  margin: 0 0 28px;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+.dashboard-hosting-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.dashboard-hosting-details .summary-grid {
+  margin: 20px 0 0;
+}
+.server-art {
+  background-image: linear-gradient(0deg, #10211d55, #10211d10), url("/art/world-night.webp");
+  background-position: center 56%;
+  background-size: cover;
+}
+.server-art .art-grid,
+.server-art .pixel-tree,
+.server-art .pixel-terrain {
+  display: none;
+}
+.auth-story {
+  background:
+    linear-gradient(0deg, #0b1418e8, #0b1418a8 60%, #0b141880),
+    url("/art/world-night.webp") 68% center / cover;
+}
+.auth-story .auth-landscape {
+  display: none;
+}
+.auth-story h1 {
+  color: #f5f8ee;
+}
+.auth-story h1 em,
+.auth-story .eyebrow {
+  color: #a5ed65;
+}
+.auth-story > .brand {
+  color: #f5f8ee;
+}
+.auth-story p,
+.auth-story .auth-story-footer {
+  color: #d1decf;
+}
+@media (max-width: 900px) {
+  .landing-nav nav {
+    gap: 16px;
+  }
+  .landing-hero {
+    min-height: 650px;
+    padding: 70px 32px 90px;
+    background-position:
+      center,
+      center,
+      57% center;
+  }
+  .landing-scene-caption {
+    display: none;
+  }
+  .landing-benefits {
+    margin-left: 24px;
+    margin-right: 24px;
+  }
+  .landing-step-grid,
+  .landing-plan-grid {
+    gap: 14px;
+  }
+  .landing-step-grid article,
+  .landing-plan {
+    padding: 22px;
+  }
+  .landing-features,
+  .landing-faq {
+    gap: 36px;
+  }
+  .landing-footer {
+    margin: 0 32px;
+  }
+}
+@media (max-width: 650px) {
+  .landing-nav {
+    padding: 22px 20px;
+    gap: 14px;
+  }
+  .landing-nav nav {
+    display: none;
+  }
+  .landing .button {
+    padding: 13px 18px;
+  }
+  .landing-hero {
+    min-height: 710px;
+    padding: 42px 22px 175px;
+    background-image:
+      linear-gradient(0deg, #0b1418 0%, #0b141810 38%, #0b1418b0 75%),
+      linear-gradient(90deg, #0b1418ba, #0b141860), url("/art/world-night.webp");
+    background-position:
+      center,
+      center,
+      64% center;
+  }
+  .landing h1 {
+    font-size: clamp(52px, 13vw, 72px);
+    letter-spacing: -3px;
+  }
+  .landing-hero p {
+    font-size: 15px;
+    max-width: 350px;
+  }
+  .landing-kicker {
+    font-size: 10px;
+    letter-spacing: 1.1px;
+  }
+  .landing-actions {
+    gap: 20px;
+  }
+  .landing-benefits {
+    flex-direction: column;
+    align-items: flex-start;
+    margin: -55px 20px 0;
+    padding: 22px;
+    gap: 18px;
+  }
+  .landing-section {
+    padding: 60px 22px;
+  }
+  .landing-step-grid,
+  .landing-plan-grid,
+  .landing-features,
+  .landing-faq {
+    grid-template-columns: 1fr;
+  }
+  .landing-step-grid article {
+    padding: 26px;
+  }
+  .landing-section-heading {
+    margin-bottom: 28px;
+  }
+  .landing h2 {
+    font-size: 33px;
+    letter-spacing: -1.3px;
+  }
+  .landing-faq {
+    padding-top: 0;
+    gap: 0;
+  }
+  .landing-last-call {
+    padding-top: 30px;
+  }
+  .landing-footer {
+    margin: 0 22px;
+  }
+  .dashboard-play-hero {
+    padding: 28px 24px;
+    background-position:
+      center,
+      65% center;
+    min-height: 250px;
+  }
+}
+.dashboard-play-hero {
+  margin-top: 24px;
+}
+@media (max-width: 650px) {
+  .landing-nav {
+    flex-wrap: wrap;
+  }
+  .landing-nav nav {
+    display: flex;
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    padding-top: 16px;
+    border-top: 1px solid #ffffff12;
+  }
+}
