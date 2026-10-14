@@ -48,7 +48,7 @@ type probe struct{ calls atomic.Int32 }
 
 func (p *probe) Players(context.Context, string, int) (minecraft.Players, error) {
 	p.calls.Add(1)
-	return minecraft.Players{Online: 7, Max: 10}, nil
+	return minecraft.Players{Online: 7, Max: 10, Names: []string{"Steve"}}, nil
 }
 func TestLiveAuthorizationAndIdempotency(t *testing.T) {
 	db := testutil.Database(t)
@@ -139,7 +139,7 @@ func TestLiveAuthorizationAndIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	usage, err := s.Usage(ctx, owner, id)
-	if err != nil || usage.PlayersOnline == nil || *usage.PlayersOnline != 7 || players.calls.Load() != 1 {
+	if err != nil || usage.PlayersOnline == nil || *usage.PlayersOnline != 7 || players.calls.Load() != 1 || len(usage.PlayerNames) != 1 || usage.PlayerNames[0] != "Steve" {
 		t.Fatal("players unavailable", err)
 	}
 	shutdown := uuid.New()

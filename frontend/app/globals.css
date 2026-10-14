@@ -5292,3 +5292,23 @@ input {
   margin: 16px 0;
   line-height: 1.6;
 }
+
+.player-moderation-form {
+  margin: 20px 0 28px;
+}
+.player-moderation-form > .field,
+.player-moderation-form > .field-row {
+  margin-bottom: 18px;
+}
+.player-name-sample {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0;
+  list-style: none;
+}
+.player-name-sample li {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #edf5ed;
+}

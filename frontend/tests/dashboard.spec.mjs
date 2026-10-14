@@ -169,6 +169,7 @@ async function mockAPI(
   };
   let loggedIn = false;
   let running = initiallyRunning;
+  let playerBans = [];
   let deletionPending = false;
   let whitelistEnabled = true;
   let whitelistPlayers = [{ name: "milkaxq", uuid: "60000000-0000-4000-8000-000000000001" }];
@@ -431,6 +432,19 @@ async function mockAPI(
         spawn_protection: 16,
         revision: "a".repeat(64),
       });
+    if (path === `/servers/${serverID}/players/bans`)
+      return reply({ players: playerBans, revision: "e".repeat(64) });
+    if (path === `/servers/${serverID}/players/actions`) {
+      if (body.action === "ban")
+        playerBans.push({
+          uuid: "80000000-0000-4000-8000-000000000001",
+          name: body.name,
+          reason: body.reason,
+        });
+      if (body.action === "unban")
+        playerBans = playerBans.filter((player) => player.name !== body.name);
+      return reply({ confirmed: body.action !== "kick", sent: true });
+    }
     if (path === `/servers/${serverID}/whitelist`) {
       if (request.method() === "GET")
         return reply({
@@ -4173,4 +4187,133 @@ test("setup progress follows provisioning status and offers recovery without cre
           /\/(start|stop|restart|kill|eula)$/.test(call.path)),
     ),
   ).toBe(false);
+});
+
+test("players show reported names honestly and review ban kick and unban", async ({ page }) => {
+  const calls = await mockAPI(page, { initiallyRunning: true });
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({
+      json: {
+        power_state: "running",
+        cpu_percent: 10,
+        memory_bytes: 1000,
+        disk_bytes: 2000,
+        uptime_ms: 1000,
+        players_max: 10,
+        players_available: true,
+        players_online: 3,
+        player_names: ["Steve", "Alex"],
+      },
+    }),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Players", exact: true }).click();
+  const live = page.getByRole("region", { name: "Live players" });
+  await expect(live).toContainText("3 players online");
+  await expect(live).toContainText("not a complete attendance list");
+  await expect(live.getByText("Steve", { exact: true })).toBeVisible();
+  await expect(live.getByRole("link", { name: "Invite friends" })).toHaveAttribute(
+    "href",
+    `/servers/${serverID}#invite-friends`,
+  );
+  const moderation = page.getByRole("region", { name: "Player moderation" });
+  await moderation.getByLabel("Player username", { exact: true }).fill("Steve");
+  await moderation.getByLabel("Reason", { exact: true }).fill("Please respect other players");
+  await selectValue(page, page.getByLabel("Player action"), "ban");
+  await moderation.getByRole("button", { name: "Review player action" }).click();
+  expect(calls.some((call) => call.path.endsWith("/players/actions"))).toBe(false);
+  await page.getByRole("button", { name: "Confirm player action" }).click();
+  await expect(moderation.getByRole("status")).toContainText("Steve is banned");
+  await moderation.getByRole("button", { name: "Unban Steve" }).click();
+  await page.getByRole("button", { name: "Confirm player action" }).click();
+  await expect(moderation.getByRole("status")).toContainText("Steve is no longer banned");
+  await selectValue(page, page.getByLabel("Player action"), "kick");
+  await moderation.getByRole("button", { name: "Review player action" }).click();
+  await page.getByRole("button", { name: "Confirm player action" }).click();
+  await expect(moderation.getByRole("status")).toContainText("Kick command delivered");
+  const writes = calls.filter((call) => call.path.endsWith("/players/actions"));
+  expect(writes).toHaveLength(3);
+  expect(
+    writes.every(
+      (call) =>
+        call.body.confirmed && call.headers["idempotency-key"] && call.body.revision.length === 64,
+    ),
+  ).toBe(true);
+});
+
+test("unavailable player readings block moderation and help reflects actual login settings", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { initiallyRunning: true });
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({ status: 503, json: { error: "Live readings unavailable" } }),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Players", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Live players" })).toContainText(
+    "Live readings unavailable",
+  );
+  await page.getByLabel("Player username", { exact: true }).fill("Steve");
+  await page.getByLabel("Reason", { exact: true }).fill("Rules");
+  await expect(page.getByRole("button", { name: "Review player action" })).toBeDisabled();
+  await selectValue(page, page.getByLabel("Connection problem"), "login");
+  await expect(page.getByRole("region", { name: "Connection help" })).toContainText(
+    "Microsoft verification is on",
+  );
+  expect(calls.some((call) => call.path.endsWith("/players/actions"))).toBe(false);
+  expect(calls.some((call) => call.path.endsWith("/settings") && call.method === "PUT")).toBe(
+    false,
+  );
+});
+
+test("moderation retries retain the original body and stop when Minecraft goes offline", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page, { initiallyRunning: true });
+  let running = true;
+  let revision = "e".repeat(64);
+  const attempts = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({
+      json: {
+        power_state: running ? "running" : "offline",
+        cpu_percent: 10,
+        memory_bytes: 1000,
+        disk_bytes: 2000,
+        uptime_ms: 1000,
+        players_online: 0,
+        players_max: 10,
+        players_available: true,
+      },
+    }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/players/bans`, (route) =>
+    route.fulfill({ json: { players: [], revision } }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/players/actions`, (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    revision = "f".repeat(64);
+    return route.fulfill({ status: 502, json: { error: "Outcome could not be confirmed" } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/players`);
+  await page.getByLabel("Player username", { exact: true }).fill("Steve");
+  await page.getByLabel("Reason", { exact: true }).fill("Rules");
+  await page.getByRole("button", { name: "Review player action" }).click();
+  const confirm = page.getByRole("button", { name: "Confirm player action" });
+  await confirm.click();
+  await expect(page.getByRole("dialog")).toContainText("Outcome could not be confirmed");
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(confirm).toBeEnabled();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  running = false;
+  await page.clock.fastForward(6000);
+  await expect(confirm).toBeDisabled();
+  expect(attempts).toHaveLength(2);
 });

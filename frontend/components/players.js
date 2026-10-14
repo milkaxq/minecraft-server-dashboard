@@ -1,12 +1,16 @@
 "use client";
 
+import Link from "next/link";
+import { Select } from "./select";
+import { ClientRequirementTag } from "./client-compatibility";
+import { PlayerModeration } from "./player-moderation";
 import { useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Loading } from "./ui";
 import { Confirm } from "./management";
 
-export function Players({ id, running }) {
+export function Players({ id, running, server, usage, usageError }) {
   const { api } = useAuth();
   const list = useResource(`/servers/${id}/whitelist`, 5000);
   const [name, setName] = useState("");
@@ -16,6 +20,9 @@ export function Players({ id, running }) {
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [retry, setRetry] = useState(null);
+  const settings = useResource(`/servers/${id}/settings`);
+  const clients = useResource(`/servers/${id}/client-requirements`, 30000);
+  const [problem, setProblem] = useState("version");
   const data = list.data;
   const validName = /^[A-Za-z0-9_]{3,16}$/.test(name);
   const existing = data?.players.some((player) => player.name.toLowerCase() === name.toLowerCase());
@@ -59,19 +66,57 @@ export function Players({ id, running }) {
     }
   }
 
-  if (list.loading && !data) return <Loading />;
   const players =
     data?.players.filter((player) => player.name.toLowerCase().includes(search.toLowerCase())) ||
     [];
   return (
     <>
+      <section className="panel management-panel" aria-label="Live players">
+        <div className="section-heading">
+          <div>
+            <h2>Playing together</h2>
+            <p className="field-help">
+              {usageError || !usage
+                ? "Live readings unavailable. Saved access lists do not show who is online."
+                : usage.power_state === "offline"
+                  ? "Minecraft is stopped. No players are connected."
+                  : usage.players_available && Number.isInteger(usage.players_online)
+                    ? `${usage.players_online} player${usage.players_online === 1 ? "" : "s"} online`
+                    : "Minecraft is running, but player counts are unavailable."}
+            </p>
+          </div>
+          {server.permissions?.includes("members") && (
+            <Link className="button primary" href={`/servers/${id}#invite-friends`}>
+              Invite friends
+            </Link>
+          )}
+        </div>
+        {!usageError && running && usage.players_available && usage.players_online > 0 && (
+          <>
+            <p className="field-help">
+              Reported names may be a sample. The server can hide names; this is not a complete
+              attendance list.
+            </p>
+            {usage.player_names?.length ? (
+              <ul className="player-name-sample">
+                {usage.player_names.map((player) => (
+                  <li key={player}>{player}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No player names reported.</p>
+            )}
+          </>
+        )}
+      </section>
+      {list.loading && !data && <Loading message="Checking saved access…" />}
       <ErrorMessage error={error || list.error} />
       {notice && (
         <p className="notice" role="status">
           {notice}
         </p>
       )}
-      {!running && (
+      {!running && !usageError && usage && (
         <p className="notice">
           Start your server to change player access. You can still view the saved list while it is
           stopped.
@@ -200,6 +245,73 @@ export function Players({ id, running }) {
           </section>
         </>
       )}
+      <PlayerModeration id={id} running={running} />
+      <section className="panel management-panel" aria-label="Connection help">
+        <h2>Friend cannot join?</h2>
+        <label className="field">
+          What does their game say?
+          <Select
+            aria-label="Connection problem"
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+          >
+            <option value="version">Wrong version or incompatible client</option>
+            <option value="mods">Missing mods or modpack</option>
+            <option value="whitelist">Not whitelisted</option>
+            <option value="login">Invalid session or restart launcher</option>
+            <option value="banned">Banned from this server</option>
+            <option value="network">Timed out or cannot connect</option>
+          </Select>
+        </label>
+        <p className="notice">
+          {problem === "version"
+            ? `This server uses ${server.server_type} with Minecraft ${server.minecraft_version}. Use the player invitation to choose a matching launcher profile; a compatibility plugin may allow other versions.`
+            : problem === "mods"
+              ? "Open the player invitation and import its current pack. Refresh the invitation after changing required mods. Server plugins usually stay on the server; a client-mod requirement is shown separately."
+              : problem === "whitelist"
+                ? list.error || !data
+                  ? "The whitelist could not be checked. Reload the saved list before changing access."
+                  : data.enabled
+                    ? "Whitelist is on. Add their exact Minecraft username in Allowed players."
+                    : "Whitelist is off. Reconnect and check the console: another plugin or proxy may be applying its own joining rules."
+                : problem === "login"
+                  ? settings.error || !settings.data
+                    ? "Login settings could not be checked. Open Settings before deciding which login rule to change."
+                    : settings.data.online_mode
+                      ? "Microsoft verification is on. Sign into an account that owns Java Edition, then restart the launcher. A modpack does not bypass account verification."
+                      : "Microsoft verification is off. Check authentication-plugin or proxy messages in the console. If AuthMe is installed, the player may need its in-game /register or /login command. Do not share passwords here."
+                  : problem === "banned"
+                    ? "Review Banned players above. Unban only if you intend to restore access; whitelist and login checks still apply. If they are not listed, check the console for IP bans or plugin/proxy rules."
+                    : "Check that Minecraft is online and share the exact hostname and port from the invitation. A timeout alone does not identify a mod or login problem."}
+        </p>
+        {problem === "mods" && clients.data?.addons?.length > 0 && (
+          <ul className="plugin-list">
+            {clients.data.addons.map((addon) => (
+              <li key={addon.filename}>
+                <div>
+                  <strong>{addon.title || addon.filename}</strong>
+                  <ClientRequirementTag addon={addon} explain />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {problem === "mods" && clients.error && (
+          <p className="field-help">
+            Current client requirements could not be checked. Refresh the player setup before
+            sharing it.
+          </p>
+        )}
+        <p className="field-help">
+          This is guidance for the error your friend reports, not automatic diagnosis of a
+          connection attempt. No access settings are changed here.
+        </p>
+        {server.permissions?.includes("console") && (
+          <Link className="button secondary" href={`/servers/${id}/console`}>
+            Open console
+          </Link>
+        )}
+      </section>
       {confirmation && (
         <Confirm
           title={

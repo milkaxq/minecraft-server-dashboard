@@ -175,7 +175,13 @@ export function ManagementPage({ id, section }) {
               ) : section === "worlds" ? (
                 <Worlds id={id} offline={offline} limit={server.backup_limit} />
               ) : section === "players" ? (
-                <Players id={id} running={usage.data?.power_state === "running"} />
+                <Players
+                  id={id}
+                  server={server}
+                  usage={usage.data}
+                  usageError={usage.error}
+                  running={!usage.error && usage.data?.power_state === "running"}
+                />
               ) : section === "settings" ? (
                 <Settings id={id} offline={offline} />
               ) : section === "mods" ? (

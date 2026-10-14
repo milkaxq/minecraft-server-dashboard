@@ -33,6 +33,8 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 		"GET /servers/{id}/addons/simple-voice-chat/network": a.voiceNetwork,
 		"GET /servers/{id}/backup-schedule":                  a.backupSchedule,
 		"PUT /servers/{id}/backup-schedule":                  a.saveBackupSchedule,
+		"GET /servers/{id}/players/bans":                     a.playerBans,
+		"POST /servers/{id}/players/actions":                 a.changePlayer,
 		"GET /servers/{id}/whitelist":                        a.whitelist,
 		"POST /servers/{id}/whitelist":                       a.changeWhitelist,
 		"GET /servers/{id}/world":                            a.world,

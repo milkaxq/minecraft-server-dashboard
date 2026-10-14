@@ -113,14 +113,15 @@ func (s Service) liveReady(ctx context.Context, t Target) error {
 }
 
 type Usage struct {
-	PowerState       string  `json:"power_state"`
-	CPUPercent       float64 `json:"cpu_percent"`
-	MemoryBytes      int64   `json:"memory_bytes"`
-	DiskBytes        int64   `json:"disk_bytes"`
-	UptimeMS         int64   `json:"uptime_ms"`
-	PlayersOnline    *int    `json:"players_online"`
-	PlayersMax       *int    `json:"players_max"`
-	PlayersAvailable bool    `json:"players_available"`
+	PowerState       string   `json:"power_state"`
+	CPUPercent       float64  `json:"cpu_percent"`
+	MemoryBytes      int64    `json:"memory_bytes"`
+	DiskBytes        int64    `json:"disk_bytes"`
+	UptimeMS         int64    `json:"uptime_ms"`
+	PlayerNames      []string `json:"player_names"`
+	PlayersOnline    *int     `json:"players_online"`
+	PlayersMax       *int     `json:"players_max"`
+	PlayersAvailable bool     `json:"players_available"`
 }
 
 func (s Service) Usage(ctx context.Context, user, id uuid.UUID) (Usage, error) {
@@ -152,6 +153,7 @@ func (s Service) Usage(ctx context.Context, user, id uuid.UUID) (Usage, error) {
 	} else if s.Players != nil && t.Hostname != nil && t.Port != nil {
 		p, err := s.Players.Players(ctx, *t.Hostname, *t.Port)
 		if err == nil {
+			result.PlayerNames = p.Names
 			result.PlayersOnline = &p.Online
 			result.PlayersMax = &p.Max
 			result.PlayersAvailable = true

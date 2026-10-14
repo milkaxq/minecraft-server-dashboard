@@ -11,12 +11,14 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 )
 
 var ErrProtocol = errors.New("minecraft status unavailable")
 
 type Players struct {
+	Names  []string
 	Online int
 	Max    int
 }
@@ -110,6 +112,9 @@ func (Probe) Players(ctx context.Context, host string, port int) (Players, error
 	}
 	var response struct {
 		Players *struct {
+			Sample []struct {
+				Name string `json:"name"`
+			} `json:"sample"`
 			Online int `json:"online"`
 			Max    int `json:"max"`
 		} `json:"players"`
@@ -117,5 +122,27 @@ func (Probe) Players(ctx context.Context, host string, port int) (Players, error
 	if json.Unmarshal(payload, &response) != nil || response.Players == nil || response.Players.Online < 0 || response.Players.Max < 0 || response.Players.Online > 1000000 || response.Players.Max > 1000000 {
 		return Players{}, ErrProtocol
 	}
-	return Players{Online: response.Players.Online, Max: response.Players.Max}, nil
+	names := []string{}
+	seen := map[string]bool{}
+	for _, p := range response.Players.Sample {
+		if len(names) >= 100 {
+			break
+		}
+		if len(p.Name) < 3 || len(p.Name) > 16 {
+			continue
+		}
+		valid := true
+		for _, c := range p.Name {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
+				valid = false
+				break
+			}
+		}
+		key := strings.ToLower(p.Name)
+		if valid && !seen[key] {
+			names = append(names, p.Name)
+			seen[key] = true
+		}
+	}
+	return Players{Online: response.Players.Online, Max: response.Players.Max, Names: names}, nil
 }

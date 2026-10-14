@@ -89,6 +89,7 @@ func TestManagementHTTPAuthorizationCORSAndStrictInput(t *testing.T) {
 		{"GET", "/addons/simple-voice-chat/network", "", "application/json"},
 		{"PUT", "/addons/simple-voice-chat", `{"max_voice_distance":48,"whisper_distance":24,"enable_groups":true,"revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"},
 		{"POST", "/addons/simple-voice-chat/network", `{}`, "application/json"},
+		{"GET", "/players/bans", "", "application/json"}, {"POST", "/players/actions", `{"action":"ban","name":"Steve","reason":"Rules","confirmed":true,"revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"},
 		{"GET", "/whitelist", "", "application/json"}, {"POST", "/whitelist", `{"action":"add","name":"Steve","revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"},
 		{"GET", "/members", "", "application/json"}, {"POST", "/members", `{"email":"friend@example.com","role":"ADMIN"}`, "application/json"}, {"PUT", "/members/" + other.String(), `{"role":"ADMIN"}`, "application/json"}, {"DELETE", "/members/" + other.String(), `{"confirmation":"` + other.String() + `"}`, "application/json"},
 		{"GET", "/world", "", "application/json"}, {"GET", "/world/download", "", "application/json"}, {"POST", "/world/backup", "{}", "application/json"}, {"POST", "/world/reset", `{"backup":"` + backup + `","confirmation":"world","revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"}, {"POST", "/world/upload?backup=" + backup + "&confirmation=world&revision=" + strings.Repeat("a", 64), "invalid zip", "application/octet-stream"},

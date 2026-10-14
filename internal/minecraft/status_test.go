@@ -48,7 +48,7 @@ func TestStatusProtocol(t *testing.T) {
 			done <- ErrProtocol
 			return
 		}
-		payload, _ := json.Marshal(map[string]any{"players": map[string]int{"online": 7, "max": 30}})
+		payload, _ := json.Marshal(map[string]any{"players": map[string]any{"online": 7, "max": 30, "sample": []map[string]string{{"name": "Steve"}, {"name": "steve"}, {"name": "Alex_1"}, {"name": "<not-player>"}, {"name": "Name\nstop"}}}})
 		reply := append([]byte{0}, varint(int32(len(payload)))...)
 		reply = append(reply, payload...)
 		_, err = conn.Write(packet(reply))
@@ -57,7 +57,7 @@ func TestStatusProtocol(t *testing.T) {
 	host, portRaw, _ := net.SplitHostPort(listener.Addr().String())
 	port, _ := strconv.Atoi(portRaw)
 	players, err := (Probe{}).Players(context.Background(), host, port)
-	if err != nil || players.Online != 7 || players.Max != 30 {
+	if err != nil || players.Online != 7 || players.Max != 30 || len(players.Names) != 2 || players.Names[0] != "Steve" || players.Names[1] != "Alex_1" {
 		t.Fatal("status probe failed", err)
 	}
 	if err = <-done; err != nil {
