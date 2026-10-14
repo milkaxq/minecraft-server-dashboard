@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { nextServerAction } from "../lib/next-action.js";
 async function selectValue(page, control, value) {
   await control.waitFor({ state: "attached" });
   const ancestors = control.locator("xpath=ancestor::details");
@@ -4546,3 +4547,112 @@ test("missing pages offer a themed route back to the dashboard", async ({ page }
     "/dashboard",
   );
 });
+
+for (const [name, changes, kind] of [
+  ["offline", { powerState: "offline" }, "start"],
+  ["online owner", { powerState: "running" }, "invite"],
+  ["starting", { powerState: "starting" }, "wait"],
+  ["stopping", { powerState: "stopping" }, "wait"],
+  ["agreement required", { eula: false }, "agreement"],
+  ["agreement not checked", { eula: undefined }, "wait"],
+  [
+    "usage failed with stale online state",
+    { powerState: "running", usageError: new Error("unavailable") },
+    "support",
+  ],
+  ["agreement check failed", { eulaError: new Error("unavailable") }, "support"],
+  ["controls unavailable", { ready: false }, "support"],
+  ["provisioning", { server: { ...baseServer, status: "PROVISIONING" }, ready: false }, "wait"],
+  ["failed setup", { server: { ...baseServer, status: "FAILED" }, ready: false }, "support"],
+  ["suspended", { server: { ...baseServer, status: "SUSPENDED" }, ready: false }, "support"],
+  ["checkout", { server: { ...baseServer, status: "PENDING_PAYMENT" }, ready: false }, "billing"],
+  [
+    "deletion pending",
+    { server: { ...baseServer, deletion_pending: true }, ready: false },
+    "worlds",
+  ],
+  ["cancelled", { server: { ...baseServer, status: "CANCELLED" }, ready: false }, "worlds"],
+  ["no start permission", { server: { ...baseServer, permissions: ["view"] } }, "wait"],
+  [
+    "moderator online",
+    { server: { ...baseServer, permissions: ["view", "start"] }, powerState: "running" },
+    "join",
+  ],
+]) {
+  test(`next action respects ${name}`, () => {
+    expect(
+      nextServerAction({
+        server: baseServer,
+        ready: true,
+        eula: true,
+        powerState: "offline",
+        ...changes,
+      }).kind,
+    ).toBe(kind);
+  });
+}
+
+test("next-action start uses guarded power controls and becomes invite guidance", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  const card = page.getByRole("region", { name: "Play on your server" });
+  await expect(card.getByRole("heading", { name: "Start your next adventure." })).toBeVisible();
+  await card.getByRole("button", { name: "Start your world", exact: true }).click();
+  await expect(card.getByRole("link", { name: "Invite friends", exact: true })).toHaveAttribute(
+    "href",
+    "#invite-friends",
+  );
+  await expect(card.getByRole("button", { name: "Start your world", exact: true })).toHaveCount(0);
+  expect(calls.filter((call) => call.path === `/servers/${serverID}/start`)).toHaveLength(1);
+});
+
+test("next-action agreement directs to explicit acceptance without accepting automatically", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { eulaAccepted: false });
+  await openServer(page);
+  const card = page.getByRole("region", { name: "Play on your server" });
+  await card.getByRole("link", { name: "Review Minecraft agreement" }).click();
+  await expect(page.getByRole("button", { name: "Accept agreement", exact: true })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Start your world", exact: true })).toHaveCount(0);
+  expect(
+    calls.filter((call) => call.path === `/servers/${serverID}/eula` && call.method === "POST"),
+  ).toHaveLength(0);
+});
+
+test("next-action stopping asks players to wait instead of starting again", async ({ page }) => {
+  await mockAPI(page, { initiallyRunning: true, holdStop: true });
+  await openServer(page);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  const card = page.getByRole("region", { name: "Play on your server" });
+  await expect(card.getByRole("heading", { name: "Saving your adventure." })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Start your world", exact: true })).toHaveCount(0);
+});
+
+for (const online of [false, true]) {
+  test(`installed addons lead discovery and show honest ${online ? "online" : "offline"} load guidance`, async ({
+    page,
+  }) => {
+    await mockAPI(page, { initiallyRunning: online });
+    await login(page);
+    await page.goto(`/servers/${serverID}/plugins`);
+    const installed = page.getByRole("heading", { name: "Your plugins", exact: true });
+    await expect(installed).toBeVisible();
+    const catalog = page.getByRole("heading", { name: "Find plugins", exact: true });
+    expect((await installed.boundingBox()).y).toBeLessThan((await catalog.boundingBox()).y);
+    const status = page.getByLabel("Essentials.jar status");
+    await expect(status.getByText("Installed", { exact: true })).toBeVisible();
+    await expect(
+      status.getByText(online ? "Check load status" : "Start to load", { exact: true }),
+    ).toBeVisible();
+    await expect(status.getByText("Loaded and enabled", { exact: true })).toHaveCount(0);
+    await expect(
+      page
+        .locator(".installed-addon-actions")
+        .getByRole("link", { name: "Configuration files" })
+        .first(),
+    ).toHaveAttribute("href", `/servers/${serverID}/files`);
+  });
+}

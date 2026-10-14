@@ -935,8 +935,15 @@ function Plugins({ id, server, offline, mods = false, usage }) {
               addons.
             </li>
             <li>
-              <strong>Start your server.</strong> Minecraft loads the changed files on its next
-              start. Check startup help to confirm they loaded.
+              <strong>
+                {usage?.power_state === "running"
+                  ? "Check the addon loaded."
+                  : "Start your server."}
+              </strong>{" "}
+              Minecraft loads the changed files on its next start.{" "}
+              {usage?.power_state === "running"
+                ? "File presence alone does not confirm it loaded; check the console or loaded plugins below."
+                : "Your changed files are waiting for the next start."}
             </li>
             <li>
               <strong>Refresh player setup.</strong> Update your invitation so friends get the
@@ -960,19 +967,6 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           </div>
         </section>
       )}
-      <CatalogBrowser
-        key={`${id}:${server.server_type}:${server.minecraft_version}`}
-        server={server}
-        id={id}
-        collection={collection}
-        offline={offline}
-        onInstalled={() => {
-          resource.refresh();
-          setAddonChange({ message: "Addon files installed" });
-        }}
-        files={resource.data}
-      />
-      <PluginCheck key={id} id={id} mods={mods} usage={usage} files={resource.data} />
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -1021,6 +1015,22 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                 <span>
                   <strong>{v.name}</strong>
                   <small>{formatBytes(v.size)} · File installed</small>
+                  <div className="installed-addon-status" aria-label={`${v.name} status`}>
+                    <span className="client-requirement-tag">Installed</span>
+                    <span className="client-requirement-tag">
+                      {offline
+                        ? "Start to load"
+                        : usage?.power_state === "running"
+                          ? "Check load status"
+                          : "Waiting for server status"}
+                    </span>
+                    {server.permissions?.includes("settings") &&
+                      v.name.toLowerCase().includes("voicechat") && (
+                        <span className="client-requirement-tag">
+                          Guided configuration available
+                        </span>
+                      )}
+                  </div>
                   <ClientRequirementTag
                     explain
                     addon={
@@ -1039,6 +1049,12 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                         Configure
                       </Link>
                     )}
+                  {server.permissions?.includes("files") &&
+                    !v.name.toLowerCase().includes("voicechat") && (
+                      <Link className="button secondary" href={`/servers/${id}/files`}>
+                        Configuration files
+                      </Link>
+                    )}
                   <button
                     className="button danger-outline"
                     disabled={!offline || action.busy}
@@ -1052,6 +1068,19 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           </ul>
         )}
       </section>
+      <PluginCheck key={id} id={id} mods={mods} usage={usage} files={resource.data} />
+      <CatalogBrowser
+        key={`${id}:${server.server_type}:${server.minecraft_version}`}
+        server={server}
+        id={id}
+        collection={collection}
+        offline={offline}
+        onInstalled={() => {
+          resource.refresh();
+          setAddonChange({ message: "Addon files installed" });
+        }}
+        files={resource.data}
+      />
       {pendingUpload && (
         <Confirm
           title={`Review ${label} upload`}

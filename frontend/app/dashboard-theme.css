@@ -887,3 +887,27 @@ body:has(.public-player-page) {
     margin: 10px 0 0 18px;
   }
 }
+.app-shell .next-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+.app-shell .next-action-buttons:empty {
+  display: none;
+}
+.app-shell .installed-addon-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.app-shell .installed-addon-status .client-requirement-tag {
+  background: #293f30;
+  color: #d6edb9;
+}
+@media (max-width: 640px) {
+  .app-shell .next-action-buttons .button {
+    width: 100%;
+  }
+}

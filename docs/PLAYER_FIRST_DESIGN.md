@@ -47,3 +47,21 @@ website. Separate hostnames keep the hosting tools and customer experience clear
 authentication, server authorization and credential boundaries provide security.
 Removing the Panel service would break provisioning and management. Customers do
 not need Panel accounts or its administration interface to use Blockyard.
+
+## Daily next actions and installed addons
+
+The play card now derives its guidance from provisioning, Minecraft agreement,
+live power status and the current user's permissions. It offers one primary next
+action: review the agreement, start the world, invite friends, finish checkout or
+get help. Starting/stopping and incomplete checks show waiting guidance. Failed
+live reads never use a stale Online state to recommend playing. The Start action
+uses the same pending-request and agreement guards as the main controls.
+
+Installed plugins/mods appear before catalog discovery. Their status distinguishes
+an installed file from a confirmed runtime load: stopped servers say “Start to
+load”; online servers offer “Check load status.” Guided configuration is labelled
+as available rather than falsely claiming every addon requires configuration.
+Other addons link to configuration files for users with file access. After addon
+changes, the next-steps message follows the current power state; it does not claim
+a successful start proves the addon loaded. Existing console/plugin checks remain
+the way to confirm runtime status.

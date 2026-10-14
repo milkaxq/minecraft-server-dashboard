@@ -1,4 +1,5 @@
 "use client";
+import { nextServerAction } from "../lib/next-action";
 import { serverHealth } from "../lib/server-health";
 import { softwareName } from "../lib/software";
 import { ServerInsights } from "./server-insights";
@@ -198,6 +199,23 @@ export function ServerDetail({ id, advanced = false }) {
       : powerPending && pendingPower === "start"
         ? "starting"
         : usage?.power_state;
+  const startDisabled =
+    !canStart ||
+    !!busy ||
+    powerPending ||
+    transitioning ||
+    !!usageError ||
+    usage?.power_state !== "offline";
+  const nextAction = server
+    ? nextServerAction({
+        server,
+        ready,
+        powerState: displayPowerState,
+        eula: eula.data?.accepted,
+        eulaError: eula.error,
+        usageError,
+      })
+    : null;
   const address = server?.hostname && server.port ? `${server.hostname}:${server.port}` : null;
   async function acceptAgreement() {
     if (!agreementChecked || busy) return;
@@ -320,13 +338,7 @@ export function ServerDetail({ id, advanced = false }) {
                   <button
                     className="button primary"
                     onClick={() => power("start")}
-                    disabled={
-                      !canStart ||
-                      !!busy ||
-                      powerPending ||
-                      transitioning ||
-                      usage?.power_state !== "offline"
-                    }
+                    disabled={startDisabled}
                   >
                     <Icon name="play" size={15} />
                     {busy === "start" || (powerPending && pendingPower === "start")
@@ -385,6 +397,7 @@ export function ServerDetail({ id, advanced = false }) {
             )}
             {ready && eula.data?.accepted === false && (
               <section
+                id="minecraft-agreement"
                 className="notice lifecycle-notice eula-notice"
                 aria-label="Minecraft agreement"
               >
@@ -446,20 +459,52 @@ export function ServerDetail({ id, advanced = false }) {
             <FeatureLinks id={id} server={server} advanced={advanced} />
             {!advanced && (
               <section className="server-play-card" aria-label="Play on your server">
-                <span className="eyebrow">YOUR WORLD IS WAITING</span>
-                <h2>
-                  {displayPowerState === "running"
-                    ? "Ready for your next adventure."
-                    : "Start your world. Bring your friends."}
-                </h2>
-                <p>
-                  {displayPowerState === "running"
-                    ? `${usage?.players_online ?? "—"} players online · Minecraft Java ${server.minecraft_version}`
-                    : "Use the controls above, then join with this address."}
-                </p>
+                <span className="eyebrow">YOUR NEXT STEP</span>
+                <h2>{nextAction.title}</h2>
+                <p>{nextAction.help}</p>
+                <div className="next-action-buttons">
+                  {nextAction.kind === "start" && (
+                    <button
+                      className="button primary"
+                      disabled={startDisabled}
+                      onClick={() => power("start")}
+                    >
+                      Start your world
+                    </button>
+                  )}
+                  {nextAction.kind === "invite" && (
+                    <Link className="button primary" href="#invite-friends">
+                      Invite friends
+                    </Link>
+                  )}
+                  {nextAction.kind === "agreement" && (
+                    <Link className="button primary" href="#minecraft-agreement">
+                      Review Minecraft agreement
+                    </Link>
+                  )}
+                  {nextAction.kind === "billing" && (
+                    <Link className="button primary" href="/billing">
+                      Continue in Billing
+                    </Link>
+                  )}
+                  {nextAction.kind === "worlds" && (
+                    <Link className="button secondary" href="/servers">
+                      Back to your worlds
+                    </Link>
+                  )}
+                  {nextAction.kind === "support" && (
+                    <Link className="button secondary" href={`/feedback?server=${id}`}>
+                      Get help
+                    </Link>
+                  )}
+                </div>
                 <div className="player-address">
                   <code>{address || "Address available after setup"}</code>
-                  <button className="button primary" onClick={copy} disabled={!address}>
+                  <button
+                    className={`button ${nextAction.kind === "join" ? "primary" : "secondary"}`}
+                    onClick={copy}
+                    disabled={!address}
+                  >
                     {copied ? "Copied" : "Copy server address"}
                   </button>
                 </div>
