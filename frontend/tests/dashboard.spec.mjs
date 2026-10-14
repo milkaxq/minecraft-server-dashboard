@@ -4016,3 +4016,87 @@ test("game settings keep offline login defaults and block saves while running", 
     false,
   );
 });
+
+test("addon installation explains compatibility and next steps without starting Minecraft", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await expect(page.getByText("Matches your server", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review install" }).click();
+  await expect(page.getByRole("dialog")).toContainText("1 file to install");
+  await expect(page.getByRole("dialog")).toContainText("Client downloads are prepared separately");
+  await page.getByRole("button", { name: "Install now", exact: true }).click();
+  const steps = page.getByRole("region", { name: "Next steps after addon changes" });
+  await expect(steps).toContainText("Addon files installed");
+  await expect(steps.getByRole("link", { name: "Refresh player invitation" })).toHaveAttribute(
+    "href",
+    `/servers/${serverID}#invite-friends`,
+  );
+  expect(
+    calls.some(
+      (call) => call.method === "POST" && /\/(start|restart|player-invite)$/.test(call.path),
+    ),
+  ).toBe(false);
+});
+
+test("failed addon review offers a read-only retry and does not install files", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let reviews = 0;
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/viaversion`,
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      reviews++;
+      if (reviews === 1)
+        return route.fulfill({ status: 503, json: { error: "Package unavailable" } });
+      return route.fallback();
+    },
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await page.getByRole("button", { name: "Review install" }).click();
+  await expect(page.getByLabel("Addon failure help")).toContainText(
+    "This review has not installed anything",
+  );
+  await expect(page.getByRole("region", { name: "Next steps after addon changes" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Retry addon review" }).click();
+  await expect(page.getByRole("dialog")).toContainText("ViaVersion.jar");
+  expect(reviews).toBe(2);
+  expect(calls.some((call) => call.method === "POST" && call.path.includes("/catalog/"))).toBe(
+    false,
+  );
+});
+
+test("interrupted addon installation keeps the request key and prompts inspection", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const attempts = [];
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/viaversion`,
+    async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      attempts.push(route.request().headers()["idempotency-key"]);
+      if (attempts.length === 1)
+        return route.fulfill({ status: 503, json: { error: "Installation outcome unknown" } });
+      return route.fulfill({ json: { status: "installed", restart_required: true } });
+    },
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  await page.getByRole("button", { name: "Review install" }).click();
+  await page.getByRole("button", { name: "Install now", exact: true }).click();
+  await expect(page.getByLabel("Addon failure help")).toContainText(
+    "Some files may have been copied",
+  );
+  await expect(page.getByRole("region", { name: "Next steps after addon changes" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Install now", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Next steps after addon changes" })).toBeVisible();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0]).toBeTruthy();
+  expect(attempts[1]).toBe(attempts[0]);
+});

@@ -862,6 +862,7 @@ function Plugins({ id, server, offline, mods = false, usage }) {
   const action = useAction(resource.refresh);
   const input = useRef(null);
   const [remove, setRemove] = useState(null);
+  const [addonChange, setAddonChange] = useState(null);
   const [pendingUpload, setPendingUpload] = useState(null);
   const [uploadSafety, setUploadSafety] = useState(null);
   const uploadAttempt = useRef(null);
@@ -892,7 +893,10 @@ function Plugins({ id, server, offline, mods = false, usage }) {
       },
       `${mods ? "Mod" : "Plugin"} uploaded. Start your server to load it.`,
     );
-    if (success) setPendingUpload(null);
+    if (success) {
+      setPendingUpload(null);
+      setAddonChange({ message: `${file.name} uploaded` });
+    }
   }
   async function erase() {
     if (
@@ -905,20 +909,61 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           }),
         `${mods ? "Mod" : "Plugin"} deleted. Start your server to apply the change.`,
       )
-    )
+    ) {
+      setAddonChange({ message: `${remove} removed` });
       setRemove(null);
+    }
   }
   return (
     <>
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
+      {addonChange && (
+        <section className="panel addon-next-steps" aria-label="Next steps after addon changes">
+          <span className="eyebrow">WHAT TO DO NEXT</span>
+          <h2>{addonChange.message}</h2>
+          <ol>
+            <li>
+              <strong>Configure if needed.</strong> Keep the defaults or adjust the addon before
+              starting. Guided configuration is available for Simple Voice Chat in your installed
+              addons.
+            </li>
+            <li>
+              <strong>Start your server.</strong> Minecraft loads the changed files on its next
+              start. Check startup help to confirm they loaded.
+            </li>
+            <li>
+              <strong>Refresh player setup.</strong> Update your invitation so friends get the
+              current required client mods. Server-only plugins stay on the server.
+            </li>
+          </ol>
+          <div className="invite-actions">
+            <Link className="button primary" href={`/servers/${id}`}>
+              Go to server controls
+            </Link>
+            {server.permissions?.includes("members") && (
+              <Link className="button secondary" href={`/servers/${id}#invite-friends`}>
+                Refresh player invitation
+              </Link>
+            )}
+            {server.permissions?.includes("files") && (
+              <Link className="button secondary" href={`/servers/${id}/files`}>
+                Configuration files
+              </Link>
+            )}
+          </div>
+        </section>
+      )}
       <CatalogBrowser
         key={`${id}:${server.server_type}:${server.minecraft_version}`}
         server={server}
         id={id}
         collection={collection}
         offline={offline}
-        onInstalled={resource.refresh}
+        onInstalled={() => {
+          resource.refresh();
+          setAddonChange({ message: "Addon files installed" });
+        }}
         files={resource.data}
       />
       <PluginCheck key={id} id={id} mods={mods} usage={usage} files={resource.data} />
@@ -971,6 +1016,7 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                   <strong>{v.name}</strong>
                   <small>{formatBytes(v.size)} · File installed</small>
                   <ClientRequirementTag
+                    explain
                     addon={
                       clientSetup.data?.addons?.find((addon) => addon.filename === v.name) || {}
                     }
@@ -1061,13 +1107,14 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     setLoaded({ filterKey, response: resource.data, items: results });
   }
   const [preview, setPreview] = useState(null);
+  const [reviewProject, setReviewProject] = useState(null);
+  const [operationStage, setOperationStage] = useState("review");
   const [checkUpdates, setCheckUpdates] = useState(false);
   const updates = useResource(checkUpdates ? `/servers/${id}/${collection}/catalog/updates` : null);
   const attempt = useRef(null);
   const [safety, setSafety] = useState(null);
   const installed = useResource(`/servers/${id}/${collection}/catalog/installed`);
   const action = useAction(() => {
-    onInstalled();
     installed.refresh();
     if (checkUpdates) updates.refresh();
   });
@@ -1101,6 +1148,9 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     resource.refresh();
   }
   async function review(project) {
+    setOperationStage("review");
+    setReviewProject(project);
+    setPreview(null);
     await action.run(async () => {
       setPreview(await api(`/servers/${id}/${collection}/catalog/${query(project)}`));
       attempt.current = null;
@@ -1108,7 +1158,8 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     });
   }
   async function install() {
-    if (!safety) return;
+    if (!safety || !offline || action.busy) return;
+    setOperationStage("install");
     const body = { revision: preview.revision, ...safety };
     const fingerprint = JSON.stringify(body);
     if (attempt.current?.fingerprint !== fingerprint)
@@ -1129,8 +1180,42 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
       }
     }, "Installed. Start your server to load the changes.");
     setActiveInstall(null);
-    if (success) setPreview(null);
+    if (success) {
+      onInstalled();
+      setPreview(null);
+      setReviewProject(null);
+    }
   }
+  const failureHelp = action.error && (
+    <div className="notice addon-install-help" aria-label="Addon failure help">
+      <strong>
+        {operationStage === "install"
+          ? "Installation needs attention"
+          : "Could not prepare this addon"}
+      </strong>
+      <p>
+        {action.error.status === 429
+          ? "Too many requests. Wait before trying again."
+          : action.error.status === 409
+            ? "The server or its files changed. Check installed files, then review the current release again."
+            : operationStage === "install"
+              ? "Some files may have been copied before the error. Keep the server stopped and check installed files before retrying. Retrying the same review reuses the installation request."
+              : "A matching release and all required dependencies must be available. Retry the review or choose another project. This review has not installed anything."}
+      </p>
+      {operationStage === "review" && !preview && reviewProject && action.error.status !== 429 && (
+        <button
+          className="button secondary"
+          disabled={action.busy}
+          onClick={() => review(reviewProject)}
+        >
+          Retry addon review
+        </button>
+      )}
+      <Link className="button secondary" href={`/servers/${id}/files`}>
+        Check installed files
+      </Link>
+    </div>
+  );
   return (
     <section className="panel management-panel addon-catalog">
       <h2>Find {collection}</h2>
@@ -1154,6 +1239,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
         </p>
       )}
       <Feedback action={action} />
+      {!preview && failureHelp}
       <ErrorMessage error={resource.error || installed.error} />
       <details className="addon-updates">
         <summary>Updates for installed addons</summary>
@@ -1289,7 +1375,10 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
                 <span>
                   <strong>{project.title}</strong>
                   <small>{project.description}</small>
-                  <ClientRequirementTag addon={project} />
+                  <span className="client-requirement-tag client-requirement-server">
+                    Matches your server
+                  </span>
+                  <ClientRequirementTag addon={project} explain />
                   <small>
                     {project.downloads?.toLocaleString() || "0"} downloads
                     {project.release_version ? ` · Release ${project.release_version}` : ""}
@@ -1363,11 +1452,18 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
             Untracked or modified files are not automatically removed. Stop the server and read the
             project’s release notes first.
           </p>
+          <h3>
+            {preview.files.length} {preview.files.length === 1 ? "file" : "files"} to install
+          </h3>
+          <p className="field-help">
+            Includes the addon and required server dependencies. Client downloads are prepared
+            separately in your player invitation.
+          </p>
           <ul>
             {preview.files.map((file) => (
               <li key={file.version_id}>
                 {file.filename} · {formatBytes(file.size)}
-                <ClientRequirementTag addon={file} />
+                <ClientRequirementTag addon={file} explain />
               </li>
             ))}
           </ul>
@@ -1413,6 +1509,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
             </div>
           )}
           {!offline && <p>Stop your server before installing.</p>}
+          {failureHelp}
           <ErrorMessage error={action.error} />
         </Confirm>
       )}

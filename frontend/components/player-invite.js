@@ -72,7 +72,7 @@ export function PlayerInvite({ server, ready }) {
   }
   if (!permitted) return null;
   return (
-    <section className="panel invite-friends" aria-label="Invite your friends">
+    <section id="invite-friends" className="panel invite-friends" aria-label="Invite your friends">
       <div className="section-heading">
         <div>
           <span className="eyebrow">PLAY TOGETHER</span>
@@ -83,6 +83,12 @@ export function PlayerInvite({ server, ready }) {
       </div>
       <ErrorMessage error={error || resource.error} />
       {resource.loading && <p role="status">Checking your player invitation…</p>}
+      {!resource.loading && !resource.error && !invite && ready && (
+        <p className="notice">
+          Prepare player setup before sharing. After changing addons or access rules, refresh player
+          setup so friends get matching downloads.
+        </p>
+      )}
       {invite && (
         <div className="invite-preview">
           <strong>

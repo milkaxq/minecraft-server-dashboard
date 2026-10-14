@@ -50,12 +50,20 @@ export function clientCompatibility(addon) {
   };
 }
 
-export function ClientRequirementTag({ addon }) {
+export function ClientRequirementTag({ addon, explain = false }) {
   const info = clientCompatibility(addon);
   return (
-    <span className={`client-requirement-tag client-requirement-${info.kind}`} title={info.help}>
-      {info.label}
-    </span>
+    <>
+      <span className={`client-requirement-tag client-requirement-${info.kind}`} title={info.help}>
+        {info.label}
+      </span>
+      {explain && (
+        <details className="addon-client-help">
+          <summary>What do players need?</summary>
+          <p>{info.help}</p>
+        </details>
+      )}
+    </>
   );
 }
 
