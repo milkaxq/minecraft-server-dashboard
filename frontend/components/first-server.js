@@ -11,6 +11,26 @@ export function FirstServerChecklist({
   addressCopied,
   onCopy,
 }) {
+  const nextAction =
+    server.status === "FAILED"
+      ? "Ask your host to retry this server. Your request is kept; no new server is needed."
+      : server.status === "PENDING_PAYMENT"
+        ? "Finish checkout in Billing before setup begins."
+        : server.status === "SUSPENDED"
+          ? "Ask your host to reactivate this server."
+          : !ready
+            ? "Wait for setup to finish. Your progress is shown above."
+            : eula !== true
+              ? "Ask the owner to review the Minecraft agreement above."
+              : powerState === "starting"
+                ? "Minecraft is starting. Wait for Online before inviting friends to play."
+                : powerState === "stopping"
+                  ? "Minecraft is saving and stopping. Wait before starting again."
+                  : powerState === "running"
+                    ? "Prepare your player invitation and share it with friends."
+                    : powerState === "offline"
+                      ? "Click Start above to load your world."
+                      : "Wait for the live server status before starting.";
   const steps = [
     {
       done: ready,
@@ -52,6 +72,17 @@ export function FirstServerChecklist({
           {steps.filter((s) => s.done).length} of {steps.length} steps complete
         </span>
       </summary>
+      <p className="first-session-next">
+        <strong>Next step:</strong> {nextAction}
+      </p>
+      {ready &&
+        eula === true &&
+        powerState === "running" &&
+        server.permissions?.includes("members") && (
+          <Link className="button primary" href="#invite-friends">
+            Prepare invitation
+          </Link>
+        )}
       <div className="setup-quick-actions">
         {server.permissions?.includes(supportsMods(server.server_type) ? "files" : "plugins") && (
           <Link

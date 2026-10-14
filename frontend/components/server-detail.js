@@ -1,6 +1,7 @@
 "use client";
 import { softwareName } from "../lib/software";
 import { ServerInsights } from "./server-insights";
+import { SetupProgress } from "./setup-progress";
 import { PlayerInvite } from "./player-invite";
 import { JoinServer } from "./join-server";
 import { FirstServerChecklist } from "./first-server";
@@ -157,7 +158,7 @@ function LiveResourceChart({ usage, cpuLimit }) {
 }
 
 export function ServerDetail({ id, advanced = false }) {
-  const { api, refreshServers } = useAuth();
+  const { api, refreshServers, session } = useAuth();
   const router = useRouter();
   const { data: server, error, loading } = useResource(`/servers/${id}`, 10000);
   const {
@@ -313,7 +314,7 @@ export function ServerDetail({ id, advanced = false }) {
                   Advanced
                 </Link>
               </div>
-              <div className="power-controls">
+              <div id="server-controls" className="power-controls">
                 {has("start") && (
                   <button
                     className="button primary"
@@ -434,35 +435,7 @@ export function ServerDetail({ id, advanced = false }) {
               </p>
             )}
             {server.status !== "RUNNING" && (
-              <div className="notice lifecycle-notice">
-                <strong>
-                  {
-                    {
-                      PENDING_PAYMENT: "Your payment is still pending.",
-                      PAYMENT_CONFIRMED: "Your server is queued for setup.",
-                      PROVISIONING: "Minecraft is installing.",
-                      SUSPENDED: "This server is suspended.",
-                      FAILED: "Setup didn’t finish.",
-                      CANCELLED: "This server has been cancelled.",
-                    }[server.status]
-                  }
-                </strong>
-                <p>
-                  {
-                    {
-                      PENDING_PAYMENT:
-                        "Visit Billing to finish checkout. Contact support if you cannot find your order.",
-                      PAYMENT_CONFIRMED: "Setup will begin as soon as resources are available.",
-                      PROVISIONING:
-                        "We’ll refresh this page automatically. When installation finishes, review the Minecraft agreement and click Start.",
-                      SUSPENDED: "Please contact hosting support to reactivate it.",
-                      FAILED:
-                        "Please contact hosting support. Your request and configuration have been kept.",
-                      CANCELLED: "Your other worlds are still available from the Servers page.",
-                    }[server.status]
-                  }
-                </p>
-              </div>
+              <SetupProgress server={server} isAdmin={session?.user.is_admin} />
             )}
             {server.status === "RUNNING" && !server.management_available && (
               <p className="notice">

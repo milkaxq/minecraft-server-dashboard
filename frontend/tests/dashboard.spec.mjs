@@ -4100,3 +4100,77 @@ test("interrupted addon installation keeps the request key and prompts inspectio
   expect(attempts[0]).toBeTruthy();
   expect(attempts[1]).toBe(attempts[0]);
 });
+
+test("failed creation preserves choices and safely retries the same order", async ({ page }) => {
+  await mockAPI(page);
+  const requests = [];
+  await page.route("http://localhost:8080/orders", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (requests.length === 1)
+      return route.fulfill({ status: 503, json: { error: "Checkout temporarily unavailable" } });
+    return route.fallback();
+  });
+  await login(page);
+  await page.goto("/servers/new");
+  await expect(page.getByRole("navigation", { name: "Server creation steps" })).toContainText(
+    "Name & review",
+  );
+  await selectValue(page, page.getByLabel("Server software"), "FORGE");
+  await page.getByLabel("Server name", { exact: true }).fill("Friends' world");
+  await page.getByRole("button", { name: "Continue to checkout" }).click();
+  await expect(page.getByRole("status")).toContainText("Your choices are still here");
+  await expect(page.getByLabel("Server name", { exact: true })).toHaveValue("Friends' world");
+  await expect(page.getByLabel("Server software")).toHaveAttribute("data-value", "FORGE");
+  await expect(page.getByLabel("Minecraft version")).toHaveAttribute("data-value", "1.21.1");
+  await page.getByRole("button", { name: "Continue to checkout" }).click();
+  await expect(page).toHaveURL(/checkout/);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+  expect(requests[0].key).toBeTruthy();
+});
+
+test("setup progress follows provisioning status and offers recovery without creating another server", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const calls = await mockAPI(page, { serverState: "PROVISIONING", isAdmin: true });
+  let state = "PROVISIONING";
+  await page.route(`http://localhost:8080/servers/${serverID}`, (route) =>
+    route.fulfill({
+      json: { ...baseServer, status: state, management_available: state === "RUNNING" },
+    }),
+  );
+  await openServer(page);
+  const progress = page.getByRole("region", { name: "Server setup progress" });
+  await expect(progress).toContainText("Minecraft is installing.");
+  await expect(progress.locator('[aria-current="step"]')).toContainText("Install Minecraft");
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
+  state = "FAILED";
+  await page.clock.fastForward(11000);
+  await expect(progress).toContainText("Your server request and configuration are kept");
+  await expect(progress.getByRole("link", { name: "Open setup recovery" })).toHaveAttribute(
+    "href",
+    "/admin",
+  );
+  await expect(progress.getByRole("link", { name: "Ask for setup help" })).toHaveAttribute(
+    "href",
+    `/feedback?server=${serverID}&page=server-setup`,
+  );
+  state = "RUNNING";
+  await page.clock.fastForward(11000);
+  await expect(progress).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+  expect(
+    calls.some(
+      (call) =>
+        call.method === "POST" &&
+        (call.path === "/orders" ||
+          call.path === "/admin/beta-servers" ||
+          /\/(start|stop|restart|kill|eula)$/.test(call.path)),
+    ),
+  ).toBe(false);
+});

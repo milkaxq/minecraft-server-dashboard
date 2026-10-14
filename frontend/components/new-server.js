@@ -9,11 +9,19 @@ import { ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 import { formatBytes, price } from "../lib/api";
 export function NewServer({ initialPlan = "" }) {
   const orderRequest = useRef(null);
-  const { data: checkoutConfig, error: checkoutError } = useResource("/billing/config");
+  const {
+    data: checkoutConfig,
+    error: checkoutError,
+    refresh: refreshCheckout,
+  } = useResource("/billing/config");
   const { api, session } = useAuth();
   const router = useRouter();
-  const { data: plans, error: plansError, loading } = useResource("/plans");
-  const { data: availableOptions, error: optionsError } = useResource("/minecraft/options");
+  const { data: plans, error: plansError, loading, refresh: refreshPlans } = useResource("/plans");
+  const {
+    data: availableOptions,
+    error: optionsError,
+    refresh: refreshOptions,
+  } = useResource("/minecraft/options");
   const options = availableOptions?.filter((option) =>
     NEW_SERVER_TYPES.includes(option.server_type),
   );
@@ -38,7 +46,17 @@ export function NewServer({ initialPlan = "" }) {
   const software = [...new Set(options?.map((o) => o.server_type) || [])];
   async function submit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (
+      busy ||
+      !selected ||
+      !version ||
+      !name.trim() ||
+      plansError ||
+      optionsError ||
+      checkoutError ||
+      (!beta && !checkoutConfig?.checkout_enabled)
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -79,12 +97,45 @@ export function NewServer({ initialPlan = "" }) {
         description="Pick how you want to play. We handle the server setup."
       />
       <ErrorMessage error={plansError || optionsError || checkoutError || error} />
+      {error && (
+        <p className="notice" role="status">
+          Your choices are still here. Check the error and try again. An unchanged request uses the
+          same reference to avoid creating another order.
+        </p>
+      )}
+      {(plansError || optionsError || checkoutError) && (
+        <button
+          className="button secondary"
+          onClick={() => {
+            refreshPlans();
+            refreshOptions();
+            refreshCheckout();
+          }}
+        >
+          Reload setup choices
+        </button>
+      )}
+      <nav className="creation-steps" aria-label="Server creation steps">
+        <a href="#choose-play-style">
+          <span>1</span> Choose how to play
+        </a>
+        <a href="#choose-server-plan">
+          <span>2</span> Choose a plan
+        </a>
+        <a href="#name-server">
+          <span>3</span> Name & review
+        </a>
+      </nav>
       {loading ? (
         <Loading message="Loading hosting plans…" />
       ) : (
         <form onSubmit={submit} className="create-layout">
           <div>
-            <section className="play-style-picker" aria-label="How do you want to play?">
+            <section
+              id="choose-play-style"
+              className="play-style-picker"
+              aria-label="How do you want to play?"
+            >
               <div className="step-heading">
                 <span>01</span>
                 <div>
@@ -98,7 +149,7 @@ export function NewServer({ initialPlan = "" }) {
                     "PAPER",
                     "🎮",
                     "Play with friends",
-                    "Normal Minecraft. Add extras like homes, permissions and voice chat later.",
+                    "Start with normal Java gameplay. Add server plugins like homes or permissions later; voice chat also needs a client mod.",
                   ],
                   [
                     "FABRIC",
@@ -118,7 +169,7 @@ export function NewServer({ initialPlan = "" }) {
                     key={value}
                     className={`play-style-card ${type === value ? "selected" : ""}`}
                     aria-pressed={type === value}
-                    disabled={!software.includes(value)}
+                    disabled={busy || !software.includes(value)}
                     onClick={() => setType(value)}
                   >
                     <span className="play-style-art" aria-hidden="true">
@@ -137,7 +188,7 @@ export function NewServer({ initialPlan = "" }) {
                 ))}
               </div>
             </section>
-            <div className="step-heading">
+            <div id="choose-server-plan" className="step-heading">
               <span>02</span>
               <div>
                 <h2>Choose your plan</h2>
@@ -155,6 +206,7 @@ export function NewServer({ initialPlan = "" }) {
                     name="plan"
                     value={plan.id}
                     checked={planID === plan.id}
+                    disabled={busy}
                     onChange={() => setPlanID(plan.id)}
                   />
                   <div className="plan-option-head">
@@ -168,13 +220,20 @@ export function NewServer({ initialPlan = "" }) {
                   <div className="plan-specs">
                     <span>{formatBytes(plan.ram_mb * 1048576, 0)} RAM</span>
                     <span>{formatBytes(plan.disk_mb * 1048576, 0)} disk</span>
-                    <span>{plan.cpu_limit}% CPU</span>
                     <span>About {plan.player_recommendation} players</span>
                   </div>
+                  <details className="plan-technical-details">
+                    <summary>Technical limits</summary>
+                    <p>
+                      {plan.cpu_limit}% CPU · {plan.backup_limit ?? 0} backups ·{" "}
+                      {plan.database_limit ?? 0} databases. Player counts are recommendations, not
+                      guarantees; mods and worlds affect usage.
+                    </p>
+                  </details>
                 </label>
               ))}
             </div>
-            <section className="panel create-settings">
+            <section id="name-server" className="panel create-settings">
               <div className="step-heading">
                 <span>03</span>
                 <div>
@@ -186,6 +245,7 @@ export function NewServer({ initialPlan = "" }) {
                 Server name
                 <input
                   value={name}
+                  disabled={busy}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={80}
                   minLength={1}
@@ -203,7 +263,7 @@ export function NewServer({ initialPlan = "" }) {
                       aria-label="Server software"
                       value={type}
                       onChange={(e) => setType(e.target.value)}
-                      disabled={!software.length}
+                      disabled={busy || !software.length}
                     >
                       {software.map((v) => (
                         <option key={v} value={v}>
@@ -218,7 +278,7 @@ export function NewServer({ initialPlan = "" }) {
                       aria-label="Minecraft version"
                       value={version}
                       onChange={(e) => setVersion(e.target.value)}
-                      disabled={!versions.length}
+                      disabled={busy || !versions.length}
                     >
                       {versions.map((v) => (
                         <option key={v} value={v}>
@@ -291,6 +351,9 @@ export function NewServer({ initialPlan = "" }) {
               disabled={
                 busy ||
                 !selected ||
+                !!plansError ||
+                !!optionsError ||
+                !!checkoutError ||
                 !version ||
                 !name.trim() ||
                 (!beta && !checkoutConfig?.checkout_enabled)

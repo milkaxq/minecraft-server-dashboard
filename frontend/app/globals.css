@@ -5226,3 +5226,69 @@ input {
   color: var(--muted);
   line-height: 1.6;
 }
+
+.creation-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 28px;
+}
+.creation-steps a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.creation-steps span {
+  color: var(--green-dark);
+  font-weight: 700;
+}
+#choose-play-style,
+#choose-server-plan,
+#name-server,
+#server-controls {
+  scroll-margin-top: 24px;
+}
+.plan-technical-details {
+  margin-top: 12px;
+  font-size: 13px;
+}
+.plan-technical-details summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.setup-progress > p {
+  margin-top: 12px;
+  line-height: 1.6;
+}
+.setup-progress ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 20px 0;
+  list-style: none;
+}
+.setup-progress li {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.setup-progress li.current,
+.setup-progress li.complete {
+  background: #edf5ed;
+}
+.setup-progress small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.first-session-next {
+  margin: 16px 0;
+  line-height: 1.6;
+}
