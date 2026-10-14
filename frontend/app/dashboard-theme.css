@@ -1,0 +1,624 @@
+/* A shared night-world theme for authenticated pages and their popovers. */
+.app-shell {
+  --bg: #0b1418;
+  --ink: #eaf2e8;
+  --muted: #a7b8b5;
+  --line: #2b3c40;
+  --white: #162329;
+  --green: #a5ed65;
+  --green-dark: #a5ed65;
+  --sidebar: #0a1115;
+  background: var(--bg);
+  color: var(--ink);
+  color-scheme: dark;
+  min-height: 100vh;
+}
+.app-shell .main-wrap {
+  background: var(--bg);
+}
+.app-shell .sidebar {
+  background: #0c171b;
+  border-right: 1px solid #27363a;
+}
+.app-shell .brand {
+  color: #f0f6eb;
+}
+.app-shell .workspace {
+  background: #17272a;
+  border-color: #31423d;
+}
+.app-shell .workspace-avatar,
+.app-shell .profile-avatar {
+  background: #314a33;
+  color: #ceefb2;
+}
+.app-shell .workspace small,
+.app-shell .nav-label,
+.app-shell .profile-button small {
+  color: #9aadab;
+}
+.app-shell .workspace strong,
+.app-shell .profile-button strong {
+  color: #edf3e8;
+}
+.app-shell .nav-item {
+  color: #b1c2bb;
+}
+.app-shell .nav-item:hover {
+  color: #f0f6eb;
+  background: #1b2d2f;
+}
+.app-shell .nav-item.active {
+  color: #b2f17f;
+  background: #21352a;
+}
+.app-shell .sidebar-note,
+.app-shell .sidebar-note p {
+  color: #a4b7af;
+}
+.app-shell .sidebar-note strong {
+  color: #dbebce;
+}
+.app-shell .sidebar-bottom {
+  border-color: #2c3d3a;
+}
+.app-shell .topbar,
+.app-shell .mobile-header {
+  background: #101d22;
+  border-color: var(--line);
+  color: #b0c0bb;
+}
+.app-shell .topbar strong {
+  color: #edf3e8;
+}
+.app-shell .topbar-tag {
+  background: #1a2b25;
+  border-color: #32453a;
+  color: #c9dfa9;
+}
+.app-shell :is(h1, h2, h3, h4) {
+  color: #edf4e9;
+}
+.app-shell .eyebrow {
+  color: #a5ed65;
+}
+.app-shell
+  :is(
+    .page-heading p,
+    .section-heading span,
+    .field-help,
+    .field small,
+    .management-empty,
+    .server-version,
+    .server-card-footer,
+    .footer,
+    .loading-state
+  ) {
+  color: #a6b9b4;
+}
+.app-shell
+  :is(
+    .panel,
+    .server-card,
+    .summary-card,
+    .plan-mini,
+    .plan-option,
+    .dashboard-hosting-details,
+    .empty-state
+  ) {
+  background: #162329;
+  border-color: #2b3c40;
+  box-shadow: 0 5px 24px #00000012;
+}
+.app-shell .server-card:hover {
+  border-color: #698e56;
+  box-shadow: 0 10px 30px #00000035;
+}
+.app-shell .server-card-body {
+  background: #162329;
+}
+.app-shell .server-card-footer,
+.app-shell .card-resource-row {
+  border-color: var(--line);
+}
+.app-shell .card-resource-row {
+  color: #b0c2b7;
+}
+.app-shell .server-card-footer > span:last-child {
+  color: #c8e7a6;
+}
+.app-shell .software-tag {
+  background: #142623dc;
+  border: 1px solid #627950;
+  color: #d6efbd;
+}
+.app-shell .button {
+  background: #1c2e34;
+  border-color: #3a4f52;
+  color: #e5f0e6;
+}
+.app-shell .button:hover:not(:disabled) {
+  background: #294138;
+  border-color: #6a8b58;
+}
+.app-shell .button.primary,
+.app-shell .dashboard-play-hero .button {
+  background: #a5ed65;
+  color: #14250c;
+  border-color: #a5ed65;
+  box-shadow: 0 6px 22px #63a52c18;
+}
+.app-shell .button.primary:hover:not(:disabled),
+.app-shell .dashboard-play-hero .button:hover {
+  background: #baf58a;
+}
+.app-shell .button.danger {
+  background: #c94c53;
+  color: #fff3f2;
+  border-color: #d86a6e;
+}
+.app-shell .button.danger-outline {
+  color: #ffb2ad;
+  border-color: #7c4548;
+  background: #3c242780;
+}
+.app-shell .button.danger-outline:hover:not(:disabled) {
+  background: #593037;
+  border-color: #bd686e;
+}
+.app-shell .text-link {
+  color: #b2e481;
+}
+.app-shell .field,
+.app-shell label {
+  color: #d7e5df;
+}
+.app-shell
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    textarea,
+    .select-trigger
+  ) {
+  background: #101d23;
+  color: #edf5ec;
+  border-color: #3a4f53;
+}
+.app-shell input::placeholder,
+.app-shell textarea::placeholder {
+  color: #809996;
+}
+.app-shell input:focus,
+.app-shell textarea:focus {
+  border-color: #a5ed65;
+}
+.app-shell :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: #a5ed65;
+}
+.app-shell .search-box {
+  background: #101d23;
+  border-color: #3a4f53;
+}
+.app-shell .search-box input {
+  border: none;
+}
+.app-shell .select-trigger > svg {
+  color: #b8cfb5;
+}
+.app-shell :is(.notice, .client-setup-notice, .whitelist-status, .eula-panel, .joining-card) {
+  background: #203328;
+  border-color: #3e5941;
+  color: #d7eac1;
+}
+.app-shell .notice.success {
+  background: #203c29;
+  color: #c6eeac;
+}
+.app-shell .error-message {
+  background: #3b252d;
+  color: #ffd1cd;
+  border-color: #834c50;
+}
+.app-shell .error-message small {
+  color: #edb4b2;
+}
+.app-shell .badge {
+  background: #293d2e;
+  color: #d4efb4;
+}
+.app-shell :is(.badge-offline, .badge-stopping, .badge-cancelled) {
+  background: #293840;
+  color: #c3d3d2;
+}
+.app-shell :is(.badge-failed, .badge-suspended, .badge-unknown) {
+  background: #4a2b30;
+  color: #ffc5c0;
+}
+.app-shell :is(.badge-pending_payment, .badge-provisioning, .badge-starting) {
+  background: #463d28;
+  color: #f9df97;
+}
+.app-shell :is(.summary-icon, .plan-icon, .whitelist-avatar, .join-version) {
+  background: #2b402f;
+  color: #c1e995;
+}
+.app-shell
+  :is(
+    .summary-card strong,
+    .summary-card small,
+    .summary-card > div > span,
+    .plan-option-head strong,
+    .plan-option-head > span,
+    .plan-price,
+    .plan-mini strong
+  ) {
+  color: #deecd5;
+}
+.app-shell .summary-card small {
+  color: #a5b9af;
+}
+.app-shell .plan-option.selected,
+.app-shell .play-style-card.selected {
+  background: #233c29;
+  border-color: #a5ed65;
+}
+.app-shell .play-style-card {
+  background: #162329;
+  border-color: #304740;
+  color: #e8f1e2;
+}
+.app-shell .play-style-card small,
+.app-shell .plan-option p,
+.app-shell .plan-specs {
+  color: #a9bfb3;
+}
+.app-shell .play-style-art {
+  background: #294132;
+}
+.app-shell .play-style-label {
+  color: #c8eba8;
+}
+.app-shell .mode-switch {
+  background: #192a2f;
+  border: 1px solid #304448;
+}
+.app-shell .mode-switch a {
+  color: #acc0b8;
+}
+.app-shell .mode-switch a.selected {
+  background: #2d4432;
+  color: #ddf5c5;
+}
+.app-shell .feature-nav {
+  border-color: var(--line);
+}
+.app-shell .feature-nav a {
+  color: #afc3b8;
+}
+.app-shell .feature-nav a.selected,
+.app-shell .feature-nav a[aria-current="page"] {
+  background: #263e2d;
+  color: #c7f09d;
+  border-color: #a5ed65;
+}
+.app-shell
+  :is(
+    .management-table th,
+    .management-table td,
+    .plugin-list li,
+    .whitelist-players li,
+    .setting-toggle,
+    .member-list li,
+    .activity-list li,
+    .file-list li,
+    .storage-breakdown li
+  ) {
+  border-color: #304347;
+  color: #d6e5df;
+}
+.app-shell
+  :is(
+    .management-table th,
+    .management-table td small,
+    .plugin-list small,
+    .setting-toggle small,
+    .activity-list p,
+    .member-list small
+  ) {
+  color: #acc0b7;
+}
+.app-shell :is(.file-editor, .console-output) {
+  background: #081116;
+  color: #d1e5d4;
+  border-color: #2b3e43;
+}
+.app-shell .confirm-dialog,
+.app-shell .mobile-navigation {
+  background: #18282d;
+  color: #e9f2e4;
+  border-color: #415750;
+}
+.app-shell .confirm-dialog p {
+  color: #bed0c4;
+}
+.app-shell .confirm-dialog::backdrop,
+.app-shell .mobile-navigation::backdrop {
+  background: #030a10ba;
+  backdrop-filter: blur(6px);
+}
+.app-shell .mobile-menu-button {
+  background: #20372b;
+  color: #ddf0cc;
+  border-color: #446143;
+}
+.app-shell
+  :is(
+    .confirm-icon,
+    .checklist-step,
+    .client-requirement-server,
+    .client-requirement-optional,
+    .player-name-sample li,
+    .setup-progress li.current,
+    .setup-progress li.complete
+  ) {
+  background: #2c432f;
+  color: #ddf1ba;
+}
+.app-shell .client-requirement-required {
+  background: #413929;
+  color: #ffe7a6;
+}
+.app-shell .client-requirement-unknown {
+  background: #433b31;
+  color: #f1d6a3;
+}
+.app-shell :is(.field-row, .settings-toggles, .catalog-controls, .file-actions, .addon-updates) {
+  border-color: var(--line);
+}
+.app-shell .catalog-compatibility,
+.app-shell .backup-protection {
+  background: #1f3328;
+  color: #d2e6ba;
+  border-color: #39543b;
+}
+.app-shell .first-server-checklist {
+  background: #162329;
+  color: #ddebd5;
+  border-color: #30463c;
+}
+.app-shell .first-server-checklist p,
+.app-shell .client-setup-notice p {
+  color: #b3c7ba;
+}
+.app-shell .server-grid:has(> .server-card:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell .server-card:only-child {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 1fr);
+}
+.app-shell .server-card:only-child .server-art {
+  height: 100%;
+  min-height: 220px;
+}
+.app-shell .server-card:only-child .server-card-body {
+  padding: 28px;
+}
+.app-shell .server-card:only-child .server-title h3 {
+  font-size: 25px;
+}
+.app-shell .dashboard-play-hero {
+  min-height: 280px;
+  padding: 42px;
+  border: 1px solid #354b40;
+}
+.app-shell .dashboard-play-hero h2 {
+  max-width: 500px;
+  font-size: 42px;
+}
+.app-shell .dashboard-hosting-details {
+  margin-top: 20px;
+}
+.world-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 24px;
+}
+.world-shortcuts a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 18px;
+  border-radius: 16px;
+  background: #17272b;
+  border: 1px solid #32493e;
+  color: #e8f1de;
+}
+.world-shortcuts a:hover {
+  background: #20392c;
+  border-color: #8caf64;
+}
+.world-shortcuts .shortcut-icon {
+  flex-shrink: 0;
+  color: #a5ed65;
+}
+.world-shortcuts a > svg:last-child {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: #829f80;
+}
+.world-shortcuts strong {
+  display: block;
+  font-size: 14px;
+}
+.world-shortcuts small {
+  display: block;
+  margin-top: 5px;
+  color: #a9bdb1;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.select-menu-night {
+  background: #192b30;
+  color: #e3efdf;
+  border-color: #4a6354;
+  box-shadow: 0 12px 40px #0008;
+}
+.select-menu-night .select-option {
+  color: #d2e3d4;
+}
+.select-menu-night .select-option.active,
+.select-menu-night .select-option[aria-selected="true"] {
+  background: #2c4832;
+  color: #d8f4b3;
+}
+@media (max-width: 1200px) {
+  .world-shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .app-shell .dashboard-play-hero {
+    padding: 28px 24px;
+    min-height: 260px;
+  }
+  .app-shell .dashboard-play-hero h2 {
+    font-size: 31px;
+  }
+  .app-shell .server-card:only-child {
+    display: block;
+  }
+  .app-shell .server-card:only-child .server-art {
+    min-height: 165px;
+    height: 165px;
+  }
+  .app-shell .server-card:only-child .server-card-body {
+    padding: 22px;
+  }
+  .world-shortcuts {
+    gap: 10px;
+  }
+  .world-shortcuts a {
+    padding: 17px 13px;
+    gap: 9px;
+    align-items: flex-start;
+  }
+  .world-shortcuts a > svg:last-child {
+    display: none;
+  }
+  .world-shortcuts strong {
+    font-size: 13px;
+  }
+  .world-shortcuts small {
+    font-size: 11px;
+  }
+}
+.app-shell .feature-tabs {
+  border-color: #2e4145;
+}
+.app-shell .feature-tabs a {
+  color: #b0c6bc;
+}
+.app-shell .feature-tabs a[aria-current="page"] {
+  background: #2b4431;
+  color: #d2f5aa;
+  border-color: #a5ed65;
+}
+.app-shell .context-help {
+  background: #1c2d28;
+  color: #d9ead0;
+  border-color: #3c5541;
+}
+.app-shell .context-help summary,
+.app-shell .context-help p,
+.app-shell .context-help li {
+  color: #d9ead0;
+}
+.app-shell .context-help a {
+  color: #bcf18d;
+}
+.app-shell
+  :is(
+    .invite-preview,
+    .addon-state,
+    .file-path,
+    .installation-progress,
+    .addon-client-guide,
+    .voice-beta-warning,
+    .backup-age-warning
+  ) {
+  background: #21352b;
+  color: #d8eac3;
+  border-color: #466241;
+}
+.app-shell
+  :is(
+    .invite-preview p,
+    .invite-preview small,
+    .join-server p,
+    .join-server li,
+    .plan-mini small,
+    .plan-price small,
+    .creation-guidance p
+  ) {
+  color: #b0c5b7;
+}
+.app-shell .addon-catalog .plugin-list .button:not(:disabled),
+.app-shell .responsive-table .file-actions :is(button, a) {
+  background: #253c30;
+  border-color: #55734b;
+  color: #d8efbd;
+}
+.app-shell .responsive-table .file-actions .danger-outline {
+  background: #422b2e;
+  color: #ffbbb3;
+  border-color: #805156;
+}
+.app-shell .footer {
+  border-color: #2e4145;
+}
+.app-shell .chart-wrap line {
+  stroke: #304047;
+}
+.app-shell .metric-card,
+.app-shell .address-box {
+  background: #17282d;
+  border-color: #344b4f;
+  color: #eaf4e5;
+}
+.app-shell .metric-card > div,
+.app-shell .metric-card > small {
+  color: #b5c9bb;
+}
+.app-shell .metric-card strong,
+.app-shell .address-box code {
+  color: #e5f3d8;
+}
+.app-shell .connection-icon,
+.app-shell .account-avatar {
+  background: #304a32;
+  color: #d3f2b1;
+}
+.app-shell
+  :is(
+    .connection-panel > p,
+    .connection-tip,
+    .details-panel dt,
+    .details-panel dd,
+    .chart-caption,
+    .chart-labels,
+    .chart-bottom-labels,
+    .disk-meter,
+    .profile-details dt,
+    .profile-details dd
+  ) {
+  color: #acc2b5;
+}
+.app-shell .verified-tag {
+  background: #2a432f;
+  color: #d3f1ab;
+}
+.app-shell .disk-meter,
+.app-shell .connection-tip {
+  border-color: #31464a;
+}

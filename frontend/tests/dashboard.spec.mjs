@@ -4384,3 +4384,69 @@ test("homepage fails safely when plans cannot load and dashboard tucks away host
   await page.getByText("Hosting details", { exact: true }).click();
   await expect(page.getByText("Allocated memory", { exact: true })).toBeVisible();
 });
+
+test("dashboard shortcuts use authorized server details and dropdowns keep readable night colors", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  const listed = Object.fromEntries(
+    Object.entries(baseServer).filter(
+      ([key]) => !["permissions", "role", "management_available"].includes(key),
+    ),
+  );
+  await page.route("http://localhost:8080/servers", (route) => route.fulfill({ json: [listed] }));
+  await login(page);
+  const quick = page.getByRole("navigation", { name: "Quick world actions" });
+  await expect(quick.getByRole("link", { name: /Game rules/ })).toHaveAttribute(
+    "href",
+    `/servers/${serverID}/settings`,
+  );
+  await expect(quick.getByRole("link", { name: /Invite friends/ })).toHaveAttribute(
+    "href",
+    `/servers/${serverID}#invite-friends`,
+  );
+  expect(calls.some((call) => call.path === `/servers/${serverID}`)).toBe(true);
+  await page.getByRole("combobox", { name: "Server view" }).click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  const colors = await page.getByRole("listbox").evaluate((element) => ({
+    bg: getComputedStyle(element).backgroundColor,
+    fg: getComputedStyle(element).color,
+  }));
+  const luminance = (color) => {
+    const rgb = color
+      .match(/[\d.]+/g)
+      .slice(0, 3)
+      .map(Number)
+      .map((n) => n / 255)
+      .map((n) => (n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4));
+    return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  };
+  expect((luminance(colors.fg) + 0.05) / (luminance(colors.bg) + 0.05)).toBeGreaterThan(4.5);
+  await page.keyboard.press("Escape");
+  await quick.getByRole("link", { name: /Game rules/ }).click();
+  const help = page.getByLabel("Help with settings");
+  const helpColors = await help.evaluate((element) => ({
+    bg: getComputedStyle(element).backgroundColor,
+    fg: getComputedStyle(element).color,
+  }));
+  expect((luminance(helpColors.fg) + 0.05) / (luminance(helpColors.bg) + 0.05)).toBeGreaterThan(
+    4.5,
+  );
+});
+
+test("moderator dashboard does not show owner or admin world shortcuts", async ({ page }) => {
+  await mockAPI(page, { role: "MODERATOR" });
+  await login(page);
+  await expect(page.getByRole("navigation", { name: "Quick world actions" })).toHaveCount(0);
+});
+
+test("root-domain homepage links account access to app without relative login URLs", async ({
+  request,
+}) => {
+  const response = await request.get("/", { headers: { host: "playblockyard.com" } });
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+  expect(html).toContain('href="https://app.playblockyard.com/dashboard"');
+  expect(html).toContain('href="https://app.playblockyard.com/login"');
+  expect(html).not.toContain('href="/login"');
+});

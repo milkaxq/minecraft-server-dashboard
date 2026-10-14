@@ -10,6 +10,7 @@ export function Select({ children, value, onChange, disabled, name, required, ..
   );
   const selected = options.findIndex((option) => String(option.props.value) === String(value));
   const [menu, setMenu] = useState(null);
+  const [night, setNight] = useState(false);
   const [active, setActive] = useState(0);
   const trigger = useRef(null);
   const popup = useRef(null);
@@ -30,6 +31,7 @@ export function Select({ children, value, onChange, disabled, name, required, ..
   }
   function open() {
     if (disabled) return;
+    setNight(Boolean(trigger.current.closest(".app-shell")));
     setMenu(position());
     setActive(Math.max(0, selected));
   }
@@ -134,7 +136,7 @@ export function Select({ children, value, onChange, disabled, name, required, ..
             ref={popup}
             id={id}
             role="listbox"
-            className="select-menu"
+            className={`select-menu${night ? " select-menu-night" : ""}`}
             style={menu}
             aria-label={props["aria-label"]}
           >

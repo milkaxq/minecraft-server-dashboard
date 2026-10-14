@@ -1,5 +1,35 @@
+# Public website: only public, read-only API endpoints are served on this host.
+playblockyard.com {
+	encode gzip
+	@publicAPI {
+		method GET HEAD
+		path /api/plans /api/auth/config
+	}
+	handle @publicAPI {
+		uri strip_prefix /api
+		reverse_proxy 127.0.0.1:8080
+	}
+	@website path / /_next/* /art/* /favicon.ico
+	handle @website {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle {
+		redir https://app.playblockyard.com{uri} 308
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+www.playblockyard.com {
+	redir https://playblockyard.com{uri} 308
+}
+
 # Host-installed Caddy: all application upstream ports remain loopback-only.
 app.playblockyard.com {
+	@home path /
+	redir @home /dashboard 302
 	encode gzip
 	handle_path /api/* {
 		reverse_proxy 127.0.0.1:8080

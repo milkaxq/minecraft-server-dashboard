@@ -12,7 +12,18 @@ export class APIError extends Error {
 }
 export async function request(
   path,
-  { token, csrfToken, method = "GET", body, key, signal, raw = false, download = false } = {},
+  {
+    token,
+    csrfToken,
+    method = "GET",
+    body,
+    key,
+    signal,
+    raw = false,
+    download = false,
+    baseURL = API_BASE,
+    credentials = token ? "omit" : "include",
+  } = {},
 ) {
   const headers = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -22,13 +33,13 @@ export async function request(
   if (key) headers["Idempotency-Key"] = key;
   let response;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
+    response = await fetch(`${baseURL}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
       signal,
       cache: "no-store",
-      credentials: token ? "omit" : "include",
+      credentials,
     });
   } catch (error) {
     if (error.name === "AbortError") throw error;

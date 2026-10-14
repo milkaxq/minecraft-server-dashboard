@@ -2,7 +2,7 @@
 import { Notifications } from "./server-insights";
 import { Select } from "./select";
 import { BetaGettingStarted } from "./first-server";
-import { softwareName } from "../lib/software";
+import { softwareName, supportsMods, supportsPlugins } from "../lib/software";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "./auth";
@@ -92,6 +92,56 @@ export function Dashboard({ serversOnly = false }) {
       `${server.name} ${server.server_type}`.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) => Number(b.status === "RUNNING") - Number(a.status === "RUNNING"));
+  const current =
+    servers?.find((server) => server.status === "RUNNING" && !server.deletion_pending) ||
+    servers?.find((server) => !["CANCELLED"].includes(server.status) && !server.deletion_pending);
+  const currentDetails = useResource(
+    !serversOnly && current ? `/servers/${current.id}` : null,
+    10000,
+  );
+  const activeWorld = currentDetails.data;
+  const shortcuts =
+    !currentDetails.error &&
+    activeWorld?.status === "RUNNING" &&
+    activeWorld.management_available &&
+    !activeWorld.deletion_pending
+      ? [
+          [
+            "settings",
+            "Game rules",
+            "Set the way you play",
+            "world",
+            `/servers/${current.id}/settings`,
+          ],
+          [
+            "members",
+            "Invite friends",
+            "Prepare their player page",
+            "user",
+            `/servers/${current.id}#invite-friends`,
+          ],
+          [
+            supportsMods(activeWorld.server_type) ? "files" : "plugins",
+            "Add extras",
+            "Browse matching mods or plugins",
+            "plus",
+            `/servers/${current.id}/${supportsMods(activeWorld.server_type) ? "mods" : "plugins"}`,
+          ],
+          [
+            "backups",
+            "Backups",
+            "Protect what you build",
+            "shield",
+            `/servers/${current.id}/backups`,
+          ],
+        ].filter(
+          ([permission, label]) =>
+            activeWorld.permissions?.includes(permission) &&
+            (label !== "Add extras" ||
+              supportsMods(activeWorld.server_type) ||
+              supportsPlugins(activeWorld.server_type)),
+        )
+      : [];
   const ready = servers?.filter((s) => s.status === "RUNNING" && !s.deletion_pending).length || 0;
   const deleting = servers?.filter((s) => s.deletion_pending).length || 0;
   return (
@@ -121,7 +171,6 @@ export function Dashboard({ serversOnly = false }) {
           )
         }
       />
-      {!serversOnly && <Notifications />}
       {!serversOnly && beta && servers && (
         <details className="dashboard-hosting-details" open={!servers.length}>
           <summary>Private beta help</summary>
@@ -137,8 +186,8 @@ export function Dashboard({ serversOnly = false }) {
               Your worlds and friends are one click away. Start playing, or make room for something
               new.
             </p>
-            {visible.length > 0 ? (
-              <Link href={`/servers/${visible[0].id}`} className="button">
+            {current ? (
+              <Link href={`/servers/${current.id}`} className="button">
                 Open my world <Icon name="arrow" size={16} />
               </Link>
             ) : !beta || session?.user.is_admin ? (
@@ -151,6 +200,23 @@ export function Dashboard({ serversOnly = false }) {
               </Link>
             )}
           </section>
+          {shortcuts.length > 0 && (
+            <nav className="world-shortcuts" aria-label="Quick world actions">
+              {shortcuts.map(([, label, help, icon, href]) => (
+                <Link key={label} href={href}>
+                  <span className="shortcut-icon">
+                    <Icon name={icon} size={22} />
+                  </span>
+                  <div>
+                    <strong>{label}</strong>
+                    <small>{help}</small>
+                  </div>
+                  <Icon name="arrow" size={16} />
+                </Link>
+              ))}
+            </nav>
+          )}
+          <Notifications />
           <details className="dashboard-hosting-details">
             <summary>Hosting details</summary>
             <div className="summary-grid">

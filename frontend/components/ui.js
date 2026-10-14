@@ -235,6 +235,9 @@ export function Shell({ children }) {
           <div className="sidebar-note">
             <Icon name="world" />
             <strong>A world of your own.</strong>
+            <a className="text-link" href="https://playblockyard.com">
+              Visit website ↗
+            </a>
             <p>
               More playing.
               <br />

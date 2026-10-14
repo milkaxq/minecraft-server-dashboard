@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { useRouter } from "next/navigation";
 import { request } from "../lib/api";
 const AuthContext = createContext(null);
-export function AuthProvider({ children }) {
+export function AuthProvider({ children, marketing = false }) {
   const [session, setSession] = useState(null);
   const [serverRevision, setServerRevision] = useState(0);
   const refreshServers = useCallback(() => setServerRevision((value) => value + 1), []);
@@ -38,12 +38,18 @@ export function AuthProvider({ children }) {
   }, [loadSession]);
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setTimeout(() => loadSession(controller.signal), 0);
+    const timer = setTimeout(() => {
+      if (marketing) {
+        setRestoring(false);
+        return;
+      }
+      return loadSession(controller.signal);
+    }, 0);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [loadSession]);
+  }, [loadSession, marketing]);
   const api = useCallback(
     async (path, options = {}) => {
       const attempt = generation.current;

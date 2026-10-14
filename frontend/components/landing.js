@@ -5,7 +5,8 @@ import { useAuth } from "./auth";
 import { Brand, Icon } from "./ui";
 import { request, price, formatBytes } from "../lib/api";
 
-export function Landing() {
+export function Landing({ appOrigin = "" }) {
+  const appPath = (path) => (path.startsWith("#") ? path : `${appOrigin}${path}`);
   const { session } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -13,8 +14,16 @@ export function Landing() {
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      request("/auth/config", { signal: controller.signal }),
-      request("/plans", { signal: controller.signal }),
+      request("/auth/config", {
+        signal: controller.signal,
+        baseURL: appOrigin ? "/api" : undefined,
+        credentials: appOrigin ? "omit" : undefined,
+      }),
+      request("/plans", {
+        signal: controller.signal,
+        baseURL: appOrigin ? "/api" : undefined,
+        credentials: appOrigin ? "omit" : undefined,
+      }),
     ])
       .then(([registration, plans]) => {
         if (typeof registration?.invite_required !== "boolean" || !Array.isArray(plans))
@@ -28,7 +37,7 @@ export function Landing() {
         if (!controller.signal.aborted) setError(e);
       });
     return () => controller.abort();
-  }, [reload]);
+  }, [reload, appOrigin]);
   const beta = data?.registration.invite_required;
   const href = session ? "/dashboard" : !data || error ? "#how-it-works" : "/register";
   const cta = session
@@ -50,8 +59,11 @@ export function Landing() {
           <a href="#hosting-plans">Plans</a>
           <a href="#landing-help">Questions?</a>
         </nav>
-        <Link className="button landing-signin" href={session ? "/dashboard" : "/login"}>
-          {session ? "My worlds" : "Sign in"}
+        <Link
+          className="button landing-signin"
+          href={appPath(appOrigin || session ? "/dashboard" : "/login")}
+        >
+          {appOrigin ? "Dashboard" : session ? "My worlds" : "Sign in"}
           <Icon name="arrow" size={16} />
         </Link>
       </header>
@@ -74,7 +86,7 @@ export function Landing() {
               server setup.
             </p>
             <div className="landing-actions">
-              <Link className="button landing-primary" href={href}>
+              <Link className="button landing-primary" href={appPath(href)}>
                 {cta}
                 <Icon name="arrow" size={19} />
               </Link>
@@ -157,7 +169,7 @@ export function Landing() {
               The everyday things are easy to find. The technical tools are there when you need
               them.
             </p>
-            <Link className="button landing-primary" href={href}>
+            <Link className="button landing-primary" href={appPath(href)}>
               {cta}
               <Icon name="arrow" size={18} />
             </Link>
@@ -240,13 +252,13 @@ export function Landing() {
                   </ul>
                   <Link
                     className="button landing-signin"
-                    href={
+                    href={appPath(
                       session
                         ? beta && !session.user.is_admin
                           ? "/dashboard"
                           : `/servers/new?plan=${encodeURIComponent(plan.id)}`
-                        : "/register"
-                    }
+                        : "/register",
+                    )}
                   >
                     {beta
                       ? session
@@ -310,7 +322,7 @@ export function Landing() {
             <br />
             needs a place to call home.
           </h2>
-          <Link className="button landing-primary" href={href}>
+          <Link className="button landing-primary" href={appPath(href)}>
             {cta}
             <Icon name="arrow" size={18} />
           </Link>
@@ -319,7 +331,7 @@ export function Landing() {
       <footer className="landing-footer">
         <Brand href="/" />
         <p>Less setup. More Minecraft.</p>
-        <Link href="/login">Sign in</Link>
+        <Link href={appPath("/login")}>Sign in</Link>
         <small>
           Independent hosting for Minecraft Java Edition. Not affiliated with Mojang or Microsoft.
         </small>
