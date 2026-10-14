@@ -193,22 +193,23 @@ func (s Service) Orders(ctx context.Context, user uuid.UUID, offset int) ([]bill
 }
 
 type Node struct {
-	ID            uuid.UUID `json:"id"`
-	Name          string    `json:"name"`
-	CPU           int       `json:"cpu_capacity"`
-	RAM           int       `json:"ram_capacity_mb"`
-	Disk          int       `json:"disk_capacity_mb"`
-	AllocatedCPU  int       `json:"allocated_cpu"`
-	AllocatedRAM  int       `json:"allocated_ram_mb"`
-	AllocatedDisk int       `json:"allocated_disk_mb"`
-	Enabled       bool      `json:"enabled"`
+	ID                   uuid.UUID `json:"id"`
+	Name                 string    `json:"name"`
+	CPU                  int       `json:"cpu_capacity"`
+	RAM                  int       `json:"ram_capacity_mb"`
+	Disk                 int       `json:"disk_capacity_mb"`
+	AllocatedCPU         int       `json:"allocated_cpu"`
+	AllocatedRAM         int       `json:"allocated_ram_mb"`
+	AllocatedDisk        int       `json:"allocated_disk_mb"`
+	AvailableAllocations int       `json:"available_allocations"`
+	Enabled              bool      `json:"enabled"`
 }
 
 func (s Service) Nodes(ctx context.Context, user uuid.UUID) ([]Node, error) {
 	if err := s.Require(ctx, user); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.Query(ctx, "SELECT id,name,cpu_capacity,ram_capacity_mb,disk_capacity_mb,allocated_cpu,allocated_ram_mb,allocated_disk_mb,enabled FROM nodes ORDER BY name,id LIMIT 100")
+	rows, err := s.DB.Query(ctx, "SELECT id,name,cpu_capacity,ram_capacity_mb,disk_capacity_mb,allocated_cpu,allocated_ram_mb,allocated_disk_mb,enabled,(SELECT count(*) FROM node_allocations WHERE node_id=nodes.id AND enabled AND reserved_server_id IS NULL AND NOT EXISTS(SELECT 1 FROM server_addon_ports extra WHERE extra.allocation_id=node_allocations.id)) FROM nodes ORDER BY name,id LIMIT 100")
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +217,7 @@ func (s Service) Nodes(ctx context.Context, user uuid.UUID) ([]Node, error) {
 	out := []Node{}
 	for rows.Next() {
 		var v Node
-		if err = rows.Scan(&v.ID, &v.Name, &v.CPU, &v.RAM, &v.Disk, &v.AllocatedCPU, &v.AllocatedRAM, &v.AllocatedDisk, &v.Enabled); err != nil {
+		if err = rows.Scan(&v.ID, &v.Name, &v.CPU, &v.RAM, &v.Disk, &v.AllocatedCPU, &v.AllocatedRAM, &v.AllocatedDisk, &v.Enabled, &v.AvailableAllocations); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

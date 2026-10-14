@@ -1,4 +1,5 @@
 "use client";
+import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans";
 import { Select } from "./select";
 import { NEW_SERVER_TYPES, softwareName, supportsMods } from "../lib/software";
 import { useState, useRef } from "react";
@@ -7,7 +8,7 @@ import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 import { formatBytes, price } from "../lib/api";
-export function NewServer({ initialPlan = "" }) {
+export function NewServer({ initialPlan = "", initialGroup = "friends" }) {
   const orderRequest = useRef(null);
   const {
     data: checkoutConfig,
@@ -25,13 +26,18 @@ export function NewServer({ initialPlan = "" }) {
   const options = availableOptions?.filter((option) =>
     NEW_SERVER_TYPES.includes(option.server_type),
   );
+  const [group, setGroup] = useState(
+    PLAYER_GROUPS.some((value) => value.id === initialGroup) ? initialGroup : "friends",
+  );
   const [chosenPlan, setPlanID] = useState(initialPlan);
   const [chosenType, setType] = useState("PAPER");
   const [chosenVersion, setVersion] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const planID = plans?.find((p) => p.id === chosenPlan)?.id || plans?.[0]?.id || "";
+  const audience = PLAYER_GROUPS.find((value) => value.id === group);
+  const recommended = recommendGroupPlan(plans, audience.players);
+  const planID = plans?.find((p) => p.id === chosenPlan)?.id || recommended?.id || "";
   const type = options?.some((o) => o.server_type === chosenType)
     ? chosenType
     : options?.[0]?.server_type || "PAPER";
@@ -191,48 +197,101 @@ export function NewServer({ initialPlan = "" }) {
             <div id="choose-server-plan" className="step-heading">
               <span>02</span>
               <div>
-                <h2>Choose your plan</h2>
-                <p>Choose space for your friends and extras.</p>
+                <h2>Who’s joining your world?</h2>
+                <p>
+                  Start with your group size. We suggest an affordable plan that fits its player
+                  recommendation.
+                </p>
               </div>
             </div>
-            <div className="plan-picker">
-              {plans?.map((plan) => (
-                <label
-                  key={plan.id}
-                  className={`plan-option ${planID === plan.id ? "selected" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="plan"
-                    value={plan.id}
-                    checked={planID === plan.id}
+            <div className="group-picker" aria-label="Player group size">
+              {PLAYER_GROUPS.map((value) => {
+                const match = recommendGroupPlan(plans, value.players);
+                return (
+                  <button
+                    type="button"
+                    key={value.id}
+                    className={`group-card ${group === value.id ? "selected" : ""}`}
+                    aria-pressed={group === value.id}
                     disabled={busy}
-                    onChange={() => setPlanID(plan.id)}
-                  />
-                  <div className="plan-option-head">
-                    <strong>{plan.name}</strong>
-                    <span>
-                      {price(plan)}
-                      <small>/{plan.billing_period === "YEARLY" ? "year" : "month"}</small>
-                    </span>
-                  </div>
-                  <p>{plan.description}</p>
-                  <div className="plan-specs">
-                    <span>{formatBytes(plan.ram_mb * 1048576, 0)} RAM</span>
-                    <span>{formatBytes(plan.disk_mb * 1048576, 0)} disk</span>
-                    <span>About {plan.player_recommendation} players</span>
-                  </div>
-                  <details className="plan-technical-details">
-                    <summary>Technical limits</summary>
-                    <p>
-                      {plan.cpu_limit}% CPU · {plan.backup_limit ?? 0} backups ·{" "}
-                      {plan.database_limit ?? 0} databases. Player counts are recommendations, not
-                      guarantees; mods and worlds affect usage.
-                    </p>
-                  </details>
-                </label>
-              ))}
+                    onClick={() => {
+                      setGroup(value.id);
+                      setPlanID("");
+                    }}
+                  >
+                    <span aria-hidden="true">{value.icon}</span>
+                    <strong>{value.title}</strong>
+                    <span>For up to {value.players} players</span>
+                    <small>{value.description}</small>
+                    <b>
+                      {match
+                        ? `${price(match)}/${match.billing_period === "YEARLY" ? "year" : "month"}`
+                        : "Ask us for a suitable plan"}
+                    </b>
+                  </button>
+                );
+              })}
             </div>
+            {!recommended && (
+              <p className="notice">
+                No enabled plan currently recommends this group size. Choose a smaller group or ask
+                your host for a suitable plan.
+              </p>
+            )}
+            <p className="field-help group-plan-note">
+              Group sizes are recommendations, not player limits or performance guarantees. Mods and
+              large worlds may need more memory. When one plan fits two group sizes, you pay the
+              same price.
+            </p>
+            <details className="panel group-plan-options" open={!!chosenPlan}>
+              <summary>
+                {selected
+                  ? `Your plan: ${selected.name} · ${price(selected)}`
+                  : "Compare hosting plans"}
+              </summary>
+              <p>
+                Keep the suggested plan or choose another. Match a modpack’s own memory requirements
+                before buying.
+              </p>
+              <div className="plan-picker">
+                {plans?.map((plan) => (
+                  <label
+                    key={plan.id}
+                    className={`plan-option ${planID === plan.id ? "selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="plan"
+                      value={plan.id}
+                      checked={planID === plan.id}
+                      disabled={busy}
+                      onChange={() => setPlanID(plan.id)}
+                    />
+                    <div className="plan-option-head">
+                      <strong>{plan.name}</strong>
+                      <span>
+                        {price(plan)}
+                        <small>/{plan.billing_period === "YEARLY" ? "year" : "month"}</small>
+                      </span>
+                    </div>
+                    <p>{plan.description}</p>
+                    <div className="plan-specs">
+                      <span>{formatBytes(plan.ram_mb * 1048576, 0)} RAM</span>
+                      <span>{formatBytes(plan.disk_mb * 1048576, 0)} disk</span>
+                    </div>
+                    <details className="plan-technical-details">
+                      <summary>Technical limits</summary>
+                      <p>
+                        About {plan.player_recommendation} players · {plan.cpu_limit}% CPU ·{" "}
+                        {plan.backup_limit ?? 0} backups · {plan.database_limit ?? 0} databases.
+                        Player counts are recommendations, not guarantees; mods and worlds affect
+                        usage.
+                      </p>
+                    </details>
+                  </label>
+                ))}
+              </div>
+            </details>
             <section id="name-server" className="panel create-settings">
               <div className="step-heading">
                 <span>03</span>

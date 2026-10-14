@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
+import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
 import { nextServerAction } from "../lib/next-action.js";
 async function selectValue(page, control, value) {
   await control.waitFor({ state: "attached" });
@@ -247,6 +249,8 @@ async function mockAPI(
       return route.fulfill({ status: 204 });
     }
     if (path === "/auth/config") return reply({ invite_required: inviteRequired });
+    if (path === "/admin/finances")
+      return reply({ month: url.searchParams.get("month"), costs: [], sales: [] });
     if (path === "/admin/invitations") return reply([]);
     if (["/feedback", "/admin/feedback"].includes(path) && request.method() === "GET")
       return reply([]);
@@ -4896,4 +4900,200 @@ test("required addons without a ready pack cannot be skipped as normal Minecraft
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Download player pack" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "My Minecraft setup is ready" })).toHaveCount(0);
+});
+
+const financeNode = {
+  id: "60000000-0000-4000-8000-000000000099",
+  name: "Test node",
+  enabled: true,
+  cpu_capacity: 600,
+  ram_capacity_mb: 12288,
+  disk_capacity_mb: 102400,
+  allocated_cpu: 100,
+  allocated_ram_mb: 2048,
+  allocated_disk_mb: 10240,
+  available_allocations: 10,
+};
+const financeCosts = {
+  node_id: financeNode.id,
+  currency: "USD",
+  node_monthly_cents: 1800,
+  overhead_monthly_cents: 200,
+  per_server_monthly_cents: 50,
+  fee_bps: 300,
+  fee_fixed_cents: 30,
+  tax_bps: 0,
+  target_margin_bps: 3000,
+  occupancy_bps: 5000,
+};
+
+test("group recommendations use enabled database plans without currency conversion or upselling", () => {
+  expect(PLAYER_GROUPS.map((group) => group.players)).toEqual([4, 8, 16, 30]);
+  const small = { ...plan, enabled: true, player_recommendation: 8 };
+  const large = { ...small, id: orderID, price_cents: 1500, player_recommendation: 30 };
+  expect(recommendGroupPlan([large, small], 4).id).toBe(small.id);
+  expect(recommendGroupPlan([small, large], 16).id).toBe(large.id);
+  expect(recommendGroupPlan([small], 30)).toBeNull();
+  expect(recommendGroupPlan([{ ...large, currency: "EUR" }, small], 16, "USD")).toBeNull();
+  expect(recommendGroupPlan([{ ...small, enabled: false }], 4)).toBeNull();
+});
+
+test("profit forecast reserves existing allocations and observes every resource limit", () => {
+  const p = { ...plan, ram_mb: 2048, disk_mb: 10240, cpu_limit: 100 };
+  expect(availableSlots(financeNode, p)).toBe(5);
+  expect(availableSlots({ ...financeNode, available_allocations: 2 }, p)).toBe(2);
+  expect(availableSlots({ ...financeNode, cpu_capacity: 200 }, p)).toBe(1);
+  expect(availableSlots({ ...financeNode, ram_capacity_mb: 4096 }, p)).toBe(1);
+  expect(availableSlots({ ...financeNode, disk_capacity_mb: 20480 }, p)).toBe(1);
+  expect(availableSlots({ ...financeNode, enabled: false }, p)).toBe(0);
+  expect(mixForecast(financeNode, [p], financeCosts, { [p.id]: 6 }).fits).toBe(false);
+  expect(mixForecast(financeNode, [p], financeCosts, { [p.id]: 2 }).fits).toBe(true);
+  expect(mixForecast(financeNode, [p], financeCosts, {}).profit).toBe(-2000);
+});
+
+test("yearly payments charge one fixed fee and price floors cover the target after costs", () => {
+  const p = {
+    ...plan,
+    price_cents: 12000,
+    billing_period: "YEARLY",
+    currency: "USD",
+    ram_mb: 2048,
+    disk_mb: 10240,
+    cpu_limit: 100,
+  };
+  const sale = monthlySale(p, financeCosts);
+  expect(sale.fees).toBe((360 + 30) / 12);
+  const result = planMargin(financeNode, p, financeCosts);
+  expect(result.customers).toBe(2);
+  expect(result.floorPrice).not.toBeNull();
+  const suggested = monthlySale(p, financeCosts, result.floorPrice);
+  const profit = result.customers * suggested.contribution - 2000;
+  expect(profit / (result.customers * suggested.revenue)).toBeGreaterThanOrEqual(0.3);
+  expect(planMargin(financeNode, { ...p, currency: "EUR" }, financeCosts).error).toContain(
+    "Currency differs",
+  );
+  expect(
+    mixForecast(financeNode, [{ ...p, currency: "EUR" }], financeCosts, { [p.id]: 1 }).error,
+  ).toContain("currencies");
+  const taxed = planMargin(
+    financeNode,
+    { ...p, billing_period: "MONTHLY" },
+    { ...financeCosts, tax_bps: 2000 },
+  );
+  const taxedSale = monthlySale(
+    { ...p, billing_period: "MONTHLY" },
+    { ...financeCosts, tax_bps: 2000 },
+    taxed.floorPrice,
+  );
+  expect(
+    (taxed.customers * taxedSale.contribution - 2000) / (taxed.customers * taxedSale.revenue),
+  ).toBeGreaterThanOrEqual(0.3);
+});
+
+for (const width of [390, 1366]) {
+  test(`four player groups recommend actual plans and preserve backend order terms at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const calls = await mockAPI(page);
+    const large = {
+      ...plan,
+      id: "10000000-0000-4000-8000-000000000030",
+      name: "Community plan",
+      price_cents: 2200,
+      player_recommendation: 30,
+      ram_mb: 8192,
+    };
+    await page.route("http://localhost:8080/plans", (route) =>
+      route.fulfill({ json: [plan, large] }),
+    );
+    await login(page);
+    await page.goto("/servers/new");
+    const groups = page.getByLabel("Player group size");
+    await expect(groups.getByRole("button")).toHaveCount(4);
+    await groups.getByRole("button", { name: /Community/ }).click();
+    await expect(page.locator(".group-plan-options > summary")).toContainText("Community plan");
+    await page.getByLabel("Server name", { exact: true }).fill("Friends world");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.evaluate(() => {
+      document.activeElement?.blur();
+      window.scrollTo(0, 0);
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`player-groups-${width}.png`),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Continue to checkout" }).click();
+    const order = calls.find((call) => call.path === "/orders" && call.method === "POST");
+    expect(order.body.plan_id).toBe(large.id);
+    expect(order.body).not.toHaveProperty("price_cents");
+    expect(order.body).not.toHaveProperty("ram_mb");
+    expect(order.body).not.toHaveProperty("players");
+  });
+}
+
+test("admin sales keep demo payments separate and save explicit cost assumptions", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const calls = await mockAPI(page, { isAdmin: true });
+  let costs = [];
+  await page.route("http://localhost:8080/admin/nodes**", (route) =>
+    route.fulfill({ json: [financeNode] }),
+  );
+  await page.route("http://localhost:8080/admin/finances**", (route) =>
+    route.fulfill({
+      json: {
+        month: "2026-10",
+        costs,
+        sales: [
+          {
+            provider: "mock",
+            currency: "USD",
+            paid_count: 2,
+            paid_cents: 5000,
+            refunded_count: 0,
+            refunded_cents: 0,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("http://localhost:8080/admin/hosting-costs", async (route) => {
+    const body = route.request().postDataJSON();
+    costs = [body];
+    calls.push({ path: "/admin/hosting-costs", method: "PUT", body });
+    return route.fulfill({ json: body });
+  });
+  await login(page);
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Finances", exact: true }).click();
+  await expect(page.getByText("Demo payments", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Profitability forecast" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit cost assumptions" }).click();
+  await page.getByLabel("VPS bill per month", { exact: true }).fill("18");
+  await expect(page.getByLabel("VPS bill per month", { exact: true })).toHaveValue("18");
+  await expect(page.getByLabel("Expected occupancy (%)", { exact: true })).toHaveValue("50");
+  await page.getByLabel("Other monthly costs", { exact: true }).fill("2");
+  await page.getByLabel("Support / backup cost per server per month", { exact: true }).fill("0.50");
+  await page.getByLabel("Payment fee (%)", { exact: true }).fill("3");
+  await page.getByLabel("Fixed payment fee per charge", { exact: true }).fill("0.30");
+  await page.getByLabel("Tax included in selling price (%)", { exact: true }).fill("0");
+  await page.getByRole("button", { name: "Save costs", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Costs saved" })).toBeVisible();
+  expect(costs[0].node_monthly_cents).toBe(1800);
+  expect(costs[0].fee_bps).toBe(300);
+  expect(costs[0].fee_fixed_cents).toBe(30);
+  await expect(page.getByRole("region", { name: "Profitability forecast" })).toBeVisible();
+  expect(calls.some((call) => call.path.startsWith("/admin/plans") && call.method === "PUT")).toBe(
+    false,
+  );
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => {
+    document.activeElement?.blur();
+    window.scrollTo(0, 0);
+  });
+  await page.screenshot({ path: testInfo.outputPath("admin-finances-mobile.png"), fullPage: true });
 });

@@ -1,4 +1,5 @@
 "use client";
+import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "./auth";
@@ -231,47 +232,53 @@ export function Landing({ appOrigin = "" }) {
             <p role="status">Loading hosting plans…</p>
           ) : data.plans.length ? (
             <div className="landing-plan-grid">
-              {data.plans.map((plan, index) => (
-                <article
-                  key={plan.id}
-                  className={index === 1 ? "landing-plan featured" : "landing-plan"}
-                >
-                  <span className="landing-plan-icon">
-                    <Icon name="world" size={26} />
-                  </span>
-                  <h3>{plan.name}</h3>
-                  <p>{plan.description}</p>
-                  <div className="landing-plan-price">
-                    {price(plan)}
-                    <small>/{plan.billing_period === "YEARLY" ? "year" : "month"}</small>
-                  </div>
-                  <ul>
-                    <li>About {plan.player_recommendation} players</li>
-                    <li>{formatBytes(plan.ram_mb * 1048576, 0)} memory</li>
-                    <li>{formatBytes(plan.disk_mb * 1048576, 0)} world & file storage</li>
-                  </ul>
-                  <Link
-                    className="button landing-signin"
-                    href={appPath(
-                      session
-                        ? beta && !session.user.is_admin
-                          ? "/dashboard"
-                          : `/servers/new?plan=${encodeURIComponent(plan.id)}`
-                        : "/register",
+              {PLAYER_GROUPS.map((group) => {
+                const plan = recommendGroupPlan(data.plans, group.players);
+                return (
+                  <article key={group.id} className="landing-plan">
+                    <span className="landing-plan-icon" aria-hidden="true">
+                      {group.icon}
+                    </span>
+                    <h3>{group.title}</h3>
+                    <p>
+                      For up to {group.players} players · {group.description}
+                    </p>
+                    {plan ? (
+                      <>
+                        <div className="landing-plan-price">
+                          {price(plan)}
+                          <small>/{plan.billing_period === "YEARLY" ? "year" : "month"}</small>
+                        </div>
+                        <p>
+                          {plan.name} · {formatBytes(plan.ram_mb * 1048576, 0)} memory
+                        </p>
+                        <Link
+                          className="button landing-signin"
+                          href={appPath(
+                            session
+                              ? beta && !session.user.is_admin
+                                ? "/dashboard"
+                                : `/servers/new?plan=${encodeURIComponent(plan.id)}&group=${group.id}`
+                              : "/register",
+                          )}
+                        >
+                          {beta
+                            ? session
+                              ? session.user.is_admin
+                                ? "Create beta world"
+                                : "Open my worlds"
+                              : "Invitation needed"
+                            : "Choose your world"}
+                          <Icon name="arrow" size={16} />
+                        </Link>
+                      </>
+                    ) : (
+                      <p>Ask us for a suitable plan.</p>
                     )}
-                  >
-                    {beta
-                      ? session
-                        ? session.user.is_admin
-                          ? "Create beta world"
-                          : "Open my worlds"
-                        : "Invitation needed"
-                      : "Choose plan"}
-                    <Icon name="arrow" size={16} />
-                  </Link>
-                  <small>Player counts are a guide; mods and worlds affect usage.</small>
-                </article>
-              ))}
+                    <small>Group size is a guide; mods and worlds affect usage.</small>
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <p>Plans are being prepared. You can still sign in to your existing worlds.</p>

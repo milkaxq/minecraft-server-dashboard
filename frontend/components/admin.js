@@ -1,4 +1,5 @@
 "use client";
+import { AdminFinances } from "./admin-finances";
 import { Select } from "./select";
 import { JobHelp, NodeCapacity } from "./admin-health";
 import { useEffect, useRef, useState } from "react";
@@ -8,7 +9,17 @@ import { Table, ErrorMessage, Loading, PageHeading, Shell, Badge } from "./ui";
 import { ReportList } from "./feedback";
 import { Invitations } from "./invitations";
 import { formatBytes, price } from "../lib/api";
-const tabs = ["plans", "servers", "users", "orders", "nodes", "audit", "invitations", "feedback"];
+const tabs = [
+  "plans",
+  "servers",
+  "users",
+  "orders",
+  "nodes",
+  "audit",
+  "invitations",
+  "feedback",
+  "finances",
+];
 const numbers = [
   ["price_cents", "Price (cents)", 0, 100000000],
   ["ram_mb", "RAM (MB)", 512, 131072],
@@ -24,7 +35,7 @@ export function Admin() {
   const [tab, setTab] = useState("servers");
   const [offset, setOffset] = useState(0);
   const resource = useResource(
-    account.data?.is_admin
+    account.data?.is_admin && tab !== "finances"
       ? `/admin/${tab}${["users", "servers", "orders", "audit", "feedback"].includes(tab) ? `?offset=${offset}` : ""}`
       : null,
     10000,
@@ -220,7 +231,9 @@ export function Admin() {
               </form>
             </section>
           )}
-          {tab === "invitations" ? (
+          {tab === "finances" ? (
+            <AdminFinances />
+          ) : tab === "invitations" ? (
             <Invitations rows={rows} loading={resource.loading} refresh={resource.refresh} />
           ) : tab === "feedback" ? (
             <section className="panel management-panel feedback-panel">

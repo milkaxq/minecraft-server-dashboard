@@ -3,6 +3,9 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"time"
+
+	"minecraft-hosting/internal/admin"
 
 	"github.com/google/uuid"
 
@@ -12,7 +15,7 @@ import (
 )
 
 func (a *API) adminRoutes(mux *http.ServeMux) {
-	routes := map[string]http.HandlerFunc{"GET /admin/feedback": a.adminFeedback, "PUT /admin/feedback/{report}": a.adminUpdateFeedback, "GET /admin/invitations": a.adminInvitations, "POST /admin/invitations": a.adminCreateInvitation, "POST /admin/invitations/{invite}/revoke": a.adminRevokeInvitation, "GET /admin/plans": a.adminPlans, "POST /admin/plans": a.adminSavePlan, "PUT /admin/plans/{plan}": a.adminSavePlan, "GET /admin/users": a.adminUsers, "GET /admin/servers": a.adminServers, "GET /admin/orders": a.adminOrders, "GET /admin/nodes": a.adminNodes, "GET /admin/audit": a.adminAudit}
+	routes := map[string]http.HandlerFunc{"GET /admin/finances": a.adminFinances, "PUT /admin/hosting-costs": a.adminHostingCosts, "GET /admin/feedback": a.adminFeedback, "PUT /admin/feedback/{report}": a.adminUpdateFeedback, "GET /admin/invitations": a.adminInvitations, "POST /admin/invitations": a.adminCreateInvitation, "POST /admin/invitations/{invite}/revoke": a.adminRevokeInvitation, "GET /admin/plans": a.adminPlans, "POST /admin/plans": a.adminSavePlan, "PUT /admin/plans/{plan}": a.adminSavePlan, "GET /admin/users": a.adminUsers, "GET /admin/servers": a.adminServers, "GET /admin/orders": a.adminOrders, "GET /admin/nodes": a.adminNodes, "GET /admin/audit": a.adminAudit}
 	for route, handler := range routes {
 		mux.HandleFunc(route, a.protected(a.liveLimit("admin", 240, func(w http.ResponseWriter, r *http.Request) {
 			if a.Admin == nil {
@@ -131,4 +134,35 @@ func (a *API) adminAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	write(w, 200, v)
+}
+
+func (a *API) adminFinances(w http.ResponseWriter, r *http.Request) {
+	month := time.Now().UTC()
+	if input := r.URL.Query().Get("month"); input != "" {
+		var err error
+		month, err = time.Parse("2006-01", input)
+		if err != nil {
+			a.fail(w, r, server.ErrInvalid)
+			return
+		}
+	}
+	result, err := a.Admin.Finances(r.Context(), currentUser(r).ID, month)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, 200, result)
+}
+func (a *API) adminHostingCosts(w http.ResponseWriter, r *http.Request) {
+	var input admin.HostingCosts
+	if err := decode(w, r, &input); err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	result, err := a.Admin.SaveHostingCosts(r.Context(), currentUser(r).ID, input, requestID(r))
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, 200, result)
 }
