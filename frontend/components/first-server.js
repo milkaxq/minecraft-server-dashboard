@@ -62,10 +62,7 @@ export function FirstServerChecklist({
     },
   ];
   return (
-    <details
-      className="first-server-checklist"
-      open={!ready || eula === false || powerState === "offline"}
-    >
+    <details className="first-server-checklist" open={!ready || eula === false}>
       <summary>
         Your first session{" "}
         <span>

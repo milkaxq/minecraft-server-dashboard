@@ -31,7 +31,7 @@ export function Select({ children, value, onChange, disabled, name, required, ..
   }
   function open() {
     if (disabled) return;
-    setNight(Boolean(trigger.current.closest(".app-shell")));
+    setNight(Boolean(trigger.current.closest(".app-shell, .public-player-page, .auth-page")));
     setMenu(position());
     setActive(Math.max(0, selected));
   }

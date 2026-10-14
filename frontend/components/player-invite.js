@@ -253,7 +253,7 @@ export function PublicPlayerJoin({ slug }) {
   return (
     <main className="public-player-page">
       <header>
-        <Link href="/login" className="public-brand">
+        <Link href="https://playblockyard.com" className="public-brand">
           blockyard<span>.</span>
         </Link>
         <span>YOU’RE INVITED</span>
@@ -270,12 +270,10 @@ export function PublicPlayerJoin({ slug }) {
       ) : (
         <>
           <section className="player-hero">
-            <span className="player-hero-art" aria-hidden="true">
-              🎮
-            </span>
             <span className="eyebrow">YOUR NEXT ADVENTURE</span>
             <h1>Join {setup.name}</h1>
-            <p>Minecraft Java {setup.minecraft_version}</p>
+            <p>Your friends are waiting. Let’s get you into their world.</p>
+            <span className="player-game-tag">Minecraft Java {setup.minecraft_version}</span>
             <div className="player-address">
               <code>{setup.address}</code>
               <button className="button secondary" onClick={copy}>
@@ -283,7 +281,18 @@ export function PublicPlayerJoin({ slug }) {
               </button>
             </div>
           </section>
-          <LauncherPicker launcher={launcher} onChange={setLauncher} />
+          <div className="player-setup-heading">
+            <span className="eyebrow">LET’S PLAY</span>
+            <h2>
+              {setup.pack_ready ? "Three steps to your adventure." : "Your way into the world."}
+            </h2>
+            <p>
+              {setup.pack_ready
+                ? "Download once. Import into your launcher. Join your friends."
+                : "Use the matching Minecraft version and the address above."}
+            </p>
+          </div>
+          {setup.pack_ready && <LauncherPicker launcher={launcher} onChange={setLauncher} />}
           <section className="player-steps" aria-label="Join steps">
             {setup.pack_ready ? (
               <>

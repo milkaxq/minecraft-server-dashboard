@@ -1,4 +1,5 @@
 "use client";
+import { serverHealth } from "../lib/server-health";
 import { softwareName } from "../lib/software";
 import { ServerInsights } from "./server-insights";
 import { SetupProgress } from "./setup-progress";
@@ -442,36 +443,29 @@ export function ServerDetail({ id, advanced = false }) {
                 Live controls are temporarily unavailable. Please contact hosting support.
               </p>
             )}
-            {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
-              <StartupCheck
-                key={`startup:${id}`}
-                server={server}
-                ready={ready}
-                powerState={displayPowerState}
-                usage={usage}
-                usageError={usageError}
-                eula={eula.data?.accepted}
-              />
-            )}
-            {!advanced && (
-              <details className="panel">
-                <summary>Server health & activity</summary>
-                <ServerInsights key={`insights:${id}`} server={server} ready={ready} />
-              </details>
-            )}
-            {!advanced && <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />}
             <FeatureLinks id={id} server={server} advanced={advanced} />
             {!advanced && (
-              <FirstServerChecklist
-                server={server}
-                ready={ready}
-                eula={eula.data?.accepted}
-                powerState={displayPowerState}
-                address={address}
-                addressCopied={addressCopied}
-                onCopy={copy}
-              />
+              <section className="server-play-card" aria-label="Play on your server">
+                <span className="eyebrow">YOUR WORLD IS WAITING</span>
+                <h2>
+                  {displayPowerState === "running"
+                    ? "Ready for your next adventure."
+                    : "Start your world. Bring your friends."}
+                </h2>
+                <p>
+                  {displayPowerState === "running"
+                    ? `${usage?.players_online ?? "—"} players online · Minecraft Java ${server.minecraft_version}`
+                    : "Use the controls above, then join with this address."}
+                </p>
+                <div className="player-address">
+                  <code>{address || "Address available after setup"}</code>
+                  <button className="button primary" onClick={copy} disabled={!address}>
+                    {copied ? "Copied" : "Copy server address"}
+                  </button>
+                </div>
+              </section>
             )}
+            {!advanced && <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />}
             {ready && !notice && ["starting", "stopping"].includes(displayPowerState) && (
               <p className="notice" role="status">
                 {displayPowerState === "starting"
@@ -479,7 +473,7 @@ export function ServerDetail({ id, advanced = false }) {
                   : "Saving your world and shutting down. Wait for Offline before starting again."}
               </p>
             )}
-            <ContextHelp topic={advanced ? "console" : "overview"} />
+            {advanced && <ContextHelp topic="console" />}
             {advanced ? (
               <>
                 <div className="section-heading">
@@ -519,167 +513,190 @@ export function ServerDetail({ id, advanced = false }) {
             ) : (
               <>
                 <ErrorMessage error={usageError} />
-                <div className="metric-grid">
-                  <Metric
-                    icon="user"
-                    title="Players online"
-                    value={usage?.players_online ?? "—"}
-                    detail={
-                      usage?.players_max != null
-                        ? `of ${usage.players_max} slots`
-                        : usage?.players_available
-                          ? "Ready for friends"
-                          : "No player count available"
-                    }
-                  />
-                  <Metric
-                    icon="cpu"
-                    title="CPU usage"
-                    value={usage ? `${usage.cpu_percent.toFixed(1)}%` : "—"}
-                    detail={`${server.cpu_limit}% allocated`}
-                  />
-                  <Metric
-                    icon="server"
-                    title="Memory usage"
-                    value={formatBytes(usage?.memory_bytes)}
-                    detail={`of ${formatBytes(server.ram_mb * 1048576, 0)} allocated`}
-                  />
-                  <Metric
-                    icon="clock"
-                    title="Uptime"
-                    value={usage ? duration(usage.uptime_ms) : "—"}
-                    detail={
-                      usage?.power_state === "running"
-                        ? "Since the last start"
-                        : "Start your next adventure"
-                    }
-                  />
-                </div>
-                {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
-                  <JoinServer
-                    key={server.id}
+                <details
+                  className="panel server-secondary"
+                  data-section="joining"
+                  open={!ready || eula.data?.accepted === false}
+                >
+                  <summary>Joining help & client requirements</summary>
+                  <ContextHelp topic="overview" />
+                  <FirstServerChecklist
                     server={server}
                     ready={ready}
+                    eula={eula.data?.accepted}
                     powerState={displayPowerState}
                     address={address}
+                    addressCopied={addressCopied}
                     onCopy={copy}
                   />
-                )}
-                <div className="overview-grid">
-                  <section className="panel performance-panel">
-                    <div className="section-heading">
-                      <div>
-                        <h2>Server performance</h2>
-                        <span>CPU allocation usage</span>
-                      </div>
-                      <span className="live-label">
-                        <span />
-                        Recent live samples
-                      </span>
-                    </div>
-                    <LiveResourceChart key={id} usage={usage} cpuLimit={server.cpu_limit} />
-                    <div className="chart-caption">
-                      <span>Older</span>
-                      <span>Now</span>
-                    </div>
-                    <div className="disk-meter">
-                      <div>
-                        <span>Disk usage</span>
-                        <strong>
-                          {formatBytes(usage?.disk_bytes)}{" "}
-                          <small>/ {formatBytes(server.disk_mb * 1048576, 0)}</small>
-                        </strong>
-                      </div>
-                      <progress
-                        max={server.disk_mb * 1048576}
-                        value={usage?.disk_bytes || 0}
-                        aria-label="Disk usage"
-                      />
-                    </div>
-                  </section>
-                  <section className="panel connection-panel">
-                    <span className="connection-icon">
-                      <Icon name="world" size={24} />
-                    </span>
-                    <h2>Bring your friends.</h2>
-                    <p>
-                      Open Minecraft → Multiplayer → Add Server.
-                      <br />
-                      Use this address to join your world.
-                    </p>
-                    <label className="address-label">SERVER ADDRESS</label>
-                    <div className="address-box">
-                      <code>{address || "Waiting for activation"}</code>
-                      <button onClick={copy} disabled={!address} aria-label="Copy server address">
-                        <Icon name={copied ? "check" : "copy"} size={17} />
-                      </button>
-                    </div>
-                    {address && (
-                      <span className="field-help">
-                        Java Edition · Minecraft {server.minecraft_version}
-                      </span>
-                    )}
-                    <div className="connection-tip">
-                      <Icon name="shield" size={17} />
-                      <span>Only your world. Only your resources.</span>
-                    </div>
-                  </section>
-                </div>
-                <section className="panel details-panel">
-                  <div>
-                    <h2>At a glance</h2>
-                    <Link href="/guide">Setup and installation guide →</Link>
-                    <p>The essentials for your world.</p>
+
+                  {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
+                    <JoinServer
+                      key={server.id}
+                      server={server}
+                      ready={ready}
+                      powerState={displayPowerState}
+                      address={address}
+                      onCopy={copy}
+                    />
+                  )}
+                </details>
+                <details className="panel server-secondary" data-section="health">
+                  <summary>
+                    <span>Server health & activity</span>
+                    <small>
+                      {
+                        serverHealth({
+                          server,
+                          ready,
+                          powerState: displayPowerState,
+                          usage,
+                          usageError,
+                          eula: eula.data?.accepted,
+                        }).title
+                      }
+                    </small>
+                  </summary>
+                  {!server.deletion_pending && server.status !== "CANCELLED" && (
+                    <StartupCheck
+                      key={`startup:${id}`}
+                      server={server}
+                      ready={ready}
+                      powerState={displayPowerState}
+                      usage={usage}
+                      usageError={usageError}
+                      eula={eula.data?.accepted}
+                    />
+                  )}
+                  <ServerInsights key={`insights:${id}`} server={server} ready={ready} />
+                  <div className="metric-grid">
+                    <Metric
+                      icon="user"
+                      title="Players online"
+                      value={usage?.players_online ?? "—"}
+                      detail={
+                        usage?.players_max != null
+                          ? `of ${usage.players_max} slots`
+                          : usage?.players_available
+                            ? "Ready for friends"
+                            : "No player count available"
+                      }
+                    />
+                    <Metric
+                      icon="cpu"
+                      title="CPU usage"
+                      value={usage ? `${usage.cpu_percent.toFixed(1)}%` : "—"}
+                      detail={`${server.cpu_limit}% allocated`}
+                    />
+                    <Metric
+                      icon="server"
+                      title="Memory usage"
+                      value={formatBytes(usage?.memory_bytes)}
+                      detail={`of ${formatBytes(server.ram_mb * 1048576, 0)} allocated`}
+                    />
+                    <Metric
+                      icon="clock"
+                      title="Uptime"
+                      value={usage ? duration(usage.uptime_ms) : "—"}
+                      detail={
+                        usage?.power_state === "running"
+                          ? "Since the last start"
+                          : "Start your next adventure"
+                      }
+                    />
                   </div>
-                  <dl>
-                    <div>
-                      <dt>Server software</dt>
-                      <dd>{softwareName(server.server_type)}</dd>
-                    </div>
-                    <div>
-                      <dt>Minecraft version</dt>
-                      <dd>{server.minecraft_version}</dd>
-                    </div>
-                    {server.loader_version && (
-                      <div>
-                        <dt>Loader version</dt>
-                        <dd>{server.loader_version}</dd>
+                  <div className="overview-grid server-performance-grid">
+                    <section className="panel performance-panel">
+                      <div className="section-heading">
+                        <div>
+                          <h2>Server performance</h2>
+                          <span>CPU allocation usage</span>
+                        </div>
+                        <span className="live-label">
+                          <span />
+                          Recent live samples
+                        </span>
                       </div>
-                    )}
-                    <div>
-                      <dt>Your access</dt>
-                      <dd>
-                        {server.role === "OWNER"
-                          ? "Owner"
-                          : server.role === "ADMIN"
-                            ? "Admin"
-                            : "Moderator"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Backup allowance</dt>
-                      <dd>{server.backup_limit}</dd>
-                    </div>
-                  </dl>
-                </section>
-                {has("delete") && server.status !== "CANCELLED" && !server.deletion_pending && (
+                      <LiveResourceChart key={id} usage={usage} cpuLimit={server.cpu_limit} />
+                      <div className="chart-caption">
+                        <span>Older</span>
+                        <span>Now</span>
+                      </div>
+                      <div className="disk-meter">
+                        <div>
+                          <span>Disk usage</span>
+                          <strong>
+                            {formatBytes(usage?.disk_bytes)}{" "}
+                            <small>/ {formatBytes(server.disk_mb * 1048576, 0)}</small>
+                          </strong>
+                        </div>
+                        <progress
+                          max={server.disk_mb * 1048576}
+                          value={usage?.disk_bytes || 0}
+                          aria-label="Disk usage"
+                        />
+                      </div>
+                    </section>
+                  </div>
                   <section className="panel details-panel">
-                    <VersionSafety server={server} offline={usage?.power_state === "offline"} />
                     <div>
-                      <h2>Delete server</h2>
-                      <p>Remove this server and its files after you have saved what you need.</p>
-                      <button
-                        className="button danger-outline"
-                        onClick={() => {
-                          setDeleteKey(crypto.randomUUID());
-                          setActionError(null);
-                          setConfirmDelete(true);
-                        }}
-                      >
-                        Delete server
-                      </button>
+                      <h2>At a glance</h2>
+                      <Link href="/guide">Setup and installation guide →</Link>
+                      <p>The essentials for your world.</p>
                     </div>
+                    <dl>
+                      <div>
+                        <dt>Server software</dt>
+                        <dd>{softwareName(server.server_type)}</dd>
+                      </div>
+                      <div>
+                        <dt>Minecraft version</dt>
+                        <dd>{server.minecraft_version}</dd>
+                      </div>
+                      {server.loader_version && (
+                        <div>
+                          <dt>Loader version</dt>
+                          <dd>{server.loader_version}</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Your access</dt>
+                        <dd>
+                          {server.role === "OWNER"
+                            ? "Owner"
+                            : server.role === "ADMIN"
+                              ? "Admin"
+                              : "Moderator"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Backup allowance</dt>
+                        <dd>{server.backup_limit}</dd>
+                      </div>
+                    </dl>
                   </section>
+                </details>
+                {has("delete") && server.status !== "CANCELLED" && !server.deletion_pending && (
+                  <details className="panel server-secondary" data-section="maintenance">
+                    <summary>Version & server management</summary>
+                    <section className="panel details-panel">
+                      <VersionSafety server={server} offline={usage?.power_state === "offline"} />
+                      <div>
+                        <h2>Delete server</h2>
+                        <p>Remove this server and its files after you have saved what you need.</p>
+                        <button
+                          className="button danger-outline"
+                          onClick={() => {
+                            setDeleteKey(crypto.randomUUID());
+                            setActionError(null);
+                            setConfirmDelete(true);
+                          }}
+                        >
+                          Delete server
+                        </button>
+                      </div>
+                    </section>
+                  </details>
                 )}
               </>
             )}
