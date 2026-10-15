@@ -1,8 +1,8 @@
 "use client";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans";
 import { Select } from "./select";
-import { NEW_SERVER_TYPES, softwareName, supportsMods } from "../lib/software";
-import { useState, useRef } from "react";
+import { NEW_SERVER_TYPES, softwareName } from "../lib/software";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -29,6 +29,12 @@ export function NewServer({ initialPlan = "", initialGroup = "friends" }) {
   const [group, setGroup] = useState(
     PLAYER_GROUPS.some((value) => value.id === initialGroup) ? initialGroup : "friends",
   );
+  const [step, setStep] = useState(1);
+  const [style, setStyle] = useState("regular");
+  const heading = useRef(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [step]);
   const [chosenPlan, setPlanID] = useState(initialPlan);
   const [chosenType, setType] = useState("PAPER");
   const [chosenVersion, setVersion] = useState("");
@@ -36,8 +42,9 @@ export function NewServer({ initialPlan = "", initialGroup = "friends" }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const audience = PLAYER_GROUPS.find((value) => value.id === group);
-  const recommended = recommendGroupPlan(plans, audience.players);
-  const planID = plans?.find((p) => p.id === chosenPlan)?.id || recommended?.id || "";
+  const enabledPlans = plans?.filter((plan) => plan.enabled !== false);
+  const recommended = recommendGroupPlan(enabledPlans, audience.players);
+  const planID = enabledPlans?.find((p) => p.id === chosenPlan)?.id || recommended?.id || "";
   const type = options?.some((o) => o.server_type === chosenType)
     ? chosenType
     : options?.[0]?.server_type || "PAPER";
@@ -47,12 +54,13 @@ export function NewServer({ initialPlan = "", initialGroup = "friends" }) {
       .map((o) => o.minecraft_version)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) || [];
   const version = versions.includes(chosenVersion) ? chosenVersion : versions.at(-1) || "";
-  const selected = plans?.find((p) => p.id === planID);
+  const selected = enabledPlans?.find((p) => p.id === planID);
   const beta = checkoutConfig?.provider === "disabled" && session?.user.is_admin;
   const software = [...new Set(options?.map((o) => o.server_type) || [])];
   async function submit(event) {
     event.preventDefault();
     if (
+      step !== 3 ||
       busy ||
       !selected ||
       !version ||
@@ -95,18 +103,47 @@ export function NewServer({ initialPlan = "", initialGroup = "friends" }) {
       setBusy(false);
     }
   }
+  const choicesReady = !!options?.length && !optionsError;
+  const canReview = choicesReady && !!selected && !plansError;
+  const createDisabled =
+    busy ||
+    !canReview ||
+    !!checkoutError ||
+    !version ||
+    !name.trim() ||
+    (!beta && !checkoutConfig?.checkout_enabled);
+  const displayedStyle = type === "PAPER" ? (style === "mods" ? "regular" : style) : "mods";
+  const modType = software.includes("FABRIC") ? "FABRIC" : "FORGE";
+  const styles = [
+    {
+      id: "regular",
+      type: "PAPER",
+      icon: "🌳",
+      name: "Regular Minecraft",
+      description: "Classic adventures. No extra downloads.",
+    },
+    {
+      id: "plugins",
+      type: "PAPER",
+      icon: "🏰",
+      name: "Minecraft with plugins",
+      description: "Add server plugins after setup.",
+    },
+    {
+      id: "mods",
+      type: modType,
+      icon: "🧩",
+      name: "Minecraft with mods",
+      description: "New blocks, creatures and modpacks.",
+    },
+  ];
   return (
     <Shell>
-      <PageHeading
-        eyebrow="A NEW ADVENTURE"
-        title="Make room for your next world."
-        description="Pick how you want to play. We handle the server setup."
-      />
+      <PageHeading eyebrow="A NEW ADVENTURE" title="Create your world" />
       <ErrorMessage error={plansError || optionsError || checkoutError || error} />
       {error && (
         <p className="notice" role="status">
-          Your choices are still here. Check the error and try again. An unchanged request uses the
-          same reference to avoid creating another order.
+          Your choices are saved here. Try again when you’re ready.
         </p>
       )}
       {(plansError || optionsError || checkoutError) && (
@@ -122,306 +159,245 @@ export function NewServer({ initialPlan = "", initialGroup = "friends" }) {
         </button>
       )}
       <nav className="creation-steps" aria-label="Server creation steps">
-        <a href="#choose-play-style">
-          <span>1</span> Choose how to play
-        </a>
-        <a href="#choose-server-plan">
-          <span>2</span> Choose a plan
-        </a>
-        <a href="#name-server">
-          <span>3</span> Name & review
-        </a>
+        {["How to play", "Group size", "Name & create"].map((label, index) => (
+          <button
+            type="button"
+            key={label}
+            className={`button ${step === index + 1 ? "primary" : "secondary"}`}
+            aria-current={step === index + 1 ? "step" : undefined}
+            disabled={busy || (index === 1 && !choicesReady) || (index === 2 && !canReview)}
+            onClick={() => setStep(index + 1)}
+          >
+            <span>{index + 1}</span>
+            {label}
+          </button>
+        ))}
       </nav>
       {loading ? (
         <Loading message="Loading hosting plans…" />
       ) : (
-        <form onSubmit={submit} className="create-layout">
-          <div>
-            <section
-              id="choose-play-style"
-              className="play-style-picker"
-              aria-label="How do you want to play?"
-            >
-              <div className="step-heading">
-                <span>01</span>
-                <div>
-                  <h2>How do you want to play?</h2>
-                  <p>You can add extras after setup.</p>
-                </div>
-              </div>
-              <div className="play-style-grid">
-                {[
-                  [
-                    "PAPER",
-                    "🎮",
-                    "Play with friends",
-                    "Start with normal Java gameplay. Add server plugins like homes or permissions later; voice chat also needs a client mod.",
-                  ],
-                  [
-                    "FABRIC",
-                    "🧩",
-                    "Add new blocks & creatures",
-                    "Fabric mods change the game. We help prepare your friends’ player setup.",
-                  ],
-                  [
-                    "FORGE",
-                    "📦",
-                    "Use a Forge modpack",
-                    "Choose this if your pack asks for Forge. Pack installation and settings still need the author’s requirements.",
-                  ],
-                ].map(([value, icon, title, text]) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={`play-style-card ${type === value ? "selected" : ""}`}
-                    aria-pressed={type === value}
-                    disabled={busy || !software.includes(value)}
-                    onClick={() => setType(value)}
-                  >
-                    <span className="play-style-art" aria-hidden="true">
-                      {icon}
-                    </span>
-                    <strong>{title}</strong>
-                    <small>{text}</small>
-                    <span className="play-style-label">
-                      {software.includes(value)
-                        ? type === value
-                          ? "Selected"
-                          : "Choose"
-                        : "Not available yet"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-            <div id="choose-server-plan" className="step-heading">
-              <span>02</span>
-              <div>
-                <h2>Who’s joining your world?</h2>
-                <p>
-                  Start with your group size. We suggest an affordable plan that fits its player
-                  recommendation.
-                </p>
-              </div>
-            </div>
-            <div className="group-picker" aria-label="Player group size">
-              {PLAYER_GROUPS.map((value) => {
-                const match = recommendGroupPlan(plans, value.players);
-                return (
-                  <button
-                    type="button"
-                    key={value.id}
-                    className={`group-card ${group === value.id ? "selected" : ""}`}
-                    aria-pressed={group === value.id}
-                    disabled={busy}
-                    onClick={() => {
-                      setGroup(value.id);
-                      setPlanID("");
-                    }}
-                  >
-                    <span aria-hidden="true">{value.icon}</span>
-                    <strong>{value.title}</strong>
-                    <span>For up to {value.players} players</span>
-                    <small>{value.description}</small>
-                    <b>
-                      {match
-                        ? `${price(match)}/${match.billing_period === "YEARLY" ? "year" : "month"}`
-                        : "Ask us for a suitable plan"}
-                    </b>
-                  </button>
-                );
-              })}
-            </div>
-            {!recommended && (
-              <p className="notice">
-                No enabled plan currently recommends this group size. Choose a smaller group or ask
-                your host for a suitable plan.
-              </p>
-            )}
-            <p className="field-help group-plan-note">
-              Group sizes are recommendations, not player limits or performance guarantees. Mods and
-              large worlds may need more memory. When one plan fits two group sizes, you pay the
-              same price.
-            </p>
-            <details className="panel group-plan-options" open={!!chosenPlan}>
-              <summary>
-                {selected
-                  ? `Your plan: ${selected.name} · ${price(selected)}`
-                  : "Compare hosting plans"}
-              </summary>
-              <p>
-                Keep the suggested plan or choose another. Match a modpack’s own memory requirements
-                before buying.
-              </p>
-              <div className="plan-picker">
-                {plans?.map((plan) => (
-                  <label
-                    key={plan.id}
-                    className={`plan-option ${planID === plan.id ? "selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="plan"
-                      value={plan.id}
-                      checked={planID === plan.id}
-                      disabled={busy}
-                      onChange={() => setPlanID(plan.id)}
-                    />
-                    <div className="plan-option-head">
-                      <strong>{plan.name}</strong>
-                      <span>
-                        {price(plan)}
-                        <small>/{plan.billing_period === "YEARLY" ? "year" : "month"}</small>
-                      </span>
-                    </div>
-                    <p>{plan.description}</p>
-                    <div className="plan-specs">
-                      <span>{formatBytes(plan.ram_mb * 1048576, 0)} RAM</span>
-                      <span>{formatBytes(plan.disk_mb * 1048576, 0)} disk</span>
-                    </div>
-                    <details className="plan-technical-details">
-                      <summary>Technical limits</summary>
-                      <p>
-                        About {plan.player_recommendation} players · {plan.cpu_limit}% CPU ·{" "}
-                        {plan.backup_limit ?? 0} backups · {plan.database_limit ?? 0} databases.
-                        Player counts are recommendations, not guarantees; mods and worlds affect
-                        usage.
-                      </p>
-                    </details>
-                  </label>
-                ))}
-              </div>
-            </details>
-            <section id="name-server" className="panel create-settings">
-              <div className="step-heading">
-                <span>03</span>
-                <div>
-                  <h2>Name your world</h2>
-                  <p>We’ll take care of the setup.</p>
-                </div>
-              </div>
-              <label className="field">
-                Server name
-                <input
-                  value={name}
-                  disabled={busy}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={80}
-                  minLength={1}
-                  required
-                  placeholder="The Friends’ Survival World"
-                  autoComplete="off"
-                />
-              </label>
-              <details className="creation-advanced">
-                <summary>Version & advanced choices</summary>
-                <div className="field-row">
-                  <label className="field">
-                    Server software
-                    <Select
-                      aria-label="Server software"
-                      value={type}
-                      onChange={(e) => setType(e.target.value)}
-                      disabled={busy || !software.length}
-                    >
-                      {software.map((v) => (
-                        <option key={v} value={v}>
-                          {softwareName(v)}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                  <label className="field">
-                    Minecraft version
-                    <Select
-                      aria-label="Minecraft version"
-                      value={version}
-                      onChange={(e) => setVersion(e.target.value)}
-                      disabled={busy || !versions.length}
-                    >
-                      {versions.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </Select>
-                  </label>
-                </div>
-              </details>
-              {options && !options.length && (
-                <p className="notice">
-                  No Minecraft versions are available yet. Please contact hosting support.
-                </p>
-              )}
-              <div className="create-next-actions" aria-label="What happens next">
-                <span>✓ Automatic server setup</span>
-                <span>✓ Optional extras</span>
-                <span>✓ Invite your friends</span>
-              </div>
-              {supportsMods(type) && (
-                <p className="field-help">
-                  Players may need matching mods. Your invite page will explain which verified
-                  downloads are available.
-                </p>
-              )}
-              <p className="field-help">
-                Microsoft verification and whitelist start off. Change who can join in Players or
-                Settings. A login plugin is optional; it is not installed automatically.
-              </p>
-            </section>
-          </div>
-          <aside className="panel order-summary">
-            <span className="eyebrow">YOUR NEW SERVER</span>
-            <h2>{name.trim() || "Your next world"}</h2>
-            <p>
-              {softwareName(type)} {version && `· Minecraft ${version}`}
-            </p>
-            {selected && (
+        <form
+          onSubmit={submit}
+          className={`creation-wizard ${step === 3 ? "creation-review" : ""}`}
+        >
+          <section className="panel creation-step" aria-label={`Step ${step} of 3`}>
+            <h2 ref={heading} tabIndex={-1}>
+              {step === 1
+                ? "How do you want to play?"
+                : step === 2
+                  ? "Who’s joining?"
+                  : "Name your world"}
+            </h2>
+            {step === 1 && (
               <>
-                <hr />
-                <div className="summary-line">
-                  <span>{selected.name} plan</span>
-                  <strong>{price(selected)}</strong>
+                <div className="play-style-grid">
+                  {styles.map((choice) => (
+                    <button
+                      type="button"
+                      key={choice.id}
+                      className={`play-style-card ${displayedStyle === choice.id ? "selected" : ""}`}
+                      aria-pressed={displayedStyle === choice.id}
+                      disabled={busy || !software.includes(choice.type)}
+                      onClick={() => {
+                        setStyle(choice.id);
+                        setType(choice.type);
+                        setVersion("");
+                      }}
+                    >
+                      <span className={`play-style-art style-art-${choice.id}`} aria-hidden="true">
+                        {choice.icon}
+                      </span>
+                      <strong>{choice.name}</strong>
+                      <small>{choice.description}</small>
+                      <span className="play-style-label">
+                        {!software.includes(choice.type)
+                          ? "Not available yet"
+                          : displayedStyle === choice.id
+                            ? "Selected"
+                            : "Choose"}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                <div className="summary-line">
-                  <span>Billing period</span>
-                  <span>{selected.billing_period === "YEARLY" ? "Yearly" : "Monthly"}</span>
-                </div>
-                <div className="summary-line">
-                  <span>Memory</span>
-                  <span>{formatBytes(selected.ram_mb * 1048576, 0)}</span>
-                </div>
-                <div className="summary-line">
-                  <span>Disk</span>
-                  <span>{formatBytes(selected.disk_mb * 1048576, 0)}</span>
-                </div>
-                <hr />
+                <p className="field-help">
+                  {displayedStyle === "mods"
+                    ? "Install your mods after setup. Players may need matching downloads."
+                    : "You can add plugins after setup."}
+                </p>
               </>
             )}
-            <p className="activation-note">
-              {beta
-                ? "Private beta setup. No checkout or charge; your server will install automatically."
-                : checkoutConfig?.provider === "mock"
-                  ? "Development demo checkout. No real money is charged."
-                  : "Checkout is currently unavailable. Please contact hosting support."}
-            </p>
-            <button
-              className="button primary wide"
-              disabled={
-                busy ||
-                !selected ||
-                !!plansError ||
-                !!optionsError ||
-                !!checkoutError ||
-                !version ||
-                !name.trim() ||
-                (!beta && !checkoutConfig?.checkout_enabled)
-              }
-            >
-              {busy ? "Creating server…" : beta ? "Create beta server" : "Continue to checkout"}
-              <Icon name="arrow" size={16} />
-            </button>
-          </aside>
+            {step === 2 && (
+              <>
+                <div className="group-picker" aria-label="Player group size">
+                  {PLAYER_GROUPS.map((value) => {
+                    const match = recommendGroupPlan(enabledPlans, value.players);
+                    return (
+                      <button
+                        type="button"
+                        key={value.id}
+                        className={`group-card ${group === value.id ? "selected" : ""}`}
+                        aria-pressed={group === value.id}
+                        disabled={busy || !match}
+                        onClick={() => {
+                          setGroup(value.id);
+                          setPlanID("");
+                        }}
+                      >
+                        <span aria-hidden="true">{value.icon}</span>
+                        <strong>{value.title}</strong>
+                        <span>Up to {value.players} players</span>
+                        <b>
+                          {match
+                            ? `${price(match)}/${match.billing_period === "YEARLY" ? "year" : "month"}`
+                            : "Unavailable"}
+                        </b>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="field-help">
+                  Suggested group sizes. Modpacks may need a larger plan.
+                </p>
+                {!recommended && (
+                  <p className="notice">No suitable plan is available for this group.</p>
+                )}
+              </>
+            )}
+            {step === 3 && (
+              <>
+                <label className="field">
+                  Server name
+                  <input
+                    value={name}
+                    disabled={busy}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={80}
+                    required
+                    placeholder="Our survival world"
+                    autoComplete="off"
+                  />
+                </label>
+                <details className="creation-advanced">
+                  <summary>Advanced settings</summary>
+                  <div className="field-row">
+                    <label className="field">
+                      Server software
+                      <Select
+                        aria-label="Server software"
+                        value={type}
+                        onChange={(event) => {
+                          setType(event.target.value);
+                          setStyle(event.target.value === "PAPER" ? "plugins" : "mods");
+                          setVersion("");
+                        }}
+                        disabled={busy || !software.length}
+                      >
+                        {software.map((value) => (
+                          <option key={value} value={value}>
+                            {softwareName(value)}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                    <label className="field">
+                      Minecraft version
+                      <Select
+                        aria-label="Minecraft version"
+                        value={version}
+                        onChange={(event) => setVersion(event.target.value)}
+                        disabled={busy || !versions.length}
+                      >
+                        {versions.map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                    <label className="field">
+                      Hosting plan
+                      <Select
+                        aria-label="Hosting plan"
+                        value={planID}
+                        disabled={busy || !enabledPlans?.length}
+                        onChange={(event) => setPlanID(event.target.value)}
+                      >
+                        {enabledPlans?.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name} · {price(plan)} /{" "}
+                            {plan.billing_period === "YEARLY" ? "year" : "month"}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                  </div>
+                </details>
+              </>
+            )}
+            {!optionsError && options && !options.length && (
+              <p className="notice">No Minecraft versions are available yet.</p>
+            )}
+            <div className="wizard-actions">
+              {step > 1 && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => setStep(step - 1)}
+                >
+                  Back
+                </button>
+              )}
+              {step < 3 && (
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={busy || !choicesReady || (step === 2 && !canReview)}
+                  onClick={() => setStep(step + 1)}
+                >
+                  Next <Icon name="arrow" size={16} />
+                </button>
+              )}
+            </div>
+          </section>
+          {step === 3 && (
+            <aside className="panel order-summary">
+              <h2>{name.trim() || "Your new world"}</h2>
+              <p>
+                {softwareName(type)} · Minecraft {version || "Unavailable"}
+              </p>
+              {selected && (
+                <>
+                  <div className="summary-line">
+                    <span>{audience.title}</span>
+                    <span>{selected.name}</span>
+                  </div>
+                  <div className="summary-line">
+                    <span>{formatBytes(selected.ram_mb * 1048576, 0)} RAM</span>
+                    <span>{formatBytes(selected.disk_mb * 1048576, 0)} storage</span>
+                  </div>
+                  <hr />
+                  <div className="summary-line">
+                    <strong>{price(selected)}</strong>
+                    <span>/{selected.billing_period === "YEARLY" ? "year" : "month"}</span>
+                  </div>
+                </>
+              )}
+              <p className="activation-note">
+                {beta
+                  ? "Private beta · No charge"
+                  : checkoutConfig?.provider === "mock"
+                    ? "Demo checkout · No real charge"
+                    : checkoutConfig?.checkout_enabled
+                      ? "Review payment at checkout."
+                      : "Checkout is currently unavailable."}
+              </p>
+              <button className="button primary wide" disabled={createDisabled}>
+                {busy ? "Creating server…" : beta ? "Create beta server" : "Continue to checkout"}
+                <Icon name="arrow" size={16} />
+              </button>
+            </aside>
+          )}
         </form>
       )}
     </Shell>

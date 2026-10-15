@@ -6117,3 +6117,85 @@ input {
   display: inline-block;
   margin-bottom: 12px;
 }
+
+.creation-wizard {
+  max-width: 1080px;
+}
+.creation-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.creation-step {
+  min-width: 0;
+}
+.creation-step > h2 {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+.creation-step > h2:focus {
+  outline: none;
+}
+.creation-steps .button {
+  gap: 8px;
+  text-align: left;
+}
+.wizard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+.creation-wizard .play-style-art {
+  background-image: linear-gradient(0deg, #132b20a6, #132b2040), url("/art/world-night.webp");
+  background-size: cover;
+  border-radius: 10px;
+}
+.creation-wizard .style-art-plugins {
+  background-position: center;
+}
+.creation-wizard .style-art-mods {
+  background-position: right;
+}
+@media (max-width: 760px) {
+  .creation-review {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .creation-steps {
+    gap: 8px;
+  }
+  .creation-steps .button {
+    padding: 10px;
+    font-size: 12px;
+  }
+}
+
+.app-shell .creation-wizard .play-style-art {
+  background-image: linear-gradient(0deg, #132b20a6, #132b2040), url("/art/world-night.webp");
+  background-size: cover;
+}
+.creation-steps .button.primary span {
+  color: inherit;
+}
+@media (max-width: 760px) {
+  .creation-wizard .play-style-card {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    column-gap: 14px;
+    row-gap: 6px;
+    padding: 16px;
+  }
+  .creation-wizard .play-style-art {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: 64px;
+    height: 72px;
+    font-size: 32px;
+  }
+  .creation-wizard .play-style-card strong,
+  .creation-wizard .play-style-card small,
+  .creation-wizard .play-style-label {
+    grid-column: 2;
+  }
+}

@@ -23,6 +23,11 @@ async function selectValue(page, control, value) {
   await page.locator(`[role="option"][data-value="${value}"]`).click();
 }
 
+async function reviewCreation(page) {
+  const review = page.getByRole("button", { name: /Name & create/ });
+  if ((await review.getAttribute("aria-current")) !== "step") await review.click();
+}
+
 const serverID = "30000000-0000-4000-8000-000000000001";
 const orderID = "50000000-0000-4000-8000-000000000001";
 const planID = "10000000-0000-4000-8000-000000000001";
@@ -677,11 +682,9 @@ test("order request sends approved choices without resource or price fields", as
   const calls = await mockAPI(page);
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
+  await reviewCreation(page);
   await page.getByLabel("Server name", { exact: true }).fill("A new adventure");
-  await expect(page.getByRole("heading", { name: "How do you want to play?" })).toBeVisible();
-  await expect(
-    page.getByText("Microsoft verification and whitelist start off", { exact: false }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Name your world", exact: true })).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Minecraft version", exact: true, includeHidden: true }),
   ).toHaveAttribute("data-value", "26.3");
@@ -910,6 +913,7 @@ test("mock checkout confirms payment and links to the provisioned server", async
   const calls = await mockAPI(page);
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
+  await reviewCreation(page);
   await page.getByLabel("Server name", { exact: true }).fill("Our adventure");
   await page.getByRole("button", { name: "Continue to checkout" }).click();
   await expect(page.getByText("Development demo checkout", { exact: true })).toBeVisible();
@@ -976,6 +980,7 @@ test("disabled payment configuration prevents creating an order", async ({ page 
   const calls = await mockAPI(page, { paymentDisabled: true });
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
+  await reviewCreation(page);
   await page.getByLabel("Server name", { exact: true }).fill("Our adventure");
   await expect(page.getByRole("button", { name: "Continue to checkout" })).toBeDisabled();
   expect(calls.filter((c) => c.path === "/orders" && c.method === "POST")).toHaveLength(0);
@@ -987,6 +992,7 @@ test("beta operator creates the latest configured Paper server without checkout"
   const calls = await mockAPI(page, { paymentDisabled: true, isAdmin: true, inviteRequired: true });
   await login(page);
   await page.getByRole("link", { name: "New server", exact: true }).click();
+  await reviewCreation(page);
   await page.getByLabel("Server name", { exact: true }).fill("Latest world");
   await selectValue(page, page.getByLabel("Minecraft version"), "26.3");
   await page.getByRole("button", { name: "Create beta server" }).click();
@@ -1212,7 +1218,9 @@ for (const type of ["FORGE", "PAPER", "FABRIC"]) {
     const calls = await mockAPI(page);
     await login(page);
     await page.getByRole("link", { name: "New server", exact: true }).click();
+    await reviewCreation(page);
     await selectValue(page, page.getByLabel("Server software"), type);
+    await reviewCreation(page);
     await page.getByLabel("Server name", { exact: true }).fill("Custom world");
     await expect(page.getByLabel("Minecraft version")).toHaveAttribute(
       "data-value",
@@ -1469,7 +1477,7 @@ for (const width of [320, 768, 1024, 1366]) {
       );
     await fits();
     await page.getByRole("link", { name: "New server", exact: true }).click();
-    await expect(page.getByLabel("Server name", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "How do you want to play?" })).toBeVisible();
     await fits();
     await navigate("Billing");
     await expect(page.getByRole("heading", { name: "Keep your adventures going." })).toBeVisible();
@@ -3494,7 +3502,8 @@ test("new server selector hides legacy loaders even in stale options", async ({ 
   await mockAPI(page);
   await login(page);
   await page.goto("/servers/new");
-  await page.getByText("Version & advanced choices", { exact: true }).click();
+  await reviewCreation(page);
+  await page.getByText("Advanced settings", { exact: true }).click();
   await page.getByLabel("Server software").click();
   await expect(page.getByRole("option")).toHaveCount(3);
   for (const kind of ["SPIGOT", "PURPUR", "VANILLA", "NEOFORGE"])
@@ -4136,12 +4145,14 @@ test("failed creation preserves choices and safely retries the same order", asyn
   await login(page);
   await page.goto("/servers/new");
   await expect(page.getByRole("navigation", { name: "Server creation steps" })).toContainText(
-    "Name & review",
+    "Name & create",
   );
+  await reviewCreation(page);
   await selectValue(page, page.getByLabel("Server software"), "FORGE");
+  await reviewCreation(page);
   await page.getByLabel("Server name", { exact: true }).fill("Friends' world");
   await page.getByRole("button", { name: "Continue to checkout" }).click();
-  await expect(page.getByRole("status")).toContainText("Your choices are still here");
+  await expect(page.getByRole("status")).toContainText("Your choices are saved here");
   await expect(page.getByLabel("Server name", { exact: true })).toHaveValue("Friends' world");
   await expect(page.getByLabel("Server software")).toHaveAttribute("data-value", "FORGE");
   await expect(page.getByLabel("Minecraft version")).toHaveAttribute("data-value", "1.21.1");
@@ -4990,10 +5001,13 @@ for (const width of [390, 1366]) {
     );
     await login(page);
     await page.goto("/servers/new");
+    await page.getByRole("button", { name: "Next", exact: true }).click();
     const groups = page.getByLabel("Player group size");
     await expect(groups.getByRole("button")).toHaveCount(4);
     await groups.getByRole("button", { name: /Community/ }).click();
-    await expect(page.locator(".group-plan-options > summary")).toContainText("Community plan");
+    await reviewCreation(page);
+    await expect(page.locator(".order-summary")).toContainText("Community plan");
+    await reviewCreation(page);
     await page.getByLabel("Server name", { exact: true }).fill("Friends world");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -6170,4 +6184,100 @@ test("diagnostic copy fallback shows a selectable report without stale usage", a
   await card.getByRole("button", { name: "Copy diagnostic report" }).click();
   await expect(card.getByRole("status")).toContainText("Select and copy the report below manually");
   await expect(card.getByLabel("Diagnostic report preview")).toHaveValue(/CPU use: Unavailable/);
+});
+
+for (const width of [390, 1366]) {
+  test(`creation wizard keeps one step visible and preserves choices at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await page.goto("/servers/new");
+    await expect(page.getByRole("heading", { name: "How do you want to play?" })).toBeVisible();
+    await expect(page.getByLabel("Server name", { exact: true })).toHaveCount(0);
+    await expect(page.locator(".group-picker")).toHaveCount(0);
+    await page.getByRole("button", { name: /Minecraft with mods/ }).click();
+    await page.locator("form").dispatchEvent("submit");
+    expect(calls.filter((call) => call.path === "/orders" && call.method === "POST")).toHaveLength(
+      0,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`create-style-${width}.png`),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Who’s joining?" })).toBeFocused();
+    await expect(page.locator(".play-style-grid")).toHaveCount(0);
+    await page.getByRole("button", { name: /Game night/ }).click();
+    await page.screenshot({
+      path: testInfo.outputPath(`create-group-${width}.png`),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await page.getByLabel("Server name", { exact: true }).fill("Our modded world");
+    await expect(page.locator(".order-summary")).toContainText("Fabric · Minecraft 1.21.1");
+    await expect(page.locator(".creation-advanced")).not.toHaveAttribute("open", "");
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByRole("button", { name: /Game night/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.getByLabel("Server name", { exact: true })).toHaveValue("Our modded world");
+    await page.screenshot({
+      path: testInfo.outputPath(`create-review-${width}.png`),
+      fullPage: true,
+    });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(calls.filter((call) => call.path === "/orders" && call.method === "POST")).toHaveLength(
+      0,
+    );
+    await page.getByRole("button", { name: "Continue to checkout" }).click();
+    await expect(page).toHaveURL(/checkout/);
+    expect(calls.find((call) => call.path === "/orders" && call.method === "POST").body).toEqual({
+      plan_id: planID,
+      name: "Our modded world",
+      minecraft_version: "1.21.1",
+      server_type: "FABRIC",
+    });
+  });
+}
+
+test("wizard uses approved available software and rejects disabled plan overrides", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route("http://localhost:8080/minecraft/options", (route) =>
+    route.fulfill({ json: [{ server_type: "FORGE", minecraft_version: "1.21.1" }] }),
+  );
+  await page.route("http://localhost:8080/plans", (route) =>
+    route.fulfill({
+      json: [
+        plan,
+        {
+          ...plan,
+          id: "10000000-0000-4000-8000-000000000099",
+          name: "Disabled cheap plan",
+          enabled: false,
+          price_cents: 1,
+        },
+      ],
+    }),
+  );
+  await login(page);
+  await page.goto("/servers/new?plan=10000000-0000-4000-8000-000000000099");
+  await expect(page.getByRole("button", { name: /Regular Minecraft/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Minecraft with mods/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await reviewCreation(page);
+  await expect(page.locator(".order-summary")).toContainText("Forge · Minecraft 1.21.1");
+  await page.getByText("Advanced settings", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Hosting plan", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await expect(page.getByRole("option", { name: /Disabled cheap plan/ })).toHaveCount(0);
 });
