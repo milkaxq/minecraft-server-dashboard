@@ -471,7 +471,7 @@ function Files({ id, offline }) {
                   <tr key={entry.name}>
                     <td>
                       <button
-                        className="file-name"
+                        className={`file-name ${entry.is_file ? "document-name" : "folder-name"}`}
                         disabled={entry.is_symlink || action.busy}
                         onClick={() =>
                           entry.is_file
@@ -482,7 +482,7 @@ function Files({ id, offline }) {
                               })
                         }
                       >
-                        <Icon name={entry.is_file ? "server" : "world"} size={16} />
+                        <Icon name={entry.is_file ? "file" : "folder"} size={20} />
                         {entry.name}
                         {entry.is_symlink && " (link — unavailable)"}
                       </button>
