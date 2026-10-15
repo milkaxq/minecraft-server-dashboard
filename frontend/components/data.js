@@ -25,14 +25,21 @@ export function useResource(path, interval = 0) {
     let alive = true;
     let inFlight = false;
     let limitedUntil = 0;
+    let failed = false;
+    let reconnectPending = false;
     const visibleAndOnline = () => document.visibilityState !== "hidden" && navigator.onLine;
-    function schedule(delay) {
+    function schedule(delay, reconnect = false) {
       clearTimeout(timer);
-      if (alive && interval && visibleAndOnline()) timer = setTimeout(load, delay);
+      if (alive && (interval || reconnect) && visibleAndOnline()) timer = setTimeout(load, delay);
     }
     function resume() {
-      if (!alive || !interval || !visibleAndOnline() || inFlight) return;
-      schedule(Math.max(0, limitedUntil - Date.now()));
+      if (!alive || !visibleAndOnline()) return;
+      if (inFlight) {
+        reconnectPending = true;
+        return;
+      }
+      if (!interval && !failed) return;
+      schedule(Math.max(0, limitedUntil - Date.now()), true);
     }
     async function load() {
       if (!alive || inFlight) return;
@@ -40,8 +47,10 @@ export function useResource(path, interval = 0) {
       let retryDelay = interval;
       try {
         const data = await api(path, { signal: controller.signal });
+        failed = false;
         if (alive) setResult({ key: resourceKey, data, error: null });
       } catch (error) {
+        failed = error.name !== "AbortError";
         if (error.status === 429) {
           retryDelay = Math.max(interval, error.retryAfterMs || 60000);
           limitedUntil = Date.now() + retryDelay;
@@ -55,7 +64,9 @@ export function useResource(path, interval = 0) {
         }
       } finally {
         inFlight = false;
-        schedule(retryDelay);
+        const reconnect = reconnectPending && failed;
+        reconnectPending = false;
+        schedule(reconnect ? Math.max(0, limitedUntil - Date.now()) : retryDelay, reconnect);
       }
     }
     document.addEventListener("visibilitychange", resume);

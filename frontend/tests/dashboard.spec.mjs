@@ -7,7 +7,7 @@ import {
 } from "../lib/installed-addons.js";
 import { diagnosticReport } from "../lib/lag-diagnostics.js";
 import { findInFile } from "../lib/find-in-file.js";
-import { formatBytes } from "../lib/api.js";
+import { formatBytes, request as apiRequest } from "../lib/api.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
 import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
 import { nextServerAction } from "../lib/next-action.js";
@@ -6280,4 +6280,197 @@ test("wizard uses approved available software and rejects disabled plan override
   await page.getByRole("combobox", { name: "Hosting plan", exact: true }).click();
   await expect(page.getByRole("option")).toHaveCount(1);
   await expect(page.getByRole("option", { name: /Disabled cheap plan/ })).toHaveCount(0);
+});
+
+test("API deadlines cover headers, JSON bodies and downloads without retrying", async () => {
+  const original = globalThis.fetch;
+  const waitForAbort = (signal) =>
+    new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+        once: true,
+      });
+    });
+  try {
+    for (const phase of ["headers", "json", "download"]) {
+      let attempts = 0;
+      globalThis.fetch = async (url, { signal }) => {
+        attempts++;
+        if (phase === "headers") return waitForAbort(signal);
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "X-Request-ID": "safe-reference" }),
+          json: () => waitForAbort(signal),
+          blob: () => waitForAbort(signal),
+        };
+      };
+      await expect(
+        apiRequest("/slow", { timeoutMs: 20, method: "POST", download: phase === "download" }),
+      ).rejects.toMatchObject({
+        status: 0,
+        code: "REQUEST_TIMEOUT",
+        message: "Request timed out. Check the result before retrying.",
+      });
+      expect(attempts).toBe(1);
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("API cancellation stays distinct from timeout and malformed success is rejected", async () => {
+  const original = globalThis.fetch;
+  try {
+    const cancelled = new AbortController();
+    cancelled.abort();
+    let attempts = 0;
+    globalThis.fetch = async () => {
+      attempts++;
+      return new Response("not json", { status: 200 });
+    };
+    await expect(apiRequest("/cancelled", { signal: cancelled.signal })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(attempts).toBe(0);
+    await expect(apiRequest("/invalid")).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      status: 502,
+    });
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: "Slow down" }), {
+        status: 429,
+        headers: { "Retry-After": "120", "X-Request-ID": "request-reference" },
+      });
+    await expect(apiRequest("/limited")).rejects.toMatchObject({
+      status: 429,
+      retryAfterMs: 120000,
+      requestId: "request-reference",
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("offline dashboard preserves settings and reconnect does not replay saves or reload successful forms", async ({
+  page,
+  context,
+}) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/settings`);
+  const message = page.getByRole("textbox", { name: /Server message/ });
+  await message.fill("Keep this draft");
+  const reads = calls.filter(
+    (call) => call.path.endsWith("/settings") && call.method === "GET",
+  ).length;
+  await context.setOffline(true);
+  await expect(
+    page.getByText("You’re offline. Reconnect to continue.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect(
+    page.getByText("You’re offline. Reconnect and try again.", { exact: true }),
+  ).toBeVisible();
+  await expect(message).toHaveValue("Keep this draft");
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
+  expect(
+    calls.filter((call) => call.path.endsWith("/settings") && call.method === "PUT"),
+  ).toHaveLength(0);
+  await context.setOffline(false);
+  await expect(
+    page.getByText("You’re offline. Reconnect to continue.", { exact: true }),
+  ).toHaveCount(0);
+  await expect(message).toHaveValue("Keep this draft");
+  expect(
+    calls.filter((call) => call.path.endsWith("/settings") && call.method === "GET"),
+  ).toHaveLength(reads);
+  expect(
+    calls.filter((call) => call.path.endsWith("/settings") && call.method === "PUT"),
+  ).toHaveLength(0);
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Settings saved");
+  expect(
+    calls.filter((call) => call.path.endsWith("/settings") && call.method === "PUT"),
+  ).toHaveLength(1);
+});
+
+test("failed one-time setup read recovers on reconnect without repeating writes", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let reads = 0;
+  await page.route("http://localhost:8080/minecraft/options", (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ status: 503, json: { error: "Setup temporarily unavailable" } })
+      : route.fulfill({ json: [{ server_type: "PAPER", minecraft_version: "26.3" }] });
+  });
+  await login(page);
+  await page.goto("/servers/new");
+  await expect(page.getByText("Setup temporarily unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  expect(reads).toBe(2);
+  expect(calls.filter((call) => call.path === "/orders" && call.method === "POST")).toHaveLength(0);
+});
+
+test("timed-out file save releases the button and retains its draft and retry key", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const saves = [];
+  let pending;
+  await page.route(`http://localhost:8080/servers/${serverID}/files`, (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    saves.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (saves.length === 1) {
+      pending = route;
+      return;
+    }
+    return route.fulfill({ json: { status: "saved", restart_required: true } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  await page.clock.install();
+  const text = page.getByRole("textbox", { name: "File content" });
+  await text.fill("motd=Reliable draft");
+  await page.getByRole("button", { name: "Save file", exact: true }).click();
+  await expect.poll(() => saves.length).toBe(1);
+  await page.clock.fastForward(30001);
+  await expect(
+    page.getByText("Request timed out. Check the result before retrying.", { exact: true }),
+  ).toBeVisible();
+  await expect(text).toHaveValue("motd=Reliable draft");
+  await expect(text).not.toHaveAttribute("readonly", "");
+  await pending.abort().catch(() => {});
+  await page.getByRole("button", { name: "Save file", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("File saved");
+  expect(saves).toHaveLength(2);
+  expect(saves[1]).toEqual(saves[0]);
+});
+
+test("reconnect during an unfinished read recovers once if that read fails", async ({ page }) => {
+  await mockAPI(page);
+  let pending;
+  let reads = 0;
+  await page.route("http://localhost:8080/minecraft/options", (route) => {
+    reads++;
+    if (reads === 1) {
+      pending = route;
+      return;
+    }
+    return route.fulfill({ json: [{ server_type: "PAPER", minecraft_version: "26.3" }] });
+  });
+  await login(page);
+  await page.goto("/servers/new");
+  await expect.poll(() => !!pending).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await pending.abort();
+  await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+  expect(reads).toBe(2);
 });

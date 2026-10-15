@@ -6199,3 +6199,13 @@ input {
     grid-column: 2;
   }
 }
+
+.connection-status {
+  margin: 0 0 20px;
+  padding: 12px 16px;
+  border: 1px solid #b99b52;
+  border-radius: 10px;
+  color: #f3d58b;
+  background: #302a1b;
+  font-size: 14px;
+}

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ConnectionStatus } from "./connection-status";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useAuth } from "./auth";
@@ -241,18 +242,6 @@ export function Shell({ children }) {
         <div className="nav-label">YOUR WORLDS</div>
         <nav aria-label="Main navigation">{navigation}</nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-note">
-            <Icon name="world" />
-            <strong>A world of your own.</strong>
-            <a className="text-link" href="https://playblockyard.com">
-              Visit website ↗
-            </a>
-            <p>
-              More playing.
-              <br />
-              Less managing.
-            </p>
-          </div>
           <button className="profile-button" onClick={logout}>
             <span className="profile-avatar">{session.user.name.slice(0, 1).toUpperCase()}</span>
             <span>
@@ -281,6 +270,7 @@ export function Shell({ children }) {
           </span>
         </header>
         <main id="main-content" tabIndex={-1} className="main-content">
+          <ConnectionStatus />
           {authNotice && (
             <p className="notice" role="alert">
               {authNotice}

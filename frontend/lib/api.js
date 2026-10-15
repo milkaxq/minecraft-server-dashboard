@@ -23,6 +23,7 @@ export async function request(
     download = false,
     baseURL = API_BASE,
     credentials = token ? "omit" : "include",
+    timeoutMs = raw || download ? 120000 : 30000,
   } = {},
 ) {
   const headers = { Accept: "application/json" };
@@ -31,36 +32,81 @@ export async function request(
   if (body !== undefined)
     headers["Content-Type"] = raw ? "application/octet-stream" : "application/json";
   if (key) headers["Idempotency-Key"] = key;
+  if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
+  if (typeof navigator !== "undefined" && navigator.onLine === false)
+    throw new APIError("You’re offline. Reconnect and try again.", 0, undefined, "OFFLINE");
+  // Bound the full response, including body reads. Caller cancellation remains distinct.
+  const controller = new AbortController();
+  let timedOut = false;
+  const cancel = () => controller.abort(signal.reason);
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      controller.abort();
+    },
+    Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30000,
+  );
   let response;
   try {
     response = await fetch(`${baseURL}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
-      signal,
+      signal: controller.signal,
       cache: "no-store",
       credentials,
     });
+    if (response.ok && download) return await response.blob();
+    let data = null;
+    if (response.status !== 204 && method !== "HEAD") {
+      try {
+        data = await response.json();
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        if (response.ok)
+          throw new APIError(
+            ["GET", "HEAD"].includes(method)
+              ? "Unexpected response. Please try again."
+              : "Unexpected response. Check the result before retrying.",
+            502,
+            response.headers.get("X-Request-ID"),
+            "INVALID_RESPONSE",
+          );
+      }
+    }
+    if (!response.ok) {
+      const error = new APIError(
+        data?.error || "Something went wrong. Please try again.",
+        response.status,
+        response.headers.get("X-Request-ID") || data?.request_id,
+        data?.code,
+      );
+      const seconds = Number(response.headers.get("Retry-After"));
+      if (response.status === 429)
+        error.retryAfterMs =
+          Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 900) * 1000 : 60000;
+      throw error;
+    }
+    return data;
   } catch (error) {
-    if (error.name === "AbortError") throw error;
+    if (signal?.aborted) throw new DOMException("Request cancelled", "AbortError");
+    if (timedOut)
+      throw new APIError(
+        ["GET", "HEAD"].includes(method)
+          ? "Connection timed out. Please try again."
+          : "Request timed out. Check the result before retrying.",
+        0,
+        response?.headers.get("X-Request-ID"),
+        "REQUEST_TIMEOUT",
+      );
+    if (error instanceof APIError) throw error;
     throw new APIError("Cannot reach your hosting service. Please try again.", 0);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
   }
-  if (response.ok && download) return response.blob();
-  const data = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) {
-    const error = new APIError(
-      data?.error || "Something went wrong. Please try again.",
-      response.status,
-      response.headers.get("X-Request-ID") || data?.request_id,
-      data?.code,
-    );
-    const seconds = Number(response.headers.get("Retry-After"));
-    if (response.status === 429)
-      error.retryAfterMs =
-        Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 900) * 1000 : 60000;
-    throw error;
-  }
-  return data;
 }
 export function consoleURL(id) {
   const url = new URL(`${API_BASE}/servers/${encodeURIComponent(id)}/console`);
