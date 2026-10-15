@@ -3578,6 +3578,10 @@ for (const width of [390, 1366])
     await page.goto(`/join/${playerSlug}`);
     await page.getByText("What will be installed?", { exact: true }).click();
     await expect(page.getByText(playerSetup.notes[0], { exact: true })).toBeVisible();
+    await page
+      .getByRole("dialog", { name: "Player requirements", exact: true })
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
     await expect(page.getByRole("heading", { name: "Join The Lantern Lodge" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Import and launch" })).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
@@ -6713,4 +6717,107 @@ test("simple invite preparation defaults to stable required-only downloads", asy
   await panel.getByRole("button", { name: "Prepare invite link", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Copy invite link", exact: true })).toBeEnabled();
   expect(published).toEqual({ include_beta: false, include_optional: false });
+});
+
+test("player address copying falls back to a selectable field without a page error", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    }),
+  );
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: { ...playerSetup, addons: [], pack_ready: false } }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await page.getByRole("button", { name: "Copy address", exact: true }).click();
+  const address = page.getByRole("textbox", { name: "Server address to copy", exact: true });
+  await expect(address).toHaveValue(playerSetup.address);
+  await address.focus();
+  expect(await address.evaluate((input) => input.selectionEnd - input.selectionStart)).toBe(
+    playerSetup.address.length,
+  );
+  await expect(page.locator(".public-player-page").getByRole("alert")).toHaveCount(0);
+});
+
+test("public invite pauses refresh in the background and refreshes once on return", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.clock.install();
+  let reads = 0;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) => {
+    reads++;
+    return route.fulfill({ json: playerSetup });
+  });
+  await page.goto(`/join/${playerSlug}`);
+  await expect(
+    page.getByRole("heading", { name: "Join The Lantern Lodge", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(180001);
+  expect(reads).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(1);
+  await expect.poll(() => reads).toBe(2);
+});
+
+test("public invite keeps rate-limit cooldown when reconnecting", async ({ page }) => {
+  await mockAPI(page);
+  await page.clock.install();
+  let reads = 0;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({
+          status: 429,
+          headers: { "Retry-After": "120", "Access-Control-Expose-Headers": "Retry-After" },
+          json: { error: "Wait before retrying" },
+        })
+      : route.fulfill({ json: playerSetup });
+  });
+  await page.goto(`/join/${playerSlug}`);
+  await expect(
+    page.getByRole("heading", { name: "Player setup couldn’t be loaded" }),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.clock.fastForward(60001);
+  expect(reads).toBe(1);
+  await page.clock.fastForward(60001);
+  await expect(
+    page.getByRole("heading", { name: "Join The Lantern Lodge", exact: true }),
+  ).toBeVisible();
+  expect(reads).toBe(2);
+});
+
+test("public joining details open on demand and close with Escape", async ({ page }) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: { ...playerSetup, addons: [], pack_ready: false } }),
+  );
+  await page.goto(`/join/${playerSlug}`);
+  await expect(page.locator(".public-player-page details")).toHaveCount(0);
+  await page.getByRole("button", { name: "Can’t join? Find a quick fix", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Joining help", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "About this player setup", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Player requirements", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button")).toHaveCount(1);
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
 });

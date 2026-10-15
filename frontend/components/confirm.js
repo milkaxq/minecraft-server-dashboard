@@ -6,6 +6,7 @@ export function Confirm({
   title,
   children,
   label = "Confirm",
+  cancelLabel = "Cancel",
   busy,
   confirmDisabled = false,
   confirmVariant = "danger",
@@ -35,15 +36,17 @@ export function Confirm({
       <div className="confirm-content">{children}</div>
       <div className="dialog-actions">
         <button className="button secondary" disabled={busy} onClick={onCancel}>
-          Cancel
+          {cancelLabel}
         </button>
-        <button
-          className={`button ${confirmVariant}`}
-          disabled={busy || confirmDisabled}
-          onClick={onConfirm}
-        >
-          {busy ? "Working…" : label}
-        </button>
+        {onConfirm && (
+          <button
+            className={`button ${confirmVariant}`}
+            disabled={busy || confirmDisabled}
+            onClick={onConfirm}
+          >
+            {busy ? "Working…" : label}
+          </button>
+        )}
       </div>
     </dialog>
   );

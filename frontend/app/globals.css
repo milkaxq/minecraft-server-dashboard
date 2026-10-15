@@ -6256,3 +6256,17 @@ input {
 .invite-copy-fallback {
   margin-top: 16px;
 }
+
+.player-help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-block: 24px;
+}
+.public-copy-fallback {
+  margin-top: 16px;
+}
+.public-copy-fallback input {
+  width: 100%;
+  min-width: 0;
+}

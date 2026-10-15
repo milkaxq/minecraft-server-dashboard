@@ -250,7 +250,9 @@ export function PublicPlayerJoin({ slug }) {
   const [setup, setSetup] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const [copyFallback, setCopyFallback] = useState(null);
+  const [showRequirements, setShowRequirements] = useState(false);
   const [downloadedRevision, setDownloadedRevision] = useState(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
@@ -274,10 +276,29 @@ export function PublicPlayerJoin({ slug }) {
     const controller = new AbortController();
     let timer;
     let inFlight = false;
-    async function refresh() {
-      if (inFlight || controller.signal.aborted) return;
+    let limitedUntil = 0;
+    let resumePending = false;
+    const available = () => document.visibilityState !== "hidden" && navigator.onLine;
+    function schedule(delay) {
+      clearTimeout(timer);
+      if (!controller.signal.aborted && available()) timer = setTimeout(refresh, delay);
+    }
+    function resume() {
+      if (!available() || controller.signal.aborted) return;
+      if (inFlight) {
+        resumePending = true;
+        return;
+      }
+      schedule(Math.max(0, limitedUntil - Date.now()));
+    }
+    function pause() {
+      if (!available()) clearTimeout(timer);
+    }
+    async function refresh(initial = false) {
+      if (inFlight || controller.signal.aborted || (!initial && !available())) return;
       inFlight = true;
       let delay = 60000;
+      let failed = false;
       try {
         const data = await request(`/join/${encodeURIComponent(slug)}`, {
           signal: controller.signal,
@@ -287,31 +308,48 @@ export function PublicPlayerJoin({ slug }) {
           setError(null);
         }
       } catch (error) {
+        failed = true;
         if (!controller.signal.aborted) {
           setSetup(null);
           setError(error);
         }
-        if (error.status === 429) delay = Math.max(delay, error.retryAfterMs || 60000);
+        if (error.status === 429) {
+          delay = Math.max(delay, error.retryAfterMs || 60000);
+          limitedUntil = Date.now() + delay;
+        }
       } finally {
         inFlight = false;
         if (!controller.signal.aborted) {
           setLoading(false);
-          timer = setTimeout(refresh, delay);
+          schedule(resumePending && failed ? Math.max(0, limitedUntil - Date.now()) : delay);
+          resumePending = false;
         }
       }
     }
-    refresh();
+    document.addEventListener("visibilitychange", pause);
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("offline", pause);
+    window.addEventListener("online", resume);
+    refresh(true);
     return () => {
       controller.abort();
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", pause);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("offline", pause);
+      window.removeEventListener("online", resume);
     };
   }, [slug, reload]);
   async function copy() {
+    if (!setup?.address) return;
+    const address = setup.address;
+    setCopied(null);
+    setCopyFallback(null);
     try {
-      await navigator.clipboard.writeText(setup.address);
-      setCopied(true);
+      await navigator.clipboard.writeText(address);
+      setCopied(address);
     } catch {
-      setError(new Error("Copy unavailable. Select the address below and copy it."));
+      setCopyFallback(address);
     }
   }
   async function download() {
@@ -373,14 +411,25 @@ export function PublicPlayerJoin({ slug }) {
           <section className="player-hero">
             <span className="eyebrow">YOUR NEXT ADVENTURE</span>
             <h1>Join {setup.name}</h1>
-            <p>Your friends are waiting. Let’s get you into their world.</p>
             <span className="player-game-tag">Minecraft Java {setup.minecraft_version}</span>
             <div className="player-address">
               <code>{setup.address}</code>
               <button className="button secondary" onClick={copy}>
-                {copied ? "Copied" : "Copy address"}
+                {copied === setup.address ? "Copied" : "Copy address"}
               </button>
             </div>
+            {copyFallback === setup.address && (
+              <label className="field public-copy-fallback">
+                Server address
+                <input
+                  aria-label="Server address to copy"
+                  readOnly
+                  value={copyFallback}
+                  onFocus={(event) => event.target.select()}
+                />
+                <span className="field-help">Select and copy the address.</span>
+              </label>
+            )}
           </section>
           {player.changed && !setupIssue && (
             <p className="notice" role="status">
@@ -393,10 +442,7 @@ export function PublicPlayerJoin({ slug }) {
           {player.returning && !showSetup && (
             <section className="panel returning-player" aria-label="Returning player">
               <h2>Welcome back. Let’s play.</h2>
-              <p>
-                You marked this setup ready in this browser. Open your matching Minecraft profile,
-                then use the address above.
-              </p>
+              <p>Open your matching Minecraft profile and join.</p>
               {setup.pack_ready && (
                 <button
                   className="button secondary"
@@ -420,15 +466,6 @@ export function PublicPlayerJoin({ slug }) {
                     ? "Your way into the world."
                     : "Open Minecraft. Join your friends."}
               </h2>
-              <p>
-                {showDownloadSteps
-                  ? "Download once. Import into your launcher. Join your friends."
-                  : setupIssue
-                    ? "Your host needs to finish the setup below."
-                    : requiredMods
-                      ? "Use your imported player profile and the address above."
-                      : "No required client downloads are listed in this invitation."}
-              </p>
             </div>
           )}
           {setup.pack_ready && !requiredMods && !showOptional && (
@@ -519,7 +556,6 @@ export function PublicPlayerJoin({ slug }) {
                   `Open Minecraft Java ${setup.minecraft_version}. `}
                 Multiplayer → Add Server. Paste the address above, then Join Server.
               </p>
-              <p>Ask your host to start the server before joining.</p>
               {setup.whitelist && (
                 <p className="notice">
                   Send your exact Minecraft username to the host for whitelist approval.
@@ -546,14 +582,10 @@ export function PublicPlayerJoin({ slug }) {
           </section>
           {!setupIssue && (!requiredMods || setup.pack_ready) && !player.returning && (
             <section className="panel player-ready-check" aria-label="Remember player setup">
-              <h2>
+              <p className="field-help">
                 {requiredMods
-                  ? "Already imported and launched the player pack?"
-                  : "Have the matching Minecraft version ready?"}
-              </h2>
-              <p>
-                Skip these instructions next time. This is your confirmation; the website cannot
-                check your launcher.
+                  ? "Confirm you’ve imported and launched the pack."
+                  : "Remember this setup in this browser."}
               </p>
               <button
                 className="button primary"
@@ -566,33 +598,33 @@ export function PublicPlayerJoin({ slug }) {
               </button>
             </section>
           )}
-          <PlayerJoinHelp setup={setup} />
-          <details className="panel">
-            <summary>
+          <div className="player-help-actions">
+            <PlayerJoinHelp setup={setup} />
+            <button className="button secondary" onClick={() => setShowRequirements(true)}>
               {setup.pack_ready ? "What will be installed?" : "About this player setup"}
-            </summary>
-            {setup.notes?.map((note) => (
-              <p key={note}>{note}</p>
-            ))}
-            <ul>
-              {setup.addons?.map((addon) => (
-                <li key={addon.project || addon.title}>
-                  {addon.title} · {addon.required ? "Required" : "Optional"}
-                </li>
+            </button>
+          </div>
+          {showRequirements && (
+            <Confirm
+              title="Player requirements"
+              cancelLabel="Close"
+              onCancel={() => setShowRequirements(false)}
+            >
+              {setup.notes?.map((note) => (
+                <p key={note}>{note}</p>
               ))}
-            </ul>
-            <p>
-              Published by your host on {new Date(setup.published_at).toLocaleString()}.{" "}
-              {setup.pack_ready
-                ? "This pack covers verified client JARs, not arbitrary custom configurations or manually uploaded files. "
-                : "These are the host’s published joining requirements. "}
-              If the host changes the server, ask them to refresh this setup.
-            </p>
-            <p>
-              Ordinary Minecraft cannot install mods from its connection prompt. A launcher import
-              downloads them before you play. Some changes require restarting Minecraft.
-            </p>
-          </details>
+              <ul>
+                {setup.addons?.map((addon) => (
+                  <li key={addon.project || addon.title}>
+                    {addon.title} · {addon.required ? "Required" : "Optional"}
+                  </li>
+                ))}
+              </ul>
+              <p className="field-help">
+                Published {new Date(setup.published_at).toLocaleDateString()}.
+              </p>
+            </Confirm>
+          )}
         </>
       )}
       {error && (

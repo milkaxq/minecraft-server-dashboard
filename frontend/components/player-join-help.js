@@ -1,8 +1,10 @@
 "use client";
 import { useState } from "react";
 import { Select } from "./select";
+import { Confirm } from "./confirm";
 
 export function PlayerJoinHelp({ setup }) {
+  const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState("version");
   const answers = {
     version: [
@@ -39,20 +41,28 @@ export function PlayerJoinHelp({ setup }) {
     ],
   };
   return (
-    <details className="panel player-connection-help">
-      <summary>Can’t join? Find a quick fix</summary>
-      <label className="field">
-        What does Minecraft show?
-        <Select value={problem} onChange={(event) => setProblem(event.target.value)}>
-          {Object.entries(answers).map(([key, [title]]) => (
-            <option key={key} value={key}>
-              {title}
-            </option>
-          ))}
-        </Select>
-      </label>
-      <h3>{answers[problem][0]}</h3>
-      <p>{answers[problem][1]}</p>
-    </details>
+    <>
+      <button className="button secondary" onClick={() => setOpen(true)}>
+        Can’t join? Find a quick fix
+      </button>
+      {open && (
+        <Confirm title="Joining help" cancelLabel="Close" onCancel={() => setOpen(false)}>
+          <div className="player-connection-help">
+            <label className="field">
+              What does Minecraft show?
+              <Select value={problem} onChange={(event) => setProblem(event.target.value)}>
+                {Object.entries(answers).map(([key, [title]]) => (
+                  <option key={key} value={key}>
+                    {title}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <h3>{answers[problem][0]}</h3>
+            <p>{answers[problem][1]}</p>
+          </div>
+        </Confirm>
+      )}
+    </>
   );
 }

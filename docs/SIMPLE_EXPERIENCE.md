@@ -75,3 +75,21 @@ in the displayed status. Denied clipboard access shows a selectable public URL;
 it does not expose dashboard credentials. Old fallback/success messages are hidden
 when the invite changes or is no longer shareable. Failed reads offer a GET retry
 without replacing or revoking the invitation.
+
+## The player's invitation page
+
+The main join path removes repeated promotional/setup sentences. Joining help and
+host-published notes/mod requirements open in optional dialogs with one Close
+button, rather than expanding the main page. Required loader/mod steps and
+conditional whitelist/login rules remain visible where needed. Returning-player
+confirmation is still an explicit browser preference, never launcher detection.
+
+Copying a game address uses a selectable read-only fallback when clipboard access
+is denied. This is separate from API errors: a copy failure does not turn a valid
+invitation into an error page. Copy feedback is tied to the current address.
+
+Public setup refresh pauses while the page is hidden or the browser is offline.
+Returning/reconnecting requests a current read without overlapping an existing
+request or bypassing a rate-limit cooldown. Failed/removed setup still clears the
+usable page and download controls. No download or Minecraft action is retried by
+these refresh events.
