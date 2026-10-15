@@ -565,7 +565,7 @@ export function ServerDetail({ id, advanced = false }) {
                   )}
                 </div>
                 {has("console") && server.console_available && ready ? (
-                  <LiveConsole id={id} role={server.role} />
+                  <LiveConsole key={id} id={id} role={server.role} />
                 ) : (
                   <div className="panel unavailable-panel">
                     <Icon name="terminal" size={28} />
@@ -796,12 +796,29 @@ function LiveConsole({ id, role }) {
   const [error, setError] = useState(null);
   const [command, setCommand] = useState("");
   const [sending, setSending] = useState(false);
+  const commandInFlight = useRef(false);
+  const commandAttempt = useRef(null);
+  const reconnectAfter = useRef(0);
   const [notice, setNotice] = useState("");
   const [paused, setPaused] = useState(false);
   const state = paused ? "paused" : connectionState;
   const [generation, setGeneration] = useState(0);
   const [follow, setFollow] = useState(true);
   const log = useRef(null);
+  useEffect(() => {
+    function resume() {
+      if (
+        !paused &&
+        Date.now() >= reconnectAfter.current &&
+        ["unavailable", "disconnected"].includes(connectionState)
+      ) {
+        setState("connecting");
+        setGeneration((value) => value + 1);
+      }
+    }
+    window.addEventListener("online", resume);
+    return () => window.removeEventListener("online", resume);
+  }, [paused, connectionState]);
   useEffect(() => {
     if (follow && log.current) log.current.scrollTop = log.current.scrollHeight;
   }, [lines, follow]);
@@ -858,6 +875,7 @@ function LiveConsole({ id, role }) {
         };
       } catch (err) {
         if (!alive || err.name === "AbortError") return;
+        reconnectAfter.current = err.status === 429 ? Date.now() + (err.retryAfterMs || 60000) : 0;
         setError(err);
         setState("unavailable");
       }
@@ -872,21 +890,28 @@ function LiveConsole({ id, role }) {
   }, [id, api, paused, generation]);
   async function send(event) {
     event.preventDefault();
-    if (!command.trim() || sending) return;
+    if (!command.trim() || commandInFlight.current || state !== "connected") return;
+    commandInFlight.current = true;
+    const value = command.trim();
+    if (commandAttempt.current?.command !== value)
+      commandAttempt.current = { command: value, key: crypto.randomUUID() };
     setSending(true);
     setError(null);
     setNotice("");
     try {
       await api(`/servers/${id}/commands`, {
         method: "POST",
-        body: { command: command.trim() },
-        key: crypto.randomUUID(),
+        body: { command: value },
+        key: commandAttempt.current.key,
       });
+      commandAttempt.current = null;
       setCommand("");
       setNotice("Command accepted.");
     } catch (err) {
+      if ([400, 403, 404, 409, 422].includes(err.status)) commandAttempt.current = null;
       setError(err);
     } finally {
+      commandInFlight.current = false;
       setSending(false);
     }
   }
@@ -895,7 +920,11 @@ function LiveConsole({ id, role }) {
       <ErrorMessage error={error} />
       <div className="console-panel">
         <div className="console-toolbar">
-          <span className={`console-connection ${state}`}>
+          <span
+            className={`console-connection ${state}`}
+            role="status"
+            aria-label="Console connection"
+          >
             <span />
             {
               {
@@ -918,15 +947,27 @@ function LiveConsole({ id, role }) {
               Follow output
             </label>
             <button onClick={() => setLines([])}>Clear</button>
+            {state !== "connected" && (
+              <button
+                disabled={sending || state === "connecting" || state === "reconnecting"}
+                onClick={() => {
+                  setState("connecting");
+                  setPaused(false);
+                  setGeneration((v) => v + 1);
+                }}
+              >
+                Reconnect
+              </button>
+            )}
             <button
+              disabled={sending}
               onClick={() => {
-                setPaused(false);
-                setGeneration((v) => v + 1);
+                setState(paused ? "connecting" : "disconnected");
+                setPaused((v) => !v);
               }}
             >
-              Reconnect
+              {paused ? "Resume" : "Pause"}
             </button>
-            <button onClick={() => setPaused((v) => !v)}>{paused ? "Resume" : "Pause"}</button>
           </div>
         </div>
         <div
@@ -949,7 +990,11 @@ function LiveConsole({ id, role }) {
               <span>
                 {state === "connected"
                   ? "Connected. Minecraft output will appear here."
-                  : "Connecting to your Minecraft console…"}
+                  : state === "paused"
+                    ? "Console paused. Resume to see new output."
+                    : state === "unavailable" || state === "disconnected"
+                      ? "Console disconnected. Reconnect to see new output."
+                      : "Connecting to your Minecraft console…"}
               </span>
             </div>
           )}
@@ -966,7 +1011,7 @@ function LiveConsole({ id, role }) {
             maxLength={1024}
             autoComplete="off"
             spellCheck="false"
-            disabled={state !== "connected"}
+            disabled={state !== "connected" || sending}
           />
           <button
             className="button primary"

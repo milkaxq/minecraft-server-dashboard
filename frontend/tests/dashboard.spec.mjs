@@ -7327,3 +7327,85 @@ test("member cards and role choices fit small screens", async ({ page }, testInf
   });
   await page.screenshot({ path: testInfo.outputPath("members-mobile.png"), fullPage: true });
 });
+
+test("console command retry preserves its key and locks the input while sending", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  const writes = [];
+  let release;
+  await page.route(`http://localhost:8080/servers/${serverID}/commands`, async (route) => {
+    writes.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (writes.length === 1) {
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return route.fulfill({ status: 502, json: { error: "Command response lost" } });
+    }
+    return route.fallback();
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Advanced", exact: true }).click();
+  await page.getByLabel("Minecraft console command").fill("list");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByLabel("Minecraft console command")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
+  await expect.poll(() => writes.length).toBe(1);
+  release();
+  await expect(page.getByLabel("Minecraft console command")).toBeEnabled();
+  await expect(page.getByLabel("Minecraft console command")).toHaveValue("list");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Command accepted.", { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+  await page.getByLabel("Minecraft console command").fill("list");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.poll(() => writes.length).toBe(3);
+  expect(writes[2].key).not.toBe(writes[0].key);
+});
+
+test("console explains pause and resumes without sending a command", async ({ page }) => {
+  const calls = await mockAPI(page);
+  let connections = 0;
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) => {
+    connections++;
+    ws.send(JSON.stringify({ event: "connected" }));
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Advanced", exact: true }).click();
+  await expect(page.getByRole("status", { name: "Console connection" })).toHaveText("Connected");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(page.getByText("Console paused. Resume to see new output.")).toBeVisible();
+  await expect(page.getByLabel("Minecraft console command")).toBeDisabled();
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(page.getByRole("status", { name: "Console connection" })).toHaveText("Connected");
+  expect(connections).toBe(2);
+  expect(calls.some((c) => c.path.endsWith("/commands"))).toBe(false);
+});
+
+test("console reconnects after browser connectivity returns without sending commands", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let unavailable = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/console-ticket`, async (route) => {
+    if (!unavailable) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Console unavailable" } });
+  });
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Advanced", exact: true }).click();
+  await expect(page.getByText("Console disconnected. Reconnect to see new output.")).toBeVisible();
+  unavailable = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByRole("status", { name: "Console connection" })).toHaveText("Connected");
+  expect(calls.some((c) => c.path.endsWith("/commands"))).toBe(false);
+});
