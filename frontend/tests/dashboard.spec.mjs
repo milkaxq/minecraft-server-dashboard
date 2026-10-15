@@ -7262,3 +7262,68 @@ test("world reset retry retains its request and typed confirmation after failure
   expect(writes).toHaveLength(2);
   expect(writes[1]).toEqual(writes[0]);
 });
+
+test("member access failure blocks changes and refresh restores the list", async ({ page }) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let failed = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/members`, async (route) => {
+    if (!failed || route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Members unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await page.getByLabel("Member email").fill("sam@example.com");
+  await page.getByRole("button", { name: "Add member", exact: true }).click();
+  await expect(page.getByLabel("Role for Sam")).toBeEnabled();
+  failed = true;
+  await page.clock.runFor(10001);
+  await expect(page.getByLabel("Role for Sam")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Remove member", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Add member", exact: true })).toBeDisabled();
+  failed = false;
+  await page.getByRole("button", { name: "Refresh members" }).click();
+  await expect(page.getByLabel("Role for Sam")).toBeEnabled();
+});
+
+test("member add retry retains its key and email after a failed response", async ({ page }) => {
+  await mockAPI(page);
+  const writes = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/members`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    writes.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (writes.length === 1)
+      return route.fulfill({ status: 502, json: { error: "Response lost" } });
+    return route.fallback();
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await page.getByLabel("Member email").fill("sam@example.com");
+  await page.getByRole("button", { name: "Add member", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Response lost" })).toBeVisible();
+  await expect(page.getByLabel("Member email")).toHaveValue("sam@example.com");
+  await page.getByRole("button", { name: "Add member", exact: true }).click();
+  await expect(page.getByText("sam@example.com", { exact: true })).toBeVisible();
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+});
+
+test("member cards and role choices fit small screens", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Members", exact: true }).click();
+  await page.getByLabel("Member email").fill("sam@example.com");
+  await page.getByRole("button", { name: "Add member", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Server members" })).toContainText("sam@example.com");
+  await expect(page.getByLabel("Role for Sam")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => {
+    document.activeElement?.blur();
+    window.scrollTo(0, 0);
+  });
+  await page.screenshot({ path: testInfo.outputPath("members-mobile.png"), fullPage: true });
+});

@@ -6302,3 +6302,64 @@ input {
   height: 18px;
   accent-color: var(--green-dark);
 }
+
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+}
+.member-list > li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.member-person {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.member-person span,
+.member-person small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.member-person small {
+  font-size: 13px;
+}
+.member-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .member-list > li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .member-controls {
+    flex-wrap: wrap;
+  }
+  .member-controls > * {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.member-list .billing-status {
+  align-self: flex-start;
+}
+@media (max-width: 420px) {
+  .member-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .member-controls > * {
+    flex: auto;
+    width: 100%;
+  }
+}
