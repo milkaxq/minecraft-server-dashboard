@@ -2107,6 +2107,48 @@ function Worlds({ id, offline, limit }) {
     backups.refresh();
   });
   const input = useRef(null);
+  const inFlight = useRef(false);
+  const attempts = useRef(new Map());
+  const [pending, setPending] = useState("");
+  const unavailable = resource.loading || !!resource.error || !resource.data;
+  const backupsUnavailable = backups.loading || !!backups.error || !backups.data;
+  const blocked = !offline || unavailable || action.busy;
+  async function runWorld(kind, task, message) {
+    if (inFlight.current || blocked || (kind !== "download" && backupsUnavailable)) return false;
+    inFlight.current = true;
+    setPending(kind);
+    try {
+      return await action.run(task, message);
+    } finally {
+      inFlight.current = false;
+      setPending("");
+    }
+  }
+  async function mutate(kind, values, file) {
+    const fingerprint = JSON.stringify({
+      kind,
+      confirmation: values.confirmation,
+      file: file ? [file.name, file.size, file.lastModified] : null,
+    });
+    if (!attempts.current.has(fingerprint) || attempts.current.get(fingerprint).file !== file)
+      attempts.current.set(fingerprint, { key: crypto.randomUUID(), values, file });
+    const attempt = attempts.current.get(fingerprint);
+    const endpoint = file
+      ? `/servers/${id}/world/upload?${new URLSearchParams(attempt.values)}`
+      : `/servers/${id}/world/${kind}`;
+    try {
+      await api(endpoint, {
+        method: "POST",
+        key: attempt.key,
+        ...(file ? { raw: true, body: file } : { body: attempt.values }),
+      });
+      attempts.current.delete(fingerprint);
+    } catch (error) {
+      if ([400, 403, 404, 409, 413, 422].includes(error.status))
+        attempts.current.delete(fingerprint);
+      throw error;
+    }
+  }
   const [target, setTarget] = useState(null);
   const [confirmation, setConfirmation] = useState("");
   const world = resource.data;
@@ -2117,19 +2159,13 @@ function Worlds({ id, offline, limit }) {
     setTarget(value);
   }
   async function change() {
+    if (blocked || backupsUnavailable || !ready || confirmation !== world?.name || !target) return;
     const values = { backup: safety.uuid, revision: world.revision, confirmation };
     const upload = target instanceof File;
-    const endpoint = upload
-      ? `/servers/${id}/world/upload?${new URLSearchParams(values)}`
-      : `/servers/${id}/world/reset`;
     if (
-      await action.run(
-        () =>
-          api(endpoint, {
-            method: "POST",
-            key: crypto.randomUUID(),
-            ...(upload ? { raw: true, body: target } : { body: values }),
-          }),
+      await runWorld(
+        upload ? "upload" : "reset",
+        () => mutate(upload ? "upload" : "reset", values, upload ? target : null),
         upload
           ? "World uploaded. Start your server to explore it."
           : "World reset. Start your server to generate a new world.",
@@ -2145,9 +2181,21 @@ function Worlds({ id, offline, limit }) {
         <div className="section-heading">
           <div>
             <h2>Your world</h2>
-            <span>{world?.name || "Loading…"}</span>
+            <span>{world?.name || (resource.loading ? "Loading…" : "World unavailable")}</span>
           </div>
-          <button className="button secondary" onClick={resource.refresh}>
+          <button
+            className="button secondary"
+            disabled={
+              action.busy ||
+              resource.loading ||
+              backups.loading ||
+              [resource.error, backups.error].some((error) => error?.status === 429)
+            }
+            onClick={() => {
+              resource.refresh();
+              backups.refresh();
+            }}
+          >
             Refresh world
           </button>
         </div>
@@ -2158,58 +2206,58 @@ function Worlds({ id, offline, limit }) {
             <>
               <p className="field-help">
                 {world.generated
-                  ? `Your world includes ${world.directories.join(", ")}. Downloads include every dimension.`
+                  ? "Download includes every dimension."
                   : "Your world will be generated when you start the server."}
               </p>
               <div className="file-actions">
                 <button
                   className="button secondary"
-                  disabled={!offline || !world.generated || action.busy}
+                  disabled={blocked || !world.generated}
                   onClick={() =>
-                    action.run(
+                    runWorld(
+                      "download",
                       () => download(api, `/servers/${id}/world/download`, `${world.name}.zip`),
                       "World download ready.",
                     )
                   }
                 >
-                  Download world
+                  {pending === "download" ? "Preparing download…" : "Download world"}
                 </button>
               </div>
-              <h3>Before changing your world</h3>
+              <h3>Change your world</h3>
               <p className="field-help">
-                Stop the server and create a backup before replacing your world.
+                Stop Minecraft, then create a safety backup to unlock changes.
               </p>
               <button
                 className="button secondary"
                 disabled={
-                  !offline ||
-                  action.busy ||
-                  !backups.data ||
+                  blocked ||
+                  backupsUnavailable ||
                   backups.data.length >= limit ||
                   (safety && !safety.completed_at)
                 }
                 onClick={() =>
-                  action.run(
-                    () =>
-                      api(`/servers/${id}/world/backup`, {
-                        method: "POST",
-                        key: crypto.randomUUID(),
-                        body: {},
-                      }),
+                  runWorld(
+                    "backup",
+                    () => mutate("backup", {}),
                     "Safety backup started. Wait for it to finish.",
                   )
                 }
               >
-                Create safety backup
+                {pending === "backup" ? "Starting backup…" : "Create safety backup"}
               </button>
               <p role="status">
-                {safety && !safety.completed_at
-                  ? "Creating safety backup…"
-                  : ready
-                    ? "Safety backup ready."
-                    : safety
-                      ? "Safety backup failed. Create a new backup."
-                      : "A fresh safety backup is required."}
+                {resource.error || backups.error
+                  ? "Safety backup unavailable. Refresh world to check again."
+                  : backupsUnavailable || unavailable
+                    ? "Checking safety backup…"
+                    : safety && !safety.completed_at
+                      ? "Creating safety backup…"
+                      : ready
+                        ? "Safety backup ready."
+                        : safety
+                          ? "Safety backup failed. Create a new backup."
+                          : "A fresh safety backup is required."}
               </p>
               {backups.data?.length >= limit && (
                 <p className="notice">
@@ -2218,24 +2266,18 @@ function Worlds({ id, offline, limit }) {
                   need a new safety backup.
                 </p>
               )}
-              <h3>Upload or reset</h3>
-              <p className="field-help">
-                Upload a .zip up to 64 MB, containing level.dat at the root, or a “{world.name}”
-                folder with level.dat inside. Paper archives may also include “{world.name}_nether”
-                and “{world.name}_the_end”. Limit: 128 MB unpacked, 32 MB per file, and 2,000
-                entries. Replacing a world removes dimensions absent from the upload.
-              </p>
+              <p className="field-help">Upload a Minecraft world ZIP, up to 64 MB.</p>
               <div className="file-actions">
                 <button
                   className="button primary"
-                  disabled={!offline || !ready || action.busy}
+                  disabled={blocked || backupsUnavailable || !ready}
                   onClick={() => input.current.click()}
                 >
                   Upload world .zip
                 </button>
                 <button
                   className="button danger-outline"
-                  disabled={!offline || !ready || !world.generated || action.busy}
+                  disabled={blocked || backupsUnavailable || !ready || !world.generated}
                   onClick={() => confirm("reset")}
                 >
                   Reset world
@@ -2251,9 +2293,6 @@ function Worlds({ id, offline, limit }) {
                   e.target.value = "";
                 }}
               />
-              <p className="field-help">
-                Settings and plugins stay. Restore a backup to undo world changes.
-              </p>
             </>
           )
         )}
@@ -2263,7 +2302,7 @@ function Worlds({ id, offline, limit }) {
           title={target === "reset" ? "Reset your world?" : "Replace your world?"}
           label={target === "reset" ? "Reset world" : "Replace world"}
           busy={action.busy}
-          confirmDisabled={confirmation !== world?.name || !offline || !ready}
+          confirmDisabled={confirmation !== world?.name || blocked || backupsUnavailable || !ready}
           onCancel={() => setTarget(null)}
           onConfirm={change}
         >
@@ -2273,10 +2312,18 @@ function Worlds({ id, offline, limit }) {
               : `“${target.name}” will replace your world and its dimensions.`}{" "}
             Your completed safety backup preserves the old files.
           </p>
+          {target instanceof File && (
+            <p className="field-help">
+              ZIP must contain level.dat at the root or inside “{world?.name}”. Limit: 128 MB
+              unpacked, 32 MB per file, 2,000 entries. Dimensions absent from the upload are
+              removed. Settings and plugins stay.
+            </p>
+          )}
           <label className="field">
             Type {world?.name} to confirm
             <input
               autoFocus
+              disabled={action.busy}
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}
             />

@@ -7211,3 +7211,54 @@ test("players retry preserves the original command after the access revision cha
   expect(writes[1]).toEqual(writes[0]);
   expect(writes[0].body.revision).toBe("a".repeat(64));
 });
+
+test("world controls block stale backup data and recover together", async ({ page }) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let failed = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Backup history unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "World", exact: true }).click();
+  await page.getByRole("button", { name: "Create safety backup" }).click();
+  await expect(page.getByRole("button", { name: "Reset world", exact: true })).toBeEnabled();
+  failed = true;
+  await page.clock.runFor(10001);
+  await expect(page.getByRole("button", { name: "Reset world", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Upload world .zip" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Create safety backup" })).toBeDisabled();
+  failed = false;
+  await page.getByRole("button", { name: "Refresh world" }).click();
+  await expect(page.getByRole("button", { name: "Reset world", exact: true })).toBeEnabled();
+});
+
+test("world reset retry retains its request and typed confirmation after failure", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const writes = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/world/reset`, async (route) => {
+    writes.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (writes.length === 1)
+      return route.fulfill({ status: 502, json: { error: "Response lost" } });
+    return route.fallback();
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "World", exact: true }).click();
+  await page.getByRole("button", { name: "Create safety backup" }).click();
+  await page.getByRole("button", { name: "Reset world", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill("world");
+  await dialog.getByRole("button", { name: "Reset world", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Response lost");
+  await expect(dialog.getByRole("textbox")).toHaveValue("world");
+  await dialog.getByRole("button", { name: "Reset world", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+});
