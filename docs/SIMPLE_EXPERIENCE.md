@@ -38,3 +38,20 @@ Checks cover the three-step flow at phone/laptop sizes, focus and Back navigatio
 no early submission, software availability, disabled plans, latest configured
 version, order payloads, retry keys, checkout and beta paths. API fixtures are used
 without creating customer servers.
+
+## Returning to play
+
+The dashboard uses a compact Continue playing card for the first available server
+and permission-checked quick actions. It no longer embeds a plan catalogue,
+hosting-total accordion, repeat beta checklist or promotional hero. Plans remain
+in the creation flow, so returning customers avoid that extra catalogue request.
+An empty private beta account gets one access message in the server empty state.
+Search ignores leading/trailing spaces.
+
+Notifications appear as a direct list only when unread items or an error exist.
+No empty-inbox panel or help accordion is rendered. Mark read hides an item only
+after the backend confirms success, without clearing other rows for a list reload.
+A bounded local set prevents an old list from flashing the acknowledged item back;
+normal polling remains authoritative for newly arriving notifications. Failed
+reads show a retry button, and failed writes keep the item available for retry.
+No acknowledgement is sent automatically.

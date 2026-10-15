@@ -6209,3 +6209,33 @@ input {
   background: #302a1b;
   font-size: 14px;
 }
+
+.dashboard-resume {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(110deg, #1d3428, #15252a);
+}
+.dashboard-resume h2 {
+  margin: 0 0 6px;
+}
+.dashboard-resume p {
+  margin: 0;
+  color: #c9d9cf;
+  overflow-wrap: anywhere;
+}
+.dashboard-resume > div {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .dashboard-resume {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 20px;
+  }
+}

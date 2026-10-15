@@ -664,12 +664,12 @@ async function login(page) {
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Welcome back, Alex." })).toBeVisible();
 }
-test("authentication, database-backed plans and cookie session", async ({ page }, testInfo) => {
+test("authentication and cookie session keep the dashboard focused", async ({ page }, testInfo) => {
   await mockAPI(page);
   await login(page);
   await expect(page.getByRole("heading", { name: baseServer.name })).toBeVisible();
-  await expect(page.getByText("Campfire", { exact: true })).toBeVisible();
-  await expect(page.getByText("$9.75")).toBeVisible();
+  await expect(page.locator(".plans-section")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Continue playing", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("dashboard.png"), fullPage: true });
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(await page.evaluate(() => sessionStorage.length)).toBe(0);
@@ -3435,10 +3435,10 @@ test("notifications mark read through authenticated API and disappear", async ({
   });
   await login(page);
   await page.goto("/dashboard");
-  await page.getByText("Notifications · 1 unread", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Notifications", exact: true })).toBeVisible();
   await expect(page.getByText("Your server is ready", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Mark read" }).click();
-  await expect(page.getByText("You’re all caught up.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications", exact: true })).toHaveCount(0);
 });
 
 test("addon update review names replaced files and requires backup choice", async ({ page }) => {
@@ -4378,7 +4378,7 @@ for (const width of [320, 768, 1366]) {
   });
 }
 
-test("homepage fails safely when plans cannot load and dashboard tucks away hosting totals", async ({
+test("homepage fails safely when plans cannot load and dashboard omits hosting totals", async ({
   page,
 }) => {
   await mockAPI(page);
@@ -4397,8 +4397,7 @@ test("homepage fails safely when plans cannot load and dashboard tucks away host
   await login(page);
   await expect(page.getByRole("region", { name: "Your next adventure" })).toBeVisible();
   await expect(page.getByText("Allocated memory", { exact: true })).not.toBeVisible();
-  await page.getByText("Hosting details", { exact: true }).click();
-  await expect(page.getByText("Allocated memory", { exact: true })).toBeVisible();
+  await expect(page.locator(".dashboard-hosting-details")).toHaveCount(0);
 });
 
 test("dashboard shortcuts use authorized server details and dropdowns keep readable night colors", async ({
@@ -6473,4 +6472,102 @@ test("reconnect during an unfinished read recovers once if that read fails", asy
   await pending.abort();
   await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
   expect(reads).toBe(2);
+});
+
+test("returning dashboard omits empty panels and does not fetch the plan catalogue", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await expect(page.getByRole("heading", { name: "Continue playing", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Notifications", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Hosting details", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Private beta help", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".plans-section")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open my world", exact: false })).toHaveAttribute(
+    "href",
+    `/servers/${serverID}`,
+  );
+  expect(calls.filter((call) => call.path === "/plans")).toHaveLength(0);
+});
+
+test("notification dismissal preserves other items and only hides a confirmed write", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const first = "60000000-0000-4000-8000-000000000001";
+  const second = "60000000-0000-4000-8000-000000000002";
+  let attempts = 0;
+  let reads = 0;
+  await page.route("http://localhost:8080/notifications", (route) => {
+    reads++;
+    return route.fulfill({
+      json: [
+        {
+          id: first,
+          server_id: serverID,
+          server_name: baseServer.name,
+          title: "First alert",
+          created_at: "2026-10-15T10:00:00Z",
+        },
+        {
+          id: second,
+          server_id: serverID,
+          server_name: baseServer.name,
+          title: "Second alert",
+          created_at: "2026-10-15T11:00:00Z",
+        },
+      ],
+    });
+  });
+  await page.route(`http://localhost:8080/notifications/${first}/read`, (route) => {
+    attempts++;
+    return attempts === 1
+      ? route.fulfill({ status: 503, json: { error: "Could not mark this notification read" } })
+      : route.fulfill({ json: { read: true } });
+  });
+  await login(page);
+  const panel = page.getByRole("region", { name: "Notifications", exact: true });
+  const row = panel.locator("li").filter({ hasText: "First alert" });
+  await row.getByRole("button", { name: "Mark read", exact: true }).click();
+  await expect(panel.getByRole("alert")).toContainText("Could not mark this notification read");
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Mark read", exact: true }).click();
+  await expect(row).toHaveCount(0);
+  await expect(panel.getByText("Second alert", { exact: true })).toBeVisible();
+  await expect(panel.getByText("1 new", { exact: true })).toBeVisible();
+  expect(attempts).toBe(2);
+  expect(reads).toBe(1);
+});
+
+test("notification history errors stay distinct from an empty inbox and can be refreshed", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let failed = true;
+  await page.route("http://localhost:8080/notifications", (route) =>
+    failed
+      ? route.fulfill({ status: 503, json: { error: "Notifications unavailable" } })
+      : route.fulfill({ json: [] }),
+  );
+  await login(page);
+  const panel = page.getByRole("region", { name: "Notifications", exact: true });
+  await expect(panel.getByRole("alert")).toContainText("Notifications unavailable");
+  await expect(panel.getByText("You’re all caught up.")).toHaveCount(0);
+  failed = false;
+  await panel.getByRole("button", { name: "Refresh notifications", exact: true }).click();
+  await expect(panel).toHaveCount(0);
+});
+
+test("offline server cards never describe a player count as currently playing", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await login(page);
+  const card = page
+    .getByRole("link")
+    .filter({ has: page.getByRole("heading", { name: baseServer.name, exact: true }) });
+  await expect(card.getByText("Ready to start", { exact: true })).toBeVisible();
+  await expect(card).toContainText("Manage");
+  await expect(card).not.toContainText("0 playing");
 });

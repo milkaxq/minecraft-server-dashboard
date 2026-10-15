@@ -1,14 +1,13 @@
 "use client";
 import { Notifications } from "./server-insights";
 import { Select } from "./select";
-import { BetaGettingStarted } from "./first-server";
 import { softwareName, supportsMods, supportsPlugins } from "../lib/software";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Badge, Empty, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
-import { formatBytes, price } from "../lib/api";
+import { formatBytes } from "../lib/api";
 export function ServerCard({ server }) {
   const { data: usage, error } = useResource(
     server.status === "RUNNING" && !server.deletion_pending ? `/servers/${server.id}/usage` : null,
@@ -65,7 +64,9 @@ export function ServerCard({ server }) {
               ? "Deleting…"
               : error
                 ? "Status unavailable"
-                : usage?.players_available && usage?.players_online != null
+                : usage?.power_state === "running" &&
+                    usage.players_available &&
+                    usage.players_online != null
                   ? `${usage.players_online} playing`
                   : "Manage"}{" "}
             <span aria-hidden="true">↗</span>
@@ -78,7 +79,6 @@ export function ServerCard({ server }) {
 export function Dashboard({ serversOnly = false }) {
   const { session } = useAuth();
   const { data: servers, loading, error, refresh } = useResource("/servers", 10000);
-  const { data: plans, error: plansError } = useResource("/plans");
   const { data: registration } = useResource("/auth/config");
   const { data: billing } = useResource("/billing/config");
   const beta = registration?.invite_required && billing?.provider === "disabled";
@@ -89,7 +89,7 @@ export function Dashboard({ serversOnly = false }) {
       (server) => view === "all" || (server.status !== "CANCELLED" && !server.deletion_pending),
     )
     .filter((server) =>
-      `${server.name} ${server.server_type}`.toLowerCase().includes(query.toLowerCase()),
+      `${server.name} ${server.server_type}`.toLowerCase().includes(query.trim().toLowerCase()),
     )
     .sort((a, b) => Number(b.status === "RUNNING") - Number(a.status === "RUNNING"));
   const current =
@@ -106,34 +106,15 @@ export function Dashboard({ serversOnly = false }) {
     activeWorld.management_available &&
     !activeWorld.deletion_pending
       ? [
-          [
-            "settings",
-            "Game rules",
-            "Set the way you play",
-            "world",
-            `/servers/${current.id}/settings`,
-          ],
-          [
-            "members",
-            "Invite friends",
-            "Prepare their player page",
-            "user",
-            `/servers/${current.id}#invite-friends`,
-          ],
+          ["settings", "Game rules", "world", `/servers/${current.id}/settings`],
+          ["members", "Invite friends", "user", `/servers/${current.id}#invite-friends`],
           [
             supportsMods(activeWorld.server_type) ? "files" : "plugins",
             "Add extras",
-            "Browse matching mods or plugins",
             "plus",
             `/servers/${current.id}/${supportsMods(activeWorld.server_type) ? "mods" : "plugins"}`,
           ],
-          [
-            "backups",
-            "Backups",
-            "Protect what you build",
-            "shield",
-            `/servers/${current.id}/backups`,
-          ],
+          ["backups", "Backups", "shield", `/servers/${current.id}/backups`],
         ].filter(
           ([permission, label]) =>
             activeWorld.permissions?.includes(permission) &&
@@ -142,21 +123,15 @@ export function Dashboard({ serversOnly = false }) {
               supportsPlugins(activeWorld.server_type)),
         )
       : [];
-  const ready = servers?.filter((s) => s.status === "RUNNING" && !s.deletion_pending).length || 0;
   const deleting = servers?.filter((s) => s.deletion_pending).length || 0;
   return (
     <Shell>
       <PageHeading
-        eyebrow={serversOnly ? "YOUR WORLDS" : "YOUR WORLDS"}
+        eyebrow="YOUR WORLDS"
         title={
           serversOnly
             ? "Your servers"
             : `Welcome back, ${session?.user.name.split(" ")[0] || "player"}.`
-        }
-        description={
-          serversOnly
-            ? "Everything you need to keep your worlds running."
-            : "Your worlds, your friends, your next adventure."
         }
         action={
           beta && !session?.user.is_admin ? (
@@ -171,45 +146,28 @@ export function Dashboard({ serversOnly = false }) {
           )
         }
       />
-      {!serversOnly && beta && servers && (
-        <details className="dashboard-hosting-details" open={!servers.length}>
-          <summary>Private beta help</summary>
-          <BetaGettingStarted servers={servers} />
-        </details>
-      )}
       {!serversOnly && (
         <>
-          <section className="dashboard-play-hero" aria-label="Your next adventure">
-            <span className="landing-kicker">LESS SETUP. MORE MINECRAFT.</span>
-            <h2>Make tonight an adventure.</h2>
-            <p>
-              Your worlds and friends are one click away. Start playing, or make room for something
-              new.
-            </p>
-            {current ? (
-              <Link href={`/servers/${current.id}`} className="button">
+          {current && (
+            <section className="dashboard-resume" aria-label="Your next adventure">
+              <div>
+                <h2>Continue playing</h2>
+                <p>{current.name}</p>
+              </div>
+              <Link href={`/servers/${current.id}`} className="button primary">
                 Open my world <Icon name="arrow" size={16} />
               </Link>
-            ) : !beta || session?.user.is_admin ? (
-              <Link href="/servers/new" className="button">
-                Create your next world <Icon name="arrow" size={16} />
-              </Link>
-            ) : (
-              <Link href="/guide#start-and-join" className="button">
-                Find your first world <Icon name="arrow" size={16} />
-              </Link>
-            )}
-          </section>
+            </section>
+          )}
           {shortcuts.length > 0 && (
             <nav className="world-shortcuts" aria-label="Quick world actions">
-              {shortcuts.map(([, label, help, icon, href]) => (
+              {shortcuts.map(([, label, icon, href]) => (
                 <Link key={label} href={href}>
                   <span className="shortcut-icon">
                     <Icon name={icon} size={22} />
                   </span>
                   <div>
                     <strong>{label}</strong>
-                    <small>{help}</small>
                   </div>
                   <Icon name="arrow" size={16} />
                 </Link>
@@ -217,57 +175,6 @@ export function Dashboard({ serversOnly = false }) {
             </nav>
           )}
           <Notifications />
-          <details className="dashboard-hosting-details">
-            <summary>Hosting details</summary>
-            <div className="summary-grid">
-              <div className="summary-card">
-                <span className="summary-icon">
-                  <Icon name="server" />
-                </span>
-                <div>
-                  <span>Total servers</span>
-                  <strong>
-                    {servers
-                      ? servers.filter((s) => s.status !== "CANCELLED" && !s.deletion_pending)
-                          .length
-                      : "—"}
-                    <small>in your workspace</small>
-                  </strong>
-                </div>
-              </div>
-              <div className="summary-card">
-                <span className="summary-icon green">
-                  <Icon name="play" />
-                </span>
-                <div>
-                  <span>Active hosting</span>
-                  <strong>
-                    {servers ? ready : "—"}
-                    <small>activated servers</small>
-                  </strong>
-                </div>
-              </div>
-              <div className="summary-card">
-                <span className="summary-icon amber">
-                  <Icon name="cpu" />
-                </span>
-                <div>
-                  <span>Allocated memory</span>
-                  <strong>
-                    {servers
-                      ? formatBytes(
-                          servers
-                            .filter((s) => !["CANCELLED", "FAILED"].includes(s.status))
-                            .reduce((sum, s) => sum + s.ram_mb * 1048576, 0),
-                          0,
-                        )
-                      : "—"}
-                    <small>across your worlds</small>
-                  </strong>
-                </div>
-              </div>
-            </div>
-          </details>
         </>
       )}
       <div className="section-heading">
@@ -320,7 +227,13 @@ export function Dashboard({ serversOnly = false }) {
           </div>
         ) : (
           <Empty
-            title={query ? "No matching servers" : "Your next adventure starts here"}
+            title={
+              query
+                ? "No matching servers"
+                : beta
+                  ? "Welcome to the private beta"
+                  : "Your next adventure starts here"
+            }
             action={
               !query &&
               !beta && (
@@ -334,45 +247,10 @@ export function Dashboard({ serversOnly = false }) {
             {query
               ? "Try another name or server type."
               : beta
-                ? "Ask your host for access to a beta server. It will appear here when available."
-                : "Choose a plan and a Minecraft version to request your first world."}
+                ? "Your host provides server access; payments are disabled for this beta."
+                : "Choose how to play and create your first world."}
           </Empty>
         ))
-      )}
-      {!serversOnly && !beta && (
-        <section className="plans-section">
-          <div className="section-heading">
-            <div>
-              <h2>Find your perfect fit</h2>
-              <span>Plans for every kind of adventure</span>
-            </div>
-            <Link href="/servers/new" className="text-link">
-              Explore plans <span>↗</span>
-            </Link>
-          </div>
-          <ErrorMessage error={plansError} />
-          <div className="plan-strip">
-            {plans?.map((plan) => (
-              <Link href={`/servers/new?plan=${plan.id}`} key={plan.id} className="plan-mini">
-                <span className="plan-icon">
-                  <Icon name="world" />
-                </span>
-                <div>
-                  <strong>{plan.name}</strong>
-                  <small>
-                    {formatBytes(plan.ram_mb * 1048576, 0)} RAM · about {plan.player_recommendation}{" "}
-                    players
-                  </small>
-                </div>
-                <span className="plan-price">
-                  {price(plan)}
-                  <small>/{plan.billing_period === "YEARLY" ? "year" : "month"}</small>
-                </span>
-                <Icon name="arrow" size={15} />
-              </Link>
-            ))}
-          </div>
-        </section>
       )}
     </Shell>
   );

@@ -11,32 +11,35 @@ export function Notifications() {
   const { api } = useAuth();
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
-  const items = Array.isArray(resource.data) ? resource.data : [];
+  const [dismissed, setDismissed] = useState([]);
+  const items = Array.isArray(resource.data)
+    ? resource.data.filter((item) => !dismissed.includes(item.id))
+    : [];
   async function dismiss(id) {
     setBusy(id);
     setError(null);
     try {
       await api(`/notifications/${id}/read`, { method: "POST" });
-      resource.refresh();
+      setDismissed((previous) => [...previous.slice(-99), id]);
     } catch (error) {
       setError(error);
     } finally {
       setBusy(null);
     }
   }
+  if (!items.length && !resource.error && !error) return null;
   return (
-    <details className="panel server-insights">
-      <summary>Notifications {items.length ? `· ${items.length} unread` : ""}</summary>
-      <p className="field-help">
-        Server readiness and automatic backup alerts from the last 30 days. Updates appear here
-        while your dashboard is open; email and browser push are not enabled.
-      </p>
+    <section className="panel server-insights" aria-label="Notifications">
+      <div className="section-heading">
+        <h2>Notifications</h2>
+        <span>{items.length ? `${items.length} new` : "Unavailable"}</span>
+      </div>
       <ErrorMessage error={error || resource.error} />
-      {resource.loading ? (
-        <p>Checking notifications…</p>
-      ) : !items.length && !resource.error ? (
-        <p>You’re all caught up.</p>
-      ) : null}
+      {resource.error && (
+        <button className="button secondary" disabled={resource.loading} onClick={resource.refresh}>
+          Refresh notifications
+        </button>
+      )}
       <ul className="activity-list">
         {items.map((item) => (
           <li key={item.id}>
@@ -58,7 +61,7 @@ export function Notifications() {
           </li>
         ))}
       </ul>
-    </details>
+    </section>
   );
 }
 
