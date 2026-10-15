@@ -1,4 +1,5 @@
 "use client";
+import { useUnsavedChanges } from "./use-unsaved-changes";
 import { AddonHelp } from "./addon-help";
 import { ChangeSafety } from "./change-safety";
 import { PluginCheck } from "./plugin-check";
@@ -635,6 +636,7 @@ function Settings({ id, offline }) {
     form && resource.data
       ? Object.keys(labels).filter((key) => form[key] !== resource.data[key])
       : [];
+  useUnsavedChanges(changes.length > 0);
   const display = (value) => (typeof value === "boolean" ? (value ? "On" : "Off") : String(value));
   const presets = [
     {
@@ -868,6 +870,10 @@ function Plugins({ id, server, offline, mods = false, usage }) {
   }, [resource.data, refreshClientSetup]);
   const action = useAction(resource.refresh);
   const input = useRef(null);
+  const [installedQuery, setInstalledQuery] = useState("");
+  const installedFiles = (resource.data || []).filter((file) =>
+    file.name.toLowerCase().includes(installedQuery.trim().toLowerCase()),
+  );
   const [remove, setRemove] = useState(null);
   const [addonChange, setAddonChange] = useState(null);
   const [pendingUpload, setPendingUpload] = useState(null);
@@ -1005,13 +1011,31 @@ function Plugins({ id, server, offline, mods = false, usage }) {
             "Match your Minecraft version and loader. Install required dependencies too; client-only mods belong on your computer."}{" "}
           <Link href="/guide">Read the setup guide</Link>.
         </p>
+        {!!resource.data?.length && (
+          <label className="installed-addon-search">
+            Find an installed {label}
+            <input
+              type="search"
+              value={installedQuery}
+              onChange={(event) => setInstalledQuery(event.target.value)}
+              placeholder={`Search your ${collection}…`}
+            />
+          </label>
+        )}
         {resource.loading ? (
           <Loading />
         ) : !resource.data?.length ? (
           <p className="management-empty">No {collection} installed yet.</p>
+        ) : !installedFiles.length ? (
+          <p className="management-empty" role="status">
+            No installed {collection} match “{installedQuery}”.{" "}
+            <button className="button secondary" onClick={() => setInstalledQuery("")}>
+              Clear search
+            </button>
+          </p>
         ) : (
           <ul className="plugin-list">
-            {resource.data.map((v) => (
+            {installedFiles.map((v) => (
               <li key={v.name}>
                 <span>
                   <strong>{v.name}</strong>

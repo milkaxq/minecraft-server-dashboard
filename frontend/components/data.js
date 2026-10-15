@@ -23,13 +23,29 @@ export function useResource(path, interval = 0) {
     const controller = new AbortController();
     let timer;
     let alive = true;
+    let inFlight = false;
+    let limitedUntil = 0;
+    const visibleAndOnline = () => document.visibilityState !== "hidden" && navigator.onLine;
+    function schedule(delay) {
+      clearTimeout(timer);
+      if (alive && interval && visibleAndOnline()) timer = setTimeout(load, delay);
+    }
+    function resume() {
+      if (!alive || !interval || !visibleAndOnline() || inFlight) return;
+      schedule(Math.max(0, limitedUntil - Date.now()));
+    }
     async function load() {
+      if (!alive || inFlight) return;
+      inFlight = true;
       let retryDelay = interval;
       try {
         const data = await api(path, { signal: controller.signal });
         if (alive) setResult({ key: resourceKey, data, error: null });
       } catch (error) {
-        if (error.status === 429) retryDelay = Math.max(interval, error.retryAfterMs || 60000);
+        if (error.status === 429) {
+          retryDelay = Math.max(interval, error.retryAfterMs || 60000);
+          limitedUntil = Date.now() + retryDelay;
+        }
         if (alive && error.name !== "AbortError") {
           setResult((previous) => ({
             key: resourceKey,
@@ -38,14 +54,30 @@ export function useResource(path, interval = 0) {
           }));
         }
       } finally {
-        if (alive && interval) timer = setTimeout(load, retryDelay);
+        inFlight = false;
+        schedule(retryDelay);
       }
     }
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    // A timer already queued before the browser goes offline must not send a request.
+    function suspend() {
+      clearTimeout(timer);
+    }
+    window.addEventListener("offline", suspend);
+    const pauseHidden = () => {
+      if (!visibleAndOnline()) suspend();
+    };
+    document.addEventListener("visibilitychange", pauseHidden);
     load();
     return () => {
       alive = false;
       controller.abort();
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", resume);
+      document.removeEventListener("visibilitychange", pauseHidden);
+      window.removeEventListener("online", resume);
+      window.removeEventListener("offline", suspend);
     };
   }, [enabled, api, path, interval, resourceKey]);
 

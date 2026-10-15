@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { useUnsavedChanges } from "./use-unsaved-changes";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Select } from "./select";
@@ -20,6 +21,7 @@ export function AddonSettings({ id }) {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
   const request = useRef(null);
+  const saveAttempt = useRef(null);
   const config = resource.data;
   const networkStatus = useResource(
     permitted && config?.installed ? `/servers/${id}/addons/simple-voice-chat/network` : null,
@@ -28,6 +30,11 @@ export function AddonSettings({ id }) {
   const network = networkStatus.data || config?.network;
   const values = draft?.values || config?.values;
   const offline = usage.data?.power_state === "offline";
+  const unsaved =
+    !!draft &&
+    !!config?.values &&
+    Object.keys(draft.values).some((key) => draft.values[key] !== config.values[key]);
+  useUnsavedChanges(unsaved);
   function edit(key, value) {
     setDraft({ revision: draft?.revision || config.revision, values: { ...values, [key]: value } });
     setNotice("");
@@ -57,12 +64,17 @@ export function AddonSettings({ id }) {
     setBusy(true);
     setError(null);
     setNotice("");
+    const body = { ...values, revision: draft?.revision || config.revision };
+    const fingerprint = JSON.stringify([id, body]);
+    if (saveAttempt.current?.fingerprint !== fingerprint)
+      saveAttempt.current = { fingerprint, key: crypto.randomUUID() };
     try {
       await api(`/servers/${id}/addons/simple-voice-chat`, {
         method: "PUT",
-        key: crypto.randomUUID(),
-        body: { ...values, revision: draft?.revision || config.revision },
+        key: saveAttempt.current.key,
+        body,
       });
+      saveAttempt.current = null;
       setDraft(null);
       resource.refresh();
       setNotice("Settings saved. Start or restart your server to apply them.");
@@ -188,6 +200,11 @@ export function AddonSettings({ id }) {
                     Reset to defaults
                   </button>
                 </div>
+                {unsaved && (
+                  <p className="notice" role="status">
+                    You have unsaved voice settings. Save them before leaving this page.
+                  </p>
+                )}
                 {!offline && (
                   <p className="notice">
                     Stop your server before saving settings. You can edit the form now.
@@ -272,6 +289,20 @@ export function AddonSettings({ id }) {
                     >
                       {busy ? "Saving…" : "Save settings"}
                     </button>
+                    {unsaved && (
+                      <button
+                        type="button"
+                        className="button secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setDraft(null);
+                          setError(null);
+                          setNotice("");
+                        }}
+                      >
+                        Discard changes
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="button secondary"

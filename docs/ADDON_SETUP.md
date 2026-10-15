@@ -12,3 +12,15 @@ Other addons retain configuration-file access and author documentation. Loading 
 For future file-based recipes, use the Voice Chat backend pattern: server authorization, explicitly allowed settings, bounded values, Pterodactyl file APIs, revision conflict detection, preservation of unrecognized settings, audit logging and restart guidance. Never expose host files, resource limits or secrets. Add version-aware fixtures and authorization tests before enabling a new recipe.
 
 Chunky command source: https://github.com/pop4959/Chunky/wiki/Commands
+
+## Progress and edit reliability
+
+Chunky's expanded setup panel opens a scoped console WebSocket only when the user has console permission and the server is running. It parses the plugin's English progress messages into a world-specific progress bar; chat and unknown formats are ignored. It executes no command on opening. The console may replay previous log output on connection, so receipt time is not the report’s original timestamp. Progress is labelled as last reported, becomes stale after 30 seconds, and is explicitly unconfirmed after disconnection. Reconnect is manual. Closing the panel disconnects the stream. Progress does not confirm task completion; use the full console for unsupported messages and outcomes.
+
+Installed addon search filters the already-loaded file list locally and does not search or modify the public catalog.
+
+Chunky command retries and Voice Chat save retries retain the same operation key while the exact request remains unchanged. A successful response clears the key; changed input creates a new operation. These keys are held only in the mounted form, not across page reloads.
+
+Voice Chat and Minecraft settings warn on browser refresh/tab close/full navigation when there are unsaved changes. This browser guard does not intercept Next.js client-side links. Voice Chat also displays an unsaved indicator and an explicit discard action.
+
+Recurring authenticated dashboard reads pause while the tab is hidden or the browser reports offline. Returning to a visible, connected tab triggers a refresh, while preserving any outstanding HTTP 429 Retry-After delay. In-flight requests are not duplicated. One-time resource reads keep their existing behavior.

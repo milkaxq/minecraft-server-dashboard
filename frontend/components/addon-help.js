@@ -1,19 +1,24 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { ErrorMessage } from "./ui";
 import { Select } from "./select";
+import { ChunkyProgress } from "./chunky-progress";
 
 // Reviewed recipes only. Project descriptions must never become executable commands.
 export function AddonHelp({ id, file, metadata, server, usage }) {
+  const [open, setOpen] = useState(false);
   const projectURL = /^[a-zA-Z0-9]{8}$/.test(metadata?.project_id || "")
     ? `https://modrinth.com/project/${metadata.project_id}`
     : null;
   const chunky = /^chunky(?:[-_.]|\.jar$)/i.test(file.name);
   const voice = file.name.toLowerCase().includes("voicechat");
   return (
-    <details className="installed-addon-help">
+    <details
+      className="installed-addon-help"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary>Setup &amp; help</summary>
       {voice ? (
         <>
@@ -29,7 +34,7 @@ export function AddonHelp({ id, file, metadata, server, usage }) {
           </p>
         </>
       ) : chunky ? (
-        <ChunkySetup id={id} server={server} usage={usage} />
+        open && <ChunkySetup id={id} server={server} usage={usage} />
       ) : (
         <p>
           This addon does not have a guided form yet. Start the server once to let the addon create
@@ -77,6 +82,7 @@ function ChunkySetup({ id, server, usage }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
+  const operation = useRef(null);
   const allowed = server.permissions?.includes("console");
   const running = usage?.power_state === "running";
   const validWorld = /^[a-zA-Z0-9_-]{1,64}$/.test(world);
@@ -87,18 +93,21 @@ function ChunkySetup({ id, server, usage }) {
       action === "start"
         ? `chunky start ${world} circle 0 0 ${radius}`
         : `chunky ${action} ${world}`;
+    if (operation.current?.command !== command || operation.current?.id !== id)
+      operation.current = { command, id, key: crypto.randomUUID() };
     setBusy(true);
     setError(null);
     setNotice("");
     try {
       await api(`/servers/${id}/commands`, {
         method: "POST",
-        key: crypto.randomUUID(),
+        key: operation.current.key,
         body: { command },
       });
       setNotice(
         "Request sent. Check the server console for Chunky’s response and progress; this does not confirm completion.",
       );
+      operation.current = null;
       setConfirmed(false);
     } catch (err) {
       setError(err);
@@ -167,6 +176,7 @@ function ChunkySetup({ id, server, usage }) {
           {notice}
         </p>
       )}
+      <ChunkyProgress id={id} world={world} running={running} allowed={allowed} />
       <div className="file-actions">
         <button
           className="button primary"

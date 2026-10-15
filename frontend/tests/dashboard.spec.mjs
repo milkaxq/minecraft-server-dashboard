@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { parseChunkyProgress } from "../lib/chunky-progress.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
 import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
 import { nextServerAction } from "../lib/next-action.js";
@@ -3542,6 +3543,14 @@ test("dashboard polling respects Retry-After after rate limiting", async ({ page
   expect(requests).toBe(1);
   await page.clock.fastForward(10000);
   expect(requests).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(1);
+  expect(requests).toBe(1);
   await page.clock.fastForward(50001);
   await expect.poll(() => requests).toBe(2);
 });
@@ -5142,4 +5151,235 @@ test("voice setup keyboard hint has visible contrasting text", async ({ page }) 
   }));
   expect(colors.foreground).toBe("rgb(23, 51, 34)");
   expect(colors.background).toBe("rgb(237, 244, 234)");
+});
+
+test("Chunky progress parser rejects chat, other plugins and invalid percentages", () => {
+  const message =
+    "[05:53:40 INFO]: [Chunky] Task running for world. Processed: 4282 chunks (26.55%), ETA: 0:09:06, Rate: 21.7 cps, Current: -49, -51";
+  expect(parseChunkyProgress(message)).toEqual({
+    world: "world",
+    chunks: 4282,
+    percent: 26.55,
+    eta: "0:09:06",
+    rate: 21.7,
+  });
+  expect(parseChunkyProgress(message.replace("26.55%", "101%"))).toBeNull();
+  expect(parseChunkyProgress(message.replace("[Chunky]", "<player> [Chunky]"))).toBeNull();
+  expect(parseChunkyProgress(message.replace("[Chunky]", "[OtherPlugin]"))).toBeNull();
+  expect(parseChunkyProgress("Task finished! ")).toBeNull();
+  expect(parseChunkyProgress(null)).toBeNull();
+});
+
+test("installed addon search filters locally and clears without changing files", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({
+      json: [
+        { name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true },
+        { name: "voicechat-bukkit-2.6.jar", size: 1234, is_file: true },
+      ],
+    }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByLabel("Find an installed plugin").fill("CHUNKY");
+  await expect(page.locator(".plugin-list").first().locator(":scope > li")).toHaveCount(1);
+  await expect(page.locator(".plugin-list").first()).toContainText("Chunky-Bukkit");
+  await page.getByLabel("Find an installed plugin").fill("missing");
+  await expect(page.getByText("No installed plugins match", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Clear search", exact: true }).click();
+  await expect(page.locator(".plugin-list").first().locator(":scope > li")).toHaveCount(2);
+});
+
+test("Chunky progress is opt-in, world-specific and honest after stream disconnection", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { initiallyRunning: true });
+  let stream;
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) => {
+    stream = ws;
+    ws.send(JSON.stringify({ event: "connected" }));
+    ws.send(
+      JSON.stringify({
+        event: "console output",
+        args: [
+          "[05:53:40 INFO]: [Chunky] Task running for world. Processed: 4282 chunks (26.55%), ETA: 0:09:06, Rate: 21.7 cps, Current: -49, -51",
+        ],
+      }),
+    );
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await login(page);
+  await page.clock.install();
+  await page.goto(`/servers/${serverID}/plugins`);
+  await expect(page.getByText("Setup & help", { exact: true })).toBeVisible();
+  expect(calls.filter((c) => c.path.endsWith("/console-ticket"))).toHaveLength(0);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await expect(page.getByText("Last reported: 26.55%")).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", "26.55");
+  expect(calls.filter((c) => c.path.endsWith("/commands"))).toHaveLength(0);
+  await page.clock.fastForward(35000);
+  await expect(page.getByText("This report may be out of date.", { exact: false })).toBeVisible();
+  stream.close();
+  await expect(
+    page.getByText("Updates disconnected. Task status cannot be confirmed."),
+  ).toBeVisible();
+  await expect(page.getByText("This report may be out of date.", { exact: false })).toBeVisible();
+  await page.getByLabel("World name", { exact: true }).fill("another_world");
+  await expect(page.getByRole("progressbar")).toHaveCount(0);
+});
+
+test("retrying a failed Chunky request reuses its idempotency key", async ({ page }) => {
+  await mockAPI(page, { initiallyRunning: true });
+  const keys = [];
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/commands`, (route) => {
+    keys.push(route.request().headers()["idempotency-key"]);
+    return keys.length === 1
+      ? route.fulfill({ status: 503, json: { error: "Temporary connection failure" } })
+      : route.fulfill({ status: 204 });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByLabel("I’m ready to generate").check();
+  const start = page.getByRole("button", { name: "Prepare terrain", exact: true });
+  await start.click();
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page.getByRole("status").filter({ hasText: "Request sent" })).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+});
+
+test("unsaved voice edits warn on refresh and can be discarded without writing", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  const distance = page.getByLabel("Voice distance", { exact: true });
+  await expect(distance).toHaveValue("72");
+  await distance.fill("90");
+  await expect(
+    page.getByRole("status").filter({ hasText: "unsaved voice settings" }),
+  ).toBeVisible();
+  const prevented = () =>
+    page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  expect(await prevented()).toBe(true);
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(distance).toHaveValue("72");
+  expect(await prevented()).toBe(false);
+  expect(
+    calls.filter(
+      (call) => call.method === "PUT" && call.path.endsWith("/addons/simple-voice-chat"),
+    ),
+  ).toHaveLength(0);
+});
+
+test("voice settings retain edits and reuse the operation key after a failed save", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const saves = [];
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/addons/simple-voice-chat`,
+    async (route) => {
+      if (route.request().method() !== "PUT") return route.fallback();
+      saves.push({
+        key: route.request().headers()["idempotency-key"],
+        body: route.request().postDataJSON(),
+      });
+      return route.fulfill({ status: 503, json: { error: "Temporary connection failure" } });
+    },
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  const distance = page.getByLabel("Voice distance", { exact: true });
+  await distance.fill("90");
+  const save = page.getByRole("button", { name: "Save settings", exact: true });
+  await save.click();
+  await expect(save).toBeEnabled();
+  await expect(distance).toHaveValue("90");
+  await save.click();
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saves[0]).toEqual(saves[1]);
+  await expect(save).toBeEnabled();
+  await distance.fill("100");
+  await save.click();
+  await expect.poll(() => saves.length).toBe(3);
+  expect(saves[2].key).not.toBe(saves[1].key);
+  expect(saves[2].body.max_voice_distance).toBe(100);
+});
+
+test("dashboard pauses background polling and refreshes once on return", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.clock.install();
+  let requests = 0;
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/addons/simple-voice-chat/network`,
+    (route) => {
+      requests++;
+      return route.fulfill({
+        json: { status: "READY", hostname: "play.example.com", port: 24454 },
+      });
+    },
+  );
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await expect.poll(() => requests).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(20000);
+  expect(requests).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(1);
+  await expect.poll(() => requests).toBe(2);
+});
+
+test("dashboard polling waits while offline and resumes on reconnect", async ({
+  page,
+  context,
+}) => {
+  await mockAPI(page);
+  await login(page);
+  await page.clock.install();
+  let requests = 0;
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/addons/simple-voice-chat/network`,
+    (route) => {
+      requests++;
+      return route.fulfill({
+        json: { status: "READY", hostname: "play.example.com", port: 24454 },
+      });
+    },
+  );
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await expect.poll(() => requests).toBe(1);
+  await context.setOffline(true);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
+  await page.clock.fastForward(20000);
+  expect(requests).toBe(1);
+  await context.setOffline(false);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true);
+  await page.clock.fastForward(1);
+  await expect.poll(() => requests).toBe(2);
 });
