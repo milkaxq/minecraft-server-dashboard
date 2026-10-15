@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { useUnsavedChanges } from "./use-unsaved-changes";
+import { UnsavedChangesGuard } from "./unsaved-changes";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Select } from "./select";
@@ -34,7 +34,6 @@ export function AddonSettings({ id }) {
     !!draft &&
     !!config?.values &&
     Object.keys(draft.values).some((key) => draft.values[key] !== config.values[key]);
-  useUnsavedChanges(unsaved);
   function edit(key, value) {
     setDraft({ revision: draft?.revision || config.revision, values: { ...values, [key]: value } });
     setNotice("");
@@ -86,6 +85,7 @@ export function AddonSettings({ id }) {
   }
   return (
     <Shell>
+      <UnsavedChangesGuard dirty={unsaved} />
       <Link
         href={`/servers/${id}/${["PAPER", "SPIGOT", "PURPUR"].includes(server.data?.server_type) ? "plugins" : "mods"}`}
         className="back-link"

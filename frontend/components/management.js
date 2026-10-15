@@ -1,5 +1,5 @@
 "use client";
-import { useUnsavedChanges } from "./use-unsaved-changes";
+import { UnsavedChangesGuard } from "./unsaved-changes";
 import { AddonHelp } from "./addon-help";
 import { ChangeSafety } from "./change-safety";
 import { PluginCheck } from "./plugin-check";
@@ -315,28 +315,55 @@ function Files({ id, offline }) {
   const resource = useResource(`/servers/${id}/files?path=${query(dir)}`);
   const action = useAction(resource.refresh);
   const [editor, setEditor] = useState(null);
+  const [pendingEditorAction, setPendingEditorAction] = useState(null);
+  const changeAttempt = useRef(null);
+  const editorDirty = !!editor && editor.content !== editor.originalContent;
   const [create, setCreate] = useState(null);
   const [name, setName] = useState("");
   const [target, setTarget] = useState(null);
   const uploader = useRef(null);
-  async function edit(entry) {
+  async function executeEditorAction(next) {
+    if (action.busy) return;
+    if (next.kind === "close") {
+      setEditor(null);
+      return;
+    }
+    if (next.kind === "folder") {
+      setDir(next.path);
+      setEditor(null);
+      return;
+    }
     await action.run(
-      async () =>
-        setEditor(await api(`/servers/${id}/files/text?path=${query(filePath(dir, entry.name))}`)),
-      "",
+      async () => {
+        const file = await api(`/servers/${id}/files/text?path=${query(next.path)}`);
+        setEditor({ ...file, originalContent: file.content });
+      },
+      next.kind === "reload" ? "File reloaded." : "",
     );
   }
+  function requestEditorAction(next) {
+    if (action.busy) return;
+    if (editorDirty) setPendingEditorAction(next);
+    else executeEditorAction(next);
+  }
+  function edit(entry) {
+    requestEditorAction({ kind: "open", path: filePath(dir, entry.name) });
+  }
   async function change(input, message) {
+    const fingerprint = JSON.stringify([id, input]);
+    if (changeAttempt.current?.fingerprint !== fingerprint)
+      changeAttempt.current = { fingerprint, key: crypto.randomUUID() };
     const ok = await action.run(
       () =>
         api(`/servers/${id}/files`, {
           method: "POST",
-          key: crypto.randomUUID(),
+          key: changeAttempt.current.key,
           body: input,
         }),
       message,
     );
     if (ok) {
+      changeAttempt.current = null;
       setTarget(null);
       setCreate(null);
     }
@@ -357,6 +384,7 @@ function Files({ id, offline }) {
   }
   return (
     <>
+      <UnsavedChangesGuard dirty={editorDirty} />
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
       <section className="panel management-panel">
@@ -406,11 +434,13 @@ function Files({ id, offline }) {
         </div>
         <div className="file-path">
           <button
-            disabled={dir === "/"}
-            onClick={() => {
-              setDir(dir.slice(0, dir.lastIndexOf("/")) || "/");
-              setEditor(null);
-            }}
+            disabled={dir === "/" || action.busy}
+            onClick={() =>
+              requestEditorAction({
+                kind: "folder",
+                path: dir.slice(0, dir.lastIndexOf("/")) || "/",
+              })
+            }
           >
             ↑ Parent
           </button>
@@ -445,7 +475,10 @@ function Files({ id, offline }) {
                         onClick={() =>
                           entry.is_file
                             ? edit(entry)
-                            : (setDir(filePath(dir, entry.name)), setEditor(null))
+                            : requestEditorAction({
+                                kind: "folder",
+                                path: filePath(dir, entry.name),
+                              })
                         }
                       >
                         <Icon name={entry.is_file ? "server" : "world"} size={16} />
@@ -506,12 +539,26 @@ function Files({ id, offline }) {
               <h2>Edit file</h2>
               <span>{editor.path}</span>
             </div>
-            <button className="button secondary" onClick={() => setEditor(null)}>
+            <button
+              className="button secondary"
+              disabled={action.busy}
+              onClick={() => requestEditorAction({ kind: "close" })}
+            >
               Close editor
             </button>
           </div>
+          <p className="field-help" role="status">
+            {editorDirty ? "Unsaved edits — save before leaving." : "No unsaved edits."}
+          </p>
+          {!offline && (
+            <p className="notice">
+              Stop your server before saving. You can prepare your edits now.
+            </p>
+          )}
           <textarea
             aria-label="File content"
+            readOnly={action.busy}
+            aria-busy={action.busy}
             className="file-editor"
             value={editor.content}
             onChange={(e) => setEditor({ ...editor, content: e.target.value })}
@@ -521,19 +568,13 @@ function Files({ id, offline }) {
             <button
               className="button secondary"
               disabled={action.busy}
-              onClick={() =>
-                action.run(
-                  async () =>
-                    setEditor(await api(`/servers/${id}/files/text?path=${query(editor.path)}`)),
-                  "File reloaded.",
-                )
-              }
+              onClick={() => requestEditorAction({ kind: "reload", path: editor.path })}
             >
               Reload file
             </button>
             <button
               className="button primary"
-              disabled={!offline || action.busy}
+              disabled={!offline || action.busy || !editorDirty}
               onClick={async () => {
                 if (
                   await change(
@@ -549,10 +590,28 @@ function Files({ id, offline }) {
                   setEditor(null);
               }}
             >
-              Save file
+              {action.busy ? "Saving…" : "Save file"}
             </button>
           </div>
         </section>
+      )}
+      {pendingEditorAction && (
+        <Confirm
+          title="Discard unsaved file edits?"
+          label="Discard and continue"
+          busy={action.busy}
+          onCancel={() => setPendingEditorAction(null)}
+          onConfirm={async () => {
+            const next = pendingEditorAction;
+            setPendingEditorAction(null);
+            await executeEditorAction(next);
+          }}
+        >
+          <p>
+            Your edits to {editor?.path} have not been saved. Cancel to keep editing, or discard
+            them to continue.
+          </p>
+        </Confirm>
       )}
       {create && (
         <Confirm
@@ -617,6 +676,7 @@ function Settings({ id, offline }) {
   const resource = useResource(`/servers/${id}/settings`);
   const [draft, setDraft] = useState(null);
   const action = useAction(resource.refresh);
+  const saveAttempt = useRef(null);
   const form = draft?.source === resource.data ? draft.values : resource.data;
   const set = (key, value) =>
     setDraft({ source: resource.data, values: { ...form, [key]: value } });
@@ -636,7 +696,6 @@ function Settings({ id, offline }) {
     form && resource.data
       ? Object.keys(labels).filter((key) => form[key] !== resource.data[key])
       : [];
-  useUnsavedChanges(changes.length > 0);
   const display = (value) => (typeof value === "boolean" ? (value ? "On" : "Off") : String(value));
   const presets = [
     {
@@ -658,18 +717,27 @@ function Settings({ id, offline }) {
   async function save(e) {
     e.preventDefault();
     if (!offline || action.busy || resource.error || !changes.length) return;
-    await action.run(
-      () =>
-        api(`/servers/${id}/settings`, {
-          method: "PUT",
-          body: form,
-          key: crypto.randomUUID(),
-        }),
-      "Settings saved. Start your server to apply them.",
-    );
+    const fingerprint = JSON.stringify([id, form]);
+    if (saveAttempt.current?.fingerprint !== fingerprint)
+      saveAttempt.current = { fingerprint, key: crypto.randomUUID() };
+    if (
+      await action.run(
+        () =>
+          api(`/servers/${id}/settings`, {
+            method: "PUT",
+            body: form,
+            key: saveAttempt.current.key,
+          }),
+        "Settings saved. Start your server to apply them.",
+      )
+    ) {
+      saveAttempt.current = null;
+      setDraft(null);
+    }
   }
   return (
     <>
+      <UnsavedChangesGuard dirty={changes.length > 0} />
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
       <section className="panel management-panel">
@@ -691,166 +759,168 @@ function Settings({ id, offline }) {
         ) : (
           form && (
             <form onSubmit={save} className="settings-form">
-              <div className="gameplay-presets">
-                <h3>How do you want to play?</h3>
-                <p className="field-help">
-                  Choose a starting point, then adjust anything below. Joining rules and player
-                  limits stay as you set them.
-                </p>
-                <div className="gameplay-preset-grid">
-                  {presets.map((preset) => (
-                    <button
-                      key={preset.name}
-                      type="button"
-                      className="button secondary gameplay-preset"
-                      disabled={action.busy}
-                      onClick={() =>
-                        setDraft({ source: resource.data, values: { ...form, ...preset.values } })
-                      }
+              <fieldset disabled={action.busy} className="settings-fields">
+                <div className="gameplay-presets">
+                  <h3>How do you want to play?</h3>
+                  <p className="field-help">
+                    Choose a starting point, then adjust anything below. Joining rules and player
+                    limits stay as you set them.
+                  </p>
+                  <div className="gameplay-preset-grid">
+                    {presets.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        className="button secondary gameplay-preset"
+                        disabled={action.busy}
+                        onClick={() =>
+                          setDraft({ source: resource.data, values: { ...form, ...preset.values } })
+                        }
+                      >
+                        <strong>{preset.name}</strong>
+                        <span>{preset.help}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="field">
+                  Server message (MOTD)
+                  <input
+                    value={form.motd}
+                    maxLength={256}
+                    onChange={(e) => set("motd", e.target.value)}
+                  />
+                  <small>This message appears in the Minecraft multiplayer list.</small>
+                </label>
+                <div className="field-row">
+                  <label className="field">
+                    Difficulty
+                    <Select
+                      aria-label="Difficulty"
+                      value={form.difficulty}
+                      onChange={(e) => set("difficulty", e.target.value)}
                     >
-                      <strong>{preset.name}</strong>
-                      <span>{preset.help}</span>
-                    </button>
+                      {["peaceful", "easy", "normal", "hard"].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <label className="field">
+                    Game mode
+                    <Select
+                      aria-label="Game mode"
+                      value={form.gamemode}
+                      onChange={(e) => set("gamemode", e.target.value)}
+                    >
+                      {["survival", "creative", "adventure", "spectator"].map((v) => (
+                        <option key={v} value={v}>
+                          {v}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                </div>
+                <div className="field-row">
+                  {[
+                    ["max_players", "Maximum players", 1, 1000],
+                    ["view_distance", "View distance (chunks)", 2, 32],
+                    ["spawn_protection", "Spawn protection (blocks)", 0, 1000],
+                  ].map(([key, label, min, max]) => (
+                    <label key={key} className="field">
+                      {label}
+                      <input
+                        type="number"
+                        min={min}
+                        max={max}
+                        required
+                        value={form[key]}
+                        onChange={(e) => set(key, Number(e.target.value))}
+                      />
+                    </label>
                   ))}
                 </div>
-              </div>
-              <label className="field">
-                Server message (MOTD)
-                <input
-                  value={form.motd}
-                  maxLength={256}
-                  onChange={(e) => set("motd", e.target.value)}
-                />
-                <small>This message appears in the Minecraft multiplayer list.</small>
-              </label>
-              <div className="field-row">
-                <label className="field">
-                  Difficulty
-                  <Select
-                    aria-label="Difficulty"
-                    value={form.difficulty}
-                    onChange={(e) => set("difficulty", e.target.value)}
-                  >
-                    {["peaceful", "easy", "normal", "hard"].map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <label className="field">
-                  Game mode
-                  <Select
-                    aria-label="Game mode"
-                    value={form.gamemode}
-                    onChange={(e) => set("gamemode", e.target.value)}
-                  >
-                    {["survival", "creative", "adventure", "spectator"].map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </div>
-              <div className="field-row">
-                {[
-                  ["max_players", "Maximum players", 1, 1000],
-                  ["view_distance", "View distance (chunks)", 2, 32],
-                  ["spawn_protection", "Spawn protection (blocks)", 0, 1000],
-                ].map(([key, label, min, max]) => (
-                  <label key={key} className="field">
-                    {label}
-                    <input
-                      type="number"
-                      min={min}
-                      max={max}
-                      required
-                      value={form[key]}
-                      onChange={(e) => set(key, Number(e.target.value))}
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="settings-toggles">
-                {[
-                  ["hardcore", "Hardcore", "Players cannot respawn after dying."],
-                  ["pvp", "Player vs. player", "Allow players to damage each other."],
-                  ["whitelist", "Whitelist", "Only players on your whitelist may join."],
-                  [
-                    "online_mode",
-                    "Verify Minecraft accounts",
-                    "Require a Microsoft account that owns Java Edition. No server password is needed unless a login plugin is installed.",
-                  ],
-                ].map(([key, label, help]) => (
-                  <label key={key} className="setting-toggle">
-                    <span>
-                      <strong>{label}</strong>
-                      <small>{help}</small>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={form[key]}
-                      onChange={(e) => set(key, e.target.checked)}
-                    />
-                  </label>
-                ))}
-              </div>
-              {!form.online_mode && (
-                <p className="notice">
-                  Account verification is off. Players may join using another player&apos;s name.
-                  Keep it enabled unless you have configured an authentication plugin such as AuthMe
-                  or a trusted proxy with its own authentication.
-                </p>
-              )}
-              <p className="field-help">
-                Your hosting resources stay allocated by your plan. More players or a larger view
-                distance can use more memory and CPU.
-              </p>
-              <section
-                className="settings-review"
-                aria-label="Review settings changes"
-                aria-live="polite"
-              >
-                <h3>
-                  {changes.length
-                    ? `Review ${changes.length} change${changes.length === 1 ? "" : "s"}`
-                    : "No unsaved changes"}
-                </h3>
-                {changes.length > 0 && (
-                  <>
-                    <ul>
-                      {changes.map((key) => (
-                        <li key={key}>
-                          <strong>{labels[key]}:</strong> {display(resource.data[key])} →{" "}
-                          {display(form[key])}
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      type="button"
-                      className="button secondary"
-                      disabled={action.busy}
-                      onClick={() => setDraft(null)}
-                    >
-                      Discard changes
-                    </button>
-                  </>
+                <div className="settings-toggles">
+                  {[
+                    ["hardcore", "Hardcore", "Players cannot respawn after dying."],
+                    ["pvp", "Player vs. player", "Allow players to damage each other."],
+                    ["whitelist", "Whitelist", "Only players on your whitelist may join."],
+                    [
+                      "online_mode",
+                      "Verify Minecraft accounts",
+                      "Require a Microsoft account that owns Java Edition. No server password is needed unless a login plugin is installed.",
+                    ],
+                  ].map(([key, label, help]) => (
+                    <label key={key} className="setting-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{help}</small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={form[key]}
+                        onChange={(e) => set(key, e.target.checked)}
+                      />
+                    </label>
+                  ))}
+                </div>
+                {!form.online_mode && (
+                  <p className="notice">
+                    Account verification is off. Players may join using another player&apos;s name.
+                    Keep it enabled unless you have configured an authentication plugin such as
+                    AuthMe or a trusted proxy with its own authentication.
+                  </p>
                 )}
                 <p className="field-help">
-                  {offline
-                    ? "Save these changes, then start your server to apply them."
-                    : "Stop your server before saving. Your edits are kept on this page."}{" "}
-                  Game mode sets the default for new players; existing players may keep their
-                  current mode.
+                  Your hosting resources stay allocated by your plan. More players or a larger view
+                  distance can use more memory and CPU.
                 </p>
-              </section>
-              <button
-                className="button primary"
-                disabled={!offline || action.busy || !!resource.error || !changes.length}
-              >
-                {action.busy ? "Saving…" : "Save settings"}
-              </button>
+                <section
+                  className="settings-review"
+                  aria-label="Review settings changes"
+                  aria-live="polite"
+                >
+                  <h3>
+                    {changes.length
+                      ? `Review ${changes.length} change${changes.length === 1 ? "" : "s"}`
+                      : "No unsaved changes"}
+                  </h3>
+                  {changes.length > 0 && (
+                    <>
+                      <ul>
+                        {changes.map((key) => (
+                          <li key={key}>
+                            <strong>{labels[key]}:</strong> {display(resource.data[key])} →{" "}
+                            {display(form[key])}
+                          </li>
+                        ))}
+                      </ul>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        disabled={action.busy}
+                        onClick={() => setDraft(null)}
+                      >
+                        Discard changes
+                      </button>
+                    </>
+                  )}
+                  <p className="field-help">
+                    {offline
+                      ? "Save these changes, then start your server to apply them."
+                      : "Stop your server before saving. Your edits are kept on this page."}{" "}
+                    Game mode sets the default for new players; existing players may keep their
+                    current mode.
+                  </p>
+                </section>
+                <button
+                  className="button primary"
+                  disabled={!offline || action.busy || !!resource.error || !changes.length}
+                >
+                  {action.busy ? "Saving…" : "Save settings"}
+                </button>
+              </fieldset>
             </form>
           )
         )}

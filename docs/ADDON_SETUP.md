@@ -21,7 +21,7 @@ Installed addon search filters the already-loaded file list locally and does not
 
 Chunky command retries and Voice Chat save retries retain the same operation key while the exact request remains unchanged. A successful response clears the key; changed input creates a new operation. These keys are held only in the mounted form, not across page reloads.
 
-Voice Chat and Minecraft settings warn on browser refresh/tab close/full navigation when there are unsaved changes. This browser guard does not intercept Next.js client-side links. Voice Chat also displays an unsaved indicator and an explicit discard action.
+Voice Chat and Minecraft settings warn on browser refresh/tab close/full navigation when there are unsaved changes. Ordinary same-tab dashboard links also ask whether to stay or leave without saving. Hash-only links, downloads and new-tab links are left alone. Programmatic redirects, sign-out actions and browser back/forward navigation are not intercepted by the link guard. Voice Chat also displays an unsaved indicator and an explicit discard action.
 
 Recurring authenticated dashboard reads pause while the tab is hidden or the browser reports offline. Returning to a visible, connected tab triggers a refresh, while preserving any outstanding HTTP 429 Retry-After delay. In-flight requests are not duplicated. One-time resource reads keep their existing behavior.
 

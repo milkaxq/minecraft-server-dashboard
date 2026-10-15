@@ -5552,3 +5552,185 @@ test("failed world lookup retries as a read without sending Chunky commands", as
   expect(reads).toBe(2);
   expect(calls.filter((call) => call.path.endsWith("/commands"))).toHaveLength(0);
 });
+
+test("dirty file editor confirms closing and keeps edits when cancelled", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  const content = page.getByRole("textbox", { name: "File content" });
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeDisabled();
+  await content.fill("motd=Keep my work");
+  const prevented = () =>
+    page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+  expect(await prevented()).toBe(true);
+  await page.getByRole("button", { name: "Close editor", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved file edits?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(content).toHaveValue("motd=Keep my work");
+  await page.getByRole("button", { name: "Close editor", exact: true }).click();
+  await dialog.getByRole("button", { name: "Discard and continue", exact: true }).click();
+  await expect(content).toHaveCount(0);
+  expect(await prevented()).toBe(false);
+});
+
+test("dirty file editor guards reload and folder navigation", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  const content = page.getByRole("textbox", { name: "File content" });
+  await content.fill("motd=Keep my work");
+  const reads = () => calls.filter((call) => call.path.endsWith("/files/text")).length;
+  expect(reads()).toBe(1);
+  await page.getByRole("button", { name: "Reload file", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved file edits?" });
+  await expect(dialog).toBeVisible();
+  expect(reads()).toBe(1);
+  await dialog.getByRole("button", { name: "Discard and continue", exact: true }).click();
+  await expect(content).toHaveValue("motd=Welcome friends\n");
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeDisabled();
+  await content.fill("motd=Another change");
+  await page.getByRole("button", { name: "world", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".file-path code")).toHaveText("/");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(content).toHaveValue("motd=Another change");
+  await page.getByRole("button", { name: "world", exact: true }).click();
+  await dialog.getByRole("button", { name: "Discard and continue", exact: true }).click();
+  await expect(page.locator(".file-path code")).toHaveText("/world");
+  await expect(content).toHaveCount(0);
+});
+
+test("file save retry retains content and key and locks edits during the request", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const saves = [];
+  let release;
+  await page.route(`http://localhost:8080/servers/${serverID}/files`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    saves.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (saves.length === 1)
+      return route.fulfill({ status: 503, json: { error: "Save temporarily unavailable" } });
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ json: { status: "saved", restart_required: true } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  const content = page.getByRole("textbox", { name: "File content" });
+  await content.fill("motd=Keep my work");
+  await page.getByRole("button", { name: "Save file", exact: true }).click();
+  await expect(page.getByText("Save temporarily unavailable", { exact: true })).toBeVisible();
+  await expect(content).toHaveValue("motd=Keep my work");
+  await page.getByRole("button", { name: "Save file", exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await expect(content).toHaveAttribute("readonly", "");
+  await expect(page.getByRole("button", { name: "Close editor", exact: true })).toBeDisabled();
+  expect(saves[0]).toEqual(saves[1]);
+  release();
+  await expect(content).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("File saved");
+});
+
+test("Minecraft settings retry preserves edits and disables the form while saving", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const saves = [];
+  let release;
+  await page.route(`http://localhost:8080/servers/${serverID}/settings`, async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    saves.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ status: 503, json: { error: "Settings temporarily unavailable" } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/settings`);
+  const motd = page.getByRole("textbox", { name: "Server message (MOTD)" });
+  await motd.fill("Our next adventure");
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await expect(motd).toBeDisabled();
+  release();
+  await expect(motd).toBeEnabled();
+  await expect(motd).toHaveValue("Our next adventure");
+  release = null;
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saves[0]).toEqual(saves[1]);
+  await expect.poll(() => !!release).toBe(true);
+  release();
+  await expect(motd).toBeEnabled();
+});
+
+test("dashboard links offer a themed choice before leaving unsaved file edits", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  const content = page.getByRole("textbox", { name: "File content" });
+  await content.fill("motd=Keep my work");
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Leave without saving?" });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/servers/${serverID}/files$`));
+  await dialog.getByRole("button", { name: "Stay and keep editing", exact: true }).click();
+  await expect(content).toHaveValue("motd=Keep my work");
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  await dialog.getByRole("button", { name: "Leave without saving", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
+
+test("unsaved settings link guard supports Escape and leaves new-tab documentation alone", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  await page.getByLabel("Voice distance", { exact: true }).fill("90");
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Leave without saving?" });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByLabel("Voice distance", { exact: true })).toHaveValue("90");
+  await page.evaluate(() => {
+    const anchor = document.createElement("a");
+    anchor.href = "https://example.com/docs";
+    anchor.target = "_blank";
+    anchor.download = "guide";
+    // Prevent actual downloads while still exercising the page's click listener.
+    anchor.addEventListener("click", (event) => event.preventDefault());
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  });
+  await expect(dialog).toHaveCount(0);
+  expect(
+    calls.filter(
+      (call) => call.method === "PUT" && call.path.endsWith("/addons/simple-voice-chat"),
+    ),
+  ).toHaveLength(0);
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+});
