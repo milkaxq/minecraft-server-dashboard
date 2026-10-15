@@ -1,4 +1,5 @@
 "use client";
+import { visibleFiles, folderBreadcrumbs } from "../lib/file-browser";
 import { UnsavedChangesGuard } from "./unsaved-changes";
 import { installedAddonInfo, hasGuidedSetup, filterInstalledAddons } from "../lib/installed-addons";
 import { AddonHelp } from "./addon-help";
@@ -313,8 +314,11 @@ async function download(api, path, name) {
 function Files({ id, offline }) {
   const { api } = useAuth();
   const [dir, setDir] = useState("/");
+  const [search, setSearch] = useState("");
+  const [order, setOrder] = useState("name");
   const resource = useResource(`/servers/${id}/files?path=${query(dir)}`);
   const action = useAction(resource.refresh);
+  const entries = visibleFiles(resource.data || [], search, order);
   const [editor, setEditor] = useState(null);
   const [pendingEditorAction, setPendingEditorAction] = useState(null);
   const changeAttempt = useRef(null);
@@ -330,6 +334,7 @@ function Files({ id, offline }) {
       return;
     }
     if (next.kind === "folder") {
+      setSearch("");
       setDir(next.path);
       setEditor(null);
       return;
@@ -433,6 +438,28 @@ function Files({ id, offline }) {
             />
           </div>
         </div>
+        <nav className="file-breadcrumbs" aria-label="Folder location">
+          {folderBreadcrumbs(dir).map((part, index) => (
+            <span key={part.path}>
+              {index > 0 && (
+                <span aria-hidden="true" className="breadcrumb-divider">
+                  /
+                </span>
+              )}
+              {part.path === dir ? (
+                <span aria-current="page">{part.name}</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={action.busy}
+                  onClick={() => requestEditorAction({ kind: "folder", path: part.path })}
+                >
+                  {part.name}
+                </button>
+              )}
+            </span>
+          ))}
+        </nav>
         <div className="file-path">
           <button
             disabled={dir === "/" || action.busy}
@@ -452,10 +479,47 @@ function Files({ id, offline }) {
           Text editor: up to 1 MB. Upload: up to 64 MB. Existing files are never overwritten by
           uploads.
         </p>
+        <div className="file-browser-tools">
+          <label>
+            Find in this folder
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search filenames…"
+            />
+          </label>
+          <label>
+            Sort files
+            <Select
+              aria-label="Sort files"
+              value={order}
+              onChange={(event) => setOrder(event.target.value)}
+            >
+              <option value="name">Name A–Z</option>
+              <option value="name-desc">Name Z–A</option>
+              <option value="size">Largest files first</option>
+            </Select>
+          </label>
+        </div>
+        <p className="field-help" aria-live="polite">
+          {resource.data
+            ? `Showing ${entries.length} of ${resource.data.length} items in this folder. Folders stay above files.`
+            : "Search checks this folder only."}
+        </p>
         {resource.loading ? (
           <Loading />
+        ) : resource.error && !resource.data ? (
+          <p className="notice">Couldn’t load this folder. Use Refresh to try again.</p>
         ) : !resource.data?.length ? (
           <p className="management-empty">This folder is empty.</p>
+        ) : !entries.length ? (
+          <p className="management-empty" role="status">
+            No filenames match “{search}” in this folder.{" "}
+            <button className="button secondary" onClick={() => setSearch("")}>
+              Clear file search
+            </button>
+          </p>
         ) : (
           <div className="table-scroll">
             <Table className="management-table">
@@ -467,7 +531,7 @@ function Files({ id, offline }) {
                 </tr>
               </thead>
               <tbody>
-                {resource.data.map((entry) => (
+                {entries.map((entry) => (
                   <tr key={entry.name}>
                     <td>
                       <button

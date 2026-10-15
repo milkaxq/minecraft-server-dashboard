@@ -5969,3 +5969,57 @@ input {
 .installed-addon-filters .button {
   min-height: 44px;
 }
+
+.file-browser-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.5fr);
+  gap: 16px;
+  margin-block: 20px 12px;
+}
+.file-browser-tools label {
+  display: grid;
+  gap: 8px;
+}
+.file-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-block: 16px;
+  overflow-wrap: anywhere;
+}
+.file-breadcrumbs > span {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+.file-breadcrumbs button {
+  background: transparent;
+  border: 0;
+  color: #c4e8b4;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.file-breadcrumbs button:hover:not(:disabled) {
+  background: #294336;
+}
+.file-breadcrumbs button:focus-visible {
+  outline: 2px solid #b0ed77;
+  outline-offset: 2px;
+}
+.file-breadcrumbs [aria-current="page"] {
+  color: #e0eee8;
+  font-weight: 700;
+}
+.breadcrumb-divider {
+  color: #9aada4;
+}
+@media (max-width: 640px) {
+  .file-browser-tools {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

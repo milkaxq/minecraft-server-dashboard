@@ -19,3 +19,11 @@ Minecraft settings use the same operation key when retrying identical input. The
 All three editing flows warn on full navigation, refresh or tab close using the browser's own warning. Ordinary same-tab HTTP(S) links use a themed confirmation dialog with a safe default of staying. Native dialog Escape keeps edits. New-tab links, downloads and same-page hash links do not discard the page and are not intercepted.
 
 This is not an autosave or a universal router blocker: browser back/forward actions, sign-out and other programmatic redirects are not intercepted by the link dialog. Save or copy important edits before those actions. No server file is changed by either confirmation dialog alone.
+
+## Browsing files
+
+The file browser searches names in the current folder only, without recursively listing subfolders or sending a new request for each search change. Sorting supports natural name order (including numbered filenames), reverse name order and largest files first, while keeping folders above files. Filtering/sorting does not mutate the loaded file list or server files.
+
+Breadcrumbs return directly to any ancestor through the same unsaved-editor confirmation as folder navigation. Cancelling keeps the current path and draft; confirmed folder changes clear the folder search. Failed listings show an unavailable state instead of claiming the folder is empty, and Refresh retries the read.
+
+Small file sizes display in bytes or KB instead of rounding to 0.0 MB. Memory and disk displays keep their existing MB/GB units for larger values; unavailable or invalid readings show an em dash.

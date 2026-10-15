@@ -5,6 +5,7 @@ import {
   hasGuidedSetup,
   filterInstalledAddons,
 } from "../lib/installed-addons.js";
+import { formatBytes } from "../lib/api.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
 import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
 import { nextServerAction } from "../lib/next-action.js";
@@ -5811,3 +5812,134 @@ for (const width of [390, 1366])
       fullPage: true,
     });
   });
+
+for (const width of [390, 1366])
+  test(`file search and sorting keep folders first without changing files at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    let reads = 0;
+    await page.route(`http://localhost:8080/servers/${serverID}/files?**`, (route) => {
+      reads++;
+      return route.fulfill({
+        json: [
+          { name: "server.properties", is_file: true, size: 100 },
+          { name: "world", is_file: false, size: 0 },
+          { name: "backup10.zip", is_file: true, size: 2000 },
+          { name: "backup2.zip", is_file: true, size: 500 },
+          { name: "config", is_file: false, size: 0 },
+        ],
+      });
+    });
+    await login(page);
+    await page.goto(`/servers/${serverID}/files`);
+    const names = page.locator(".management-table .file-name");
+    await expect(names).toHaveText([
+      "config",
+      "world",
+      "backup2.zip",
+      "backup10.zip",
+      "server.properties",
+    ]);
+    await selectValue(page, page.getByRole("combobox", { name: "Sort files" }), "size");
+    await expect(names).toHaveText([
+      "config",
+      "world",
+      "backup10.zip",
+      "backup2.zip",
+      "server.properties",
+    ]);
+    await page.getByLabel("Find in this folder").fill("BACKUP");
+    await expect(names).toHaveText(["backup10.zip", "backup2.zip"]);
+    await page.getByLabel("Find in this folder").fill("absent");
+    await expect(page.getByRole("button", { name: "Clear file search" })).toBeVisible();
+    await page.getByRole("button", { name: "Clear file search" }).click();
+    await expect(names).toHaveCount(5);
+    expect(reads).toBe(1);
+    expect(
+      calls.filter((call) => call.path.endsWith("/files") && call.method !== "GET"),
+    ).toHaveLength(0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`file-browser-${width}.png`),
+      fullPage: true,
+    });
+  });
+
+test("folder breadcrumbs return to ancestors only after reviewing unsaved edits", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/files?**`, (route) => {
+    const dir = new URL(route.request().url()).searchParams.get("path");
+    return route.fulfill({
+      json:
+        dir === "/"
+          ? [{ name: "config", is_file: false, size: 0 }]
+          : dir === "/config"
+            ? [{ name: "voicechat", is_file: false, size: 0 }]
+            : [{ name: "voicechat-server.properties", is_file: true, size: 24 }],
+    });
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/files/text?**`, (route) =>
+    route.fulfill({
+      json: {
+        path: "/config/voicechat/voicechat-server.properties",
+        content: "port=24454\\n",
+        revision: "b".repeat(64),
+      },
+    }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "config", exact: true }).click();
+  await page.getByRole("button", { name: "voicechat", exact: true }).click();
+  const trail = page.getByRole("navigation", { name: "Folder location" });
+  await expect(trail.locator('[aria-current="page"]')).toHaveText("voicechat");
+  await page.getByRole("button", { name: "voicechat-server.properties", exact: true }).click();
+  const text = page.getByRole("textbox", { name: "File content" });
+  await text.fill("port=24455");
+  await trail.getByRole("button", { name: "Server files", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard unsaved file edits?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator(".file-path code")).toHaveText("/config/voicechat");
+  await expect(text).toHaveValue("port=24455");
+  await trail.getByRole("button", { name: "Server files", exact: true }).click();
+  await dialog.getByRole("button", { name: "Discard and continue", exact: true }).click();
+  await expect(page.locator(".file-path code")).toHaveText("/");
+  await expect(text).toHaveCount(0);
+});
+
+test("failed file listing offers refresh without claiming an empty folder", async ({ page }) => {
+  await mockAPI(page);
+  let reads = 0;
+  await page.route(`http://localhost:8080/servers/${serverID}/files?**`, (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ status: 503, json: { error: "File listing unavailable" } })
+      : route.fulfill({ json: [] });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await expect(
+    page.getByText("Couldn’t load this folder. Use Refresh to try again."),
+  ).toBeVisible();
+  await expect(page.getByText("This folder is empty.", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("This folder is empty.", { exact: true })).toBeVisible();
+  expect(reads).toBe(2);
+});
+
+test("file sizes distinguish small files while preserving memory and disk units", () => {
+  expect(formatBytes(0)).toBe("0 B");
+  expect(formatBytes(100)).toBe("100 B");
+  expect(formatBytes(2048)).toBe("2.0 KB");
+  expect(formatBytes(1048576)).toBe("1.0 MB");
+  expect(formatBytes(1073741824)).toBe("1.0 GB");
+  for (const unknown of [null, undefined, NaN, Infinity, -1])
+    expect(formatBytes(unknown)).toBe("—");
+});

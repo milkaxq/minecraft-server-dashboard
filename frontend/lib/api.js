@@ -68,7 +68,9 @@ export function consoleURL(id) {
   return url.toString();
 }
 export function formatBytes(bytes, digits = 1) {
-  if (bytes == null) return "—";
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(digits)} KB`;
   return bytes >= 1073741824
     ? `${(bytes / 1073741824).toFixed(digits)} GB`
     : `${(bytes / 1048576).toFixed(digits)} MB`;
