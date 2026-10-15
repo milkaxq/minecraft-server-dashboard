@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Loading } from "./ui";
+import { Select } from "./select";
 
 const warnings = {
   insufficient_allowance:
@@ -43,7 +44,17 @@ export function BackupSchedule({ id, limit }) {
   const { api } = useAuth();
   const resource = useResource(`/servers/${id}/backup-schedule`, 15000);
   const [action, setAction] = useState({ busy: false, error: null, notice: "", conflict: false });
+  const inFlight = useRef(false);
   async function save(input) {
+    if (
+      inFlight.current ||
+      resource.loading ||
+      resource.error ||
+      !resource.data?.can_manage ||
+      action.conflict
+    )
+      return;
+    inFlight.current = true;
     setAction({ busy: true, error: null, notice: "", conflict: false });
     try {
       await api(`/servers/${id}/backup-schedule`, { method: "PUT", body: input });
@@ -51,6 +62,8 @@ export function BackupSchedule({ id, limit }) {
       resource.refresh();
     } catch (error) {
       setAction({ busy: false, error, notice: "", conflict: error.status === 409 });
+    } finally {
+      inFlight.current = false;
     }
   }
   const schedule = resource.data;
@@ -59,7 +72,6 @@ export function BackupSchedule({ id, limit }) {
       <div className="section-heading">
         <div>
           <h2 id="daily-backups-title">Daily backups</h2>
-          <span>Save a daily copy of your world, settings and server files.</span>
         </div>
         {schedule && <span className="schedule-state">{schedule.enabled ? "On" : "Off"}</span>}
       </div>
@@ -69,9 +81,10 @@ export function BackupSchedule({ id, limit }) {
           {action.notice}
         </p>
       )}
-      {action.conflict && (
+      {(action.conflict || resource.error) && (
         <button
           className="button secondary"
+          disabled={action.busy || resource.loading || resource.error?.status === 429}
           onClick={() => {
             setAction({ busy: false, error: null, notice: "", conflict: false });
             resource.refresh();
@@ -87,8 +100,7 @@ export function BackupSchedule({ id, limit }) {
           <>
             {!schedule.available && (
               <p className="notice">
-                Your host has not enabled daily backups yet. You can still turn an existing schedule
-                off.
+                Daily backups are unavailable. You can still turn an existing schedule off.
               </p>
             )}
             {schedule.warning && (
@@ -115,15 +127,15 @@ export function BackupSchedule({ id, limit }) {
                 schedule={schedule}
                 limit={limit}
                 busy={action.busy}
+                unavailable={!!resource.error || action.conflict}
                 save={save}
               />
             ) : (
               <p className="field-help">Only the server owner can change this schedule.</p>
             )}
             <p className="field-help">
-              Enabling daily backups allows older automatic copies to be rotated when space is
-              needed. Manual backups and the last successful automatic copy are preserved. Online
-              backups may not include consistent data from every plugin or external database.
+              Older daily copies rotate automatically. Manual backups and the last successful copy
+              stay safe. Stop Minecraft for the most consistent backup.
             </p>
             {!!schedule.runs.length && (
               <div className="schedule-runs">
@@ -145,7 +157,7 @@ export function BackupSchedule({ id, limit }) {
   );
 }
 
-function ScheduleEditor({ schedule, limit, busy, save }) {
+function ScheduleEditor({ schedule, limit, busy, unavailable, save }) {
   const [revision] = useState(schedule.revision);
   const [draft, setDraft] = useState(() => ({
     enabled: schedule.enabled,
@@ -155,8 +167,28 @@ function ScheduleEditor({ schedule, limit, busy, save }) {
         ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
         : schedule.timezone,
   }));
+  const [initial] = useState(draft);
+  const [timezones] = useState(() =>
+    [
+      ...new Set([
+        "UTC",
+        draft.timezone,
+        schedule.timezone,
+        ...(typeof Intl.supportedValuesOf === "function"
+          ? Intl.supportedValuesOf("timeZone")
+          : ["Europe/Berlin", "Europe/London", "America/New_York", "Asia/Ashgabat", "Asia/Tokyo"]),
+      ]),
+    ]
+      .filter(Boolean)
+      .sort(),
+  );
+  const changed =
+    draft.enabled !== initial.enabled ||
+    draft.time !== initial.time ||
+    draft.timezone !== initial.timezone;
   function submit(event) {
     event.preventDefault();
+    if (busy || unavailable || !changed) return;
     const [hour, minute] = draft.time.split(":").map(Number);
     save({
       enabled: draft.enabled,
@@ -193,24 +225,25 @@ function ScheduleEditor({ schedule, limit, busy, save }) {
         </label>
         <label className="field">
           Timezone
-          <input
-            type="text"
-            required
-            maxLength={100}
+          <Select
+            aria-label="Timezone"
             value={draft.timezone}
             disabled={busy}
             onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}
-            placeholder="Europe/Berlin"
-          />
+          >
+            {timezones.map((timezone) => (
+              <option key={timezone} value={timezone}>
+                {timezone.replaceAll("_", " ")}
+              </option>
+            ))}
+          </Select>
         </label>
       </div>
-      <p className="field-help">
-        Use a timezone such as Europe/Berlin or Asia/Ashgabat. The backup follows its local time,
-        including daylight saving changes.
-      </p>
       <button
         className="button primary"
-        disabled={busy || (draft.enabled && (!schedule.available || limit < 2))}
+        disabled={
+          busy || unavailable || !changed || (draft.enabled && (!schedule.available || limit < 2))
+        }
       >
         {busy ? "Saving…" : "Save schedule"}
       </button>

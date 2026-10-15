@@ -2311,7 +2311,7 @@ test("daily backups enable and disable with time timezone and revision", async (
   await expect(card.getByRole("checkbox", { name: "Enable daily backups" })).not.toBeChecked();
   await card.getByRole("checkbox", { name: "Enable daily backups" }).check();
   await card.getByLabel("Backup time").fill("04:15");
-  await card.getByLabel("Timezone").fill("Asia/Ashgabat");
+  await selectValue(page, card.getByLabel("Timezone"), "Asia/Ashgabat");
   await card.getByRole("button", { name: "Save schedule" }).click();
   await expect(card.getByRole("status")).toContainText("Schedule saved");
   const call = calls.find((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT");
@@ -2462,7 +2462,7 @@ for (const status of ["FAILED", "SKIPPED"])
     const card = page.getByRole("region", { name: "Daily backups" });
     await expect(card).toContainText("Last successful backup");
     await expect(card).toContainText(status === "FAILED" ? "Failed" : "Skipped");
-    await expect(card).toContainText("preserved");
+    await expect(card).toContainText("Manual backups and the last successful copy stay safe.");
   });
 
 for (const viewport of [
@@ -7509,4 +7509,53 @@ test("feedback draft offers a choice before leaving the page", async ({ page }) 
   await page.getByRole("button", { name: "Stay and keep editing", exact: true }).click();
   await expect(page.getByLabel("Short summary")).toHaveValue("Joining issue");
   await expect(page).toHaveURL(/feedback$/);
+});
+
+test("daily backup schedule blocks stale saves and preserves draft choices during recovery", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const calls = await mockAPI(page);
+  let failed = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/backup-schedule`, async (route) => {
+    if (!failed || route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Schedule unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await expect(card.getByRole("button", { name: "Save schedule" })).toBeDisabled();
+  await card.getByLabel("Backup time").fill("05:45");
+  await expect(card.getByRole("button", { name: "Save schedule" })).toBeEnabled();
+  failed = true;
+  await page.clock.runFor(15001);
+  await expect(card.getByRole("button", { name: "Save schedule" })).toBeDisabled();
+  await expect(card.getByLabel("Backup time")).toHaveValue("05:45");
+  failed = false;
+  await page.clock.runFor(15001);
+  await expect(card.getByRole("button", { name: "Save schedule" })).toBeEnabled();
+  await expect(card.getByLabel("Backup time")).toHaveValue("05:45");
+  expect(
+    calls.filter((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT"),
+  ).toHaveLength(0);
+});
+
+test("daily backup schedule recovers an initial failed read without a write", async ({ page }) => {
+  const calls = await mockAPI(page);
+  let failed = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/backup-schedule`, async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Schedule unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Backups", exact: true }).click();
+  const card = page.getByRole("region", { name: "Daily backups" });
+  await expect(card.getByRole("button", { name: "Reload schedule" })).toBeVisible();
+  failed = false;
+  await card.getByRole("button", { name: "Reload schedule" }).click();
+  await expect(card.getByRole("combobox", { name: "Timezone", exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Save schedule" })).toBeDisabled();
+  expect(
+    calls.filter((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT"),
+  ).toHaveLength(0);
 });
