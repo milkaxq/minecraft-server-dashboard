@@ -7160,3 +7160,54 @@ test("account password visibility is optional and the mobile page fits", async (
   );
   await page.screenshot({ path: testInfo.outputPath("account-mobile.png"), fullPage: true });
 });
+
+test("players access list recovers from unavailable reads without sending commands", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { initiallyRunning: true });
+  let failed = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/whitelist`, async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Access list unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Players", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Refresh access list" })).toBeVisible();
+  await expect(page.getByText("No players added yet.", { exact: true })).toHaveCount(0);
+  failed = false;
+  await page.getByRole("button", { name: "Refresh access list" }).click();
+  await expect(page.getByText("milkaxq", { exact: true })).toBeVisible();
+  expect(calls.filter((c) => c.path.endsWith("/whitelist") && c.method === "POST")).toHaveLength(0);
+});
+
+test("players retry preserves the original command after the access revision changes", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  let revision = "a".repeat(64);
+  const writes = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/whitelist`, async (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({ json: { enabled: true, players: [], revision } });
+    writes.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (writes.length === 1) {
+      revision = "b".repeat(64);
+      return route.fulfill({ status: 502, json: { error: "Response lost" } });
+    }
+    return route.fulfill({ json: { confirmed: true } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Players", exact: true }).click();
+  await page.getByLabel("Minecraft username", { exact: true }).fill("Friend_123");
+  await page.getByRole("button", { name: "Add player", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Response lost" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add player", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Add player", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Friend_123 can now join");
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+  expect(writes[0].body.revision).toBe("a".repeat(64));
+});

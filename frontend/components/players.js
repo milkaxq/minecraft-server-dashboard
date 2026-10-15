@@ -4,22 +4,23 @@ import Link from "next/link";
 import { Select } from "./select";
 import { ClientRequirementTag } from "./client-compatibility";
 import { PlayerModeration } from "./player-moderation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage, Loading } from "./ui";
-import { Confirm } from "./management";
+import { Confirm } from "./confirm";
 
 export function Players({ id, running, server, usage, usageError }) {
   const { api } = useAuth();
   const list = useResource(`/servers/${id}/whitelist`, 5000);
   const [name, setName] = useState("");
   const [search, setSearch] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
+  const inFlight = useRef(false);
+  const attempt = useRef(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState(null);
-  const [retry, setRetry] = useState(null);
   const settings = useResource(`/servers/${id}/settings`);
   const clients = useResource(`/servers/${id}/client-requirements`, 30000);
   const [problem, setProblem] = useState("version");
@@ -29,18 +30,23 @@ export function Players({ id, running, server, usage, usageError }) {
   const editable = running && data && !list.error && !busy;
 
   async function change(action, playerName = "", confirmed = false) {
-    if (!editable) return;
-    const body = { action, name: playerName, revision: data.revision, confirmed };
-    // Preserve the same operation key after a lost response to avoid replaying commands.
-    const fingerprint = JSON.stringify(body);
-    const key = retry?.fingerprint === fingerprint ? retry.key : crypto.randomUUID();
-    setRetry({ fingerprint, key });
-    setBusy(true);
+    if (!editable || inFlight.current) return;
+    inFlight.current = true;
+    const fingerprint = JSON.stringify({ action, name: playerName, confirmed });
+    if (attempt.current?.fingerprint !== fingerprint) {
+      attempt.current = {
+        fingerprint,
+        key: crypto.randomUUID(),
+        body: { action, name: playerName, revision: data.revision, confirmed },
+      };
+    }
+    const { body, key } = attempt.current;
+    setBusy(action);
     setError(null);
     setNotice("");
     try {
       const result = await api(`/servers/${id}/whitelist`, { method: "POST", body, key });
-      setRetry(null);
+      attempt.current = null;
       setConfirmation(null);
       if (result.confirmed) {
         setNotice(
@@ -59,16 +65,19 @@ export function Players({ id, running, server, usage, usageError }) {
         );
       }
     } catch (e) {
+      if ([400, 403, 404, 409, 422].includes(e.status)) attempt.current = null;
       setError(e);
     } finally {
-      setBusy(false);
+      inFlight.current = false;
+      setBusy("");
       list.refresh();
     }
   }
 
   const players =
-    data?.players.filter((player) => player.name.toLowerCase().includes(search.toLowerCase())) ||
-    [];
+    data?.players.filter((player) =>
+      player.name.toLowerCase().includes(search.trim().toLowerCase()),
+    ) || [];
   return (
     <>
       <section className="panel management-panel" aria-label="Live players">
@@ -77,7 +86,7 @@ export function Players({ id, running, server, usage, usageError }) {
             <h2>Playing together</h2>
             <p className="field-help">
               {usageError || !usage
-                ? "Live readings unavailable. Saved access lists do not show who is online."
+                ? "Live player count unavailable."
                 : usage.power_state === "offline"
                   ? "Minecraft is stopped. No players are connected."
                   : usage.players_available && Number.isInteger(usage.players_online)
@@ -94,8 +103,7 @@ export function Players({ id, running, server, usage, usageError }) {
         {!usageError && running && usage.players_available && usage.players_online > 0 && (
           <>
             <p className="field-help">
-              Reported names may be a sample. The server can hide names; this is not a complete
-              attendance list.
+              Player names reported by Minecraft; the list may be incomplete.
             </p>
             {usage.player_names?.length ? (
               <ul className="player-name-sample">
@@ -111,16 +119,22 @@ export function Players({ id, running, server, usage, usageError }) {
       </section>
       {list.loading && !data && <Loading message="Checking saved access…" />}
       <ErrorMessage error={error || list.error} />
+      {list.error && (
+        <button
+          className="button secondary"
+          disabled={!!busy || list.loading || list.error.status === 429}
+          onClick={list.refresh}
+        >
+          Refresh access list
+        </button>
+      )}
       {notice && (
         <p className="notice" role="status">
           {notice}
         </p>
       )}
       {!running && !usageError && usage && (
-        <p className="notice">
-          Start your server to change player access. You can still view the saved list while it is
-          stopped.
-        </p>
+        <p className="notice">Start Minecraft to change player access.</p>
       )}
       {data && (
         <>
@@ -128,16 +142,17 @@ export function Players({ id, running, server, usage, usageError }) {
             <div className="section-heading">
               <div className="whitelist-intro">
                 <h2>Who can join?</h2>
-                <p className="field-help">
-                  Keep your world private with a list of allowed Minecraft usernames.
-                </p>
               </div>
               <button
                 className={`button ${data.enabled ? "secondary" : "primary"}`}
                 disabled={!editable}
                 onClick={() => (data.enabled ? setConfirmation({ action: "off" }) : change("on"))}
               >
-                {busy ? "Updating…" : data.enabled ? "Turn whitelist off" : "Turn whitelist on"}
+                {busy === "on" || busy === "off"
+                  ? "Updating…"
+                  : data.enabled
+                    ? "Turn whitelist off"
+                    : "Turn whitelist on"}
               </button>
             </div>
             <p className="whitelist-status">
@@ -146,17 +161,21 @@ export function Players({ id, running, server, usage, usageError }) {
                 ? "Whitelist on · only allowed players can join"
                 : "Whitelist off · joining is open"}
             </p>
-            <p className="field-help">
-              Players still need to pass Minecraft or AuthMe login. This list does not give anyone
-              admin powers. Changes do not need a restart.
-            </p>
+            <p className="field-help">Login rules still apply. No restart needed.</p>
           </section>
           <section className="panel management-panel">
-            <h2>Add a player</h2>
-            <p className="field-help">
-              Ask your friend for their exact in-game username, including capitals. Use their
-              Minecraft name, not an email or Blockyard account.
-            </p>
+            <div className="section-heading">
+              <h2>
+                Allowed players <span className="whitelist-count">{data.players.length}</span>
+              </h2>
+              <button
+                className="button secondary"
+                disabled={!!busy || list.loading || list.error?.status === 429}
+                onClick={list.refresh}
+              >
+                Refresh list
+              </button>
+            </div>
             <form
               className="whitelist-add"
               onSubmit={(event) => {
@@ -173,7 +192,7 @@ export function Players({ id, running, server, usage, usageError }) {
                   maxLength={16}
                   pattern="[A-Za-z0-9_]{3,16}"
                   required
-                  disabled={busy}
+                  disabled={!!busy}
                   aria-describedby="whitelist-name-help"
                   autoComplete="off"
                   spellCheck={false}
@@ -181,28 +200,14 @@ export function Players({ id, running, server, usage, usageError }) {
                 />
               </label>
               <button className="button primary" disabled={!editable || !validName || existing}>
-                {busy ? "Updating…" : "Add player"}
+                {busy === "add" ? "Adding…" : "Add player"}
               </button>
             </form>
             <p id="whitelist-name-help" className="field-help">
               {existing
                 ? "This player is already allowed."
-                : "3–16 letters, numbers or underscores. Microsoft accounts must have a valid Java Edition profile."}
+                : "Use their Minecraft username, not their email."}
             </p>
-          </section>
-          <section className="panel management-panel">
-            <div className="section-heading">
-              <h2>
-                Allowed players <span className="whitelist-count">{data.players.length}</span>
-              </h2>
-              <button
-                className="button secondary"
-                disabled={busy || list.loading}
-                onClick={list.refresh}
-              >
-                Refresh list
-              </button>
-            </div>
             {data.players.length > 0 && (
               <label className="field whitelist-search">
                 Find a player
@@ -237,9 +242,7 @@ export function Players({ id, running, server, usage, usageError }) {
               </ul>
             ) : (
               <p className="management-empty">
-                {data.players.length
-                  ? "No usernames match your search."
-                  : "No players added yet. Add yourself and your friends before enabling the whitelist."}
+                {data.players.length ? "No usernames match your search." : "No players added yet."}
               </p>
             )}
           </section>
@@ -302,10 +305,7 @@ export function Players({ id, running, server, usage, usageError }) {
             sharing it.
           </p>
         )}
-        <p className="field-help">
-          This is guidance for the error your friend reports, not automatic diagnosis of a
-          connection attempt. No access settings are changed here.
-        </p>
+
         {server.permissions?.includes("console") && (
           <Link className="button secondary" href={`/servers/${id}/console`}>
             Open console
@@ -320,7 +320,7 @@ export function Players({ id, running, server, usage, usageError }) {
               : `Remove ${confirmation.name}?`
           }
           label={confirmation.action === "off" ? "Turn whitelist off" : "Remove player"}
-          busy={busy}
+          busy={!!busy}
           confirmDisabled={!editable}
           onCancel={() => setConfirmation(null)}
           onConfirm={() => change(confirmation.action, confirmation.name || "", true)}
