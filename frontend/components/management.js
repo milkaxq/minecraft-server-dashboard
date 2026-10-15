@@ -1,4 +1,5 @@
 "use client";
+import { TextFileEditor } from "./text-file-editor";
 import { visibleFiles, folderBreadcrumbs } from "../lib/file-browser";
 import { UnsavedChangesGuard } from "./unsaved-changes";
 import { installedAddonInfo, hasGuidedSetup, filterInstalledAddons } from "../lib/installed-addons";
@@ -620,14 +621,11 @@ function Files({ id, offline }) {
               Stop your server before saving. You can prepare your edits now.
             </p>
           )}
-          <textarea
-            aria-label="File content"
-            readOnly={action.busy}
-            aria-busy={action.busy}
-            className="file-editor"
+          <TextFileEditor
+            key={editor.path}
             value={editor.content}
-            onChange={(e) => setEditor({ ...editor, content: e.target.value })}
-            spellCheck={false}
+            busy={action.busy}
+            onChange={(content) => setEditor({ ...editor, content })}
           />
           <div className="file-actions">
             <button

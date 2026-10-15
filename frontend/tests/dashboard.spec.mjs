@@ -5,6 +5,7 @@ import {
   hasGuidedSetup,
   filterInstalledAddons,
 } from "../lib/installed-addons.js";
+import { findInFile } from "../lib/find-in-file.js";
 import { formatBytes } from "../lib/api.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
 import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
@@ -5942,4 +5943,92 @@ test("file sizes distinguish small files while preserving memory and disk units"
   expect(formatBytes(1073741824)).toBe("1.0 GB");
   for (const unknown of [null, undefined, NaN, Infinity, -1])
     expect(formatBytes(unknown)).toBe("—");
+});
+
+test("find-in-file treats patterns literally, preserves Unicode offsets and bounds results", () => {
+  expect(findInFile("voice.host voiceXhost VOICE.HOST", "voice.host").matches).toEqual([
+    { start: 0, end: 10 },
+    { start: 22, end: 32 },
+  ]);
+  expect(findInFile("x [a] x", "[a]").matches).toEqual([{ start: 2, end: 5 }]);
+  expect(findInFile("İ😀 setting=yes", "setting").matches).toEqual([{ start: 4, end: 11 }]);
+  const result = findInFile("a".repeat(1001), "a");
+  expect(result.matches).toHaveLength(1000);
+  expect(result.truncated).toBe(true);
+  expect(findInFile("a".repeat(1000), "a").truncated).toBe(false);
+  expect(findInFile("abc", "").matches).toEqual([]);
+});
+
+for (const width of [390, 1366])
+  test(`file editor search highlights settings without editing the file at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    const content =
+      "# Voice settings\nvoice_host=play.example.com\nother=voiceXhost\nvoice_host=backup.example.com\n";
+    await page.route(`http://localhost:8080/servers/${serverID}/files/text?**`, (route) =>
+      route.fulfill({ json: { path: "/server.properties", content, revision: "b".repeat(64) } }),
+    );
+    await login(page);
+    await page.goto(`/servers/${serverID}/files`);
+    await page.getByRole("button", { name: "server.properties", exact: true }).click();
+    const editor = page.getByRole("textbox", { name: "File content" });
+    await page.getByRole("button", { name: "Find in file", exact: true }).click();
+    const query = page.getByRole("searchbox", { name: "Find text in this file" });
+    await expect(query).toBeFocused();
+    await query.fill("VOICE_HOST");
+    await expect(page.getByText("2 matches", { exact: true })).toBeVisible();
+    await query.press("Enter");
+    await expect(editor).toBeFocused();
+    expect(await editor.evaluate((el) => el.selectionStart)).toBe(content.indexOf("voice_host"));
+    await page.getByRole("button", { name: "Next match", exact: true }).click();
+    expect(await editor.evaluate((el) => el.selectionStart)).toBe(
+      content.lastIndexOf("voice_host"),
+    );
+    await page.getByRole("button", { name: "Next match", exact: true }).click();
+    expect(await editor.evaluate((el) => el.selectionStart)).toBe(content.indexOf("voice_host"));
+    await page.getByRole("button", { name: "Previous match", exact: true }).click();
+    expect(await editor.evaluate((el) => el.selectionStart)).toBe(
+      content.lastIndexOf("voice_host"),
+    );
+    await expect(editor).toHaveValue(content);
+    await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeDisabled();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`find-in-file-${width}.png`),
+      fullPage: true,
+    });
+    await query.fill("not_here");
+    await expect(page.getByText("No matches in this file.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Next match", exact: true })).toBeDisabled();
+    await query.press("Escape");
+    await expect(query).toHaveCount(0);
+    await expect(editor).toBeFocused();
+    await page.getByRole("button", { name: "Close editor", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(
+      calls.filter((call) => call.path.endsWith("/files") && call.method !== "GET"),
+    ).toHaveLength(0);
+  });
+
+test("file editor shortcut opens search and editing recalculates matches safely", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "File content" });
+  await editor.press("Control+f");
+  const query = page.getByRole("searchbox", { name: "Find text in this file" });
+  await expect(query).toBeFocused();
+  await query.fill("motd");
+  await page.getByRole("button", { name: "Next match", exact: true }).click();
+  await editor.fill("difficulty=normal\n");
+  await expect(page.getByText("No matches in this file.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next match", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeEnabled();
 });

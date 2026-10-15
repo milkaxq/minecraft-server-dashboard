@@ -27,3 +27,9 @@ The file browser searches names in the current folder only, without recursively 
 Breadcrumbs return directly to any ancestor through the same unsaved-editor confirmation as folder navigation. Cancelling keeps the current path and draft; confirmed folder changes clear the folder search. Failed listings show an unavailable state instead of claiming the folder is empty, and Refresh retries the read.
 
 Small file sizes display in bytes or KB instead of rounding to 0.0 MB. Memory and disk displays keep their existing MB/GB units for larger values; unavailable or invalid readings show an em dash.
+
+## Finding text in a file
+
+Find in file searches the loaded editor text, including unsaved changes. Search is literal and case-insensitive; punctuation is not interpreted as a regular expression. Next/Previous wrap through matches and select the matching text with its line number. Ctrl+F or Command+F opens search while the editor is focused; Enter/Shift+Enter navigate from the search field, and Escape closes it.
+
+Queries are limited to 200 characters and results to the first 1,000 matches; broader searches show a notice to narrow the query. Searching does not change file contents, mark the editor dirty, send requests or persist queries. Existing save and discard protections still apply.

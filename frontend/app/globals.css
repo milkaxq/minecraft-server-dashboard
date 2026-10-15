@@ -6023,3 +6023,42 @@ input {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.file-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-block: 16px;
+}
+.file-findbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.file-findbar label {
+  display: grid;
+  gap: 8px;
+}
+.file-find-actions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+.file-findbar p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .file-findbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .file-find-actions .button {
+    flex: 1;
+  }
+}
