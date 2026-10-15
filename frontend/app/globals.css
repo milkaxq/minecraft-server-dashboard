@@ -6270,3 +6270,16 @@ input {
   width: 100%;
   min-width: 0;
 }
+
+.management-power-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.management-power-status p {
+  margin: 0;
+  color: var(--muted);
+}

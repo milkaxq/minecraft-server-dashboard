@@ -26,3 +26,22 @@ Validation uses mocked API/browser connections and covers header/body/download
 timeouts, cancellation, malformed responses, rate limits, preserved settings,
 failed setup recovery, save timeout/retry keys and existing customer flows. Live
 checks are read-only; web connectivity does not measure Minecraft ping or ticks.
+
+## Management power controls
+
+Settings, Files and the other management pages hide power actions outside the
+member's permissions. Requests use an immediate in-flight guard and reuse their
+key for an identical failed action. The backend remains authoritative for
+permission, agreement and state validation.
+
+An accepted Start/Stop keeps its button pending until a running/offline reading
+arrives. Restart waits for a fresh read and respects any reported starting/stopping
+state; “Restart requested” describes acceptance, not proof of a completed restart.
+Check status only refreshes the read and never resends the action.
+
+Unavailable status, transitions and pending actions block file/settings saves.
+Drafts stay available to edit and copy. Controls also pause if server details are
+unavailable or deletion is pending. Per-server keyed content prevents pending
+state and retry keys from carrying into another server's page. The overview's
+normal power buttons likewise reject stale readings after a poll fails; a failed
+agreement read still leaves a confirmed-running server's Stop available.

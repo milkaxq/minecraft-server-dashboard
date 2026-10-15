@@ -73,33 +73,87 @@ export function FeatureLinks({ id, server, advanced = false, active = "" }) {
   );
 }
 export function ManagementPage({ id, section }) {
+  return <ManagementContent key={id} id={id} section={section} />;
+}
+function ManagementContent({ id, section }) {
   const { api } = useAuth();
   const info = useResource(`/servers/${id}`, 10000);
   const server = info.data;
   const usage = useResource(
-    server?.status === "RUNNING" && server.management_available ? `/servers/${id}/usage` : null,
+    server?.status === "RUNNING" && server.management_available && !server.deletion_pending
+      ? `/servers/${id}/usage`
+      : null,
     5000,
   );
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState(null);
+  const [pending, setPending] = useState(null);
+  const [notice, setNotice] = useState("");
+  const inFlight = useRef(false);
+  const attempt = useRef(null);
+  const latestUsage = useRef(null);
+  useEffect(() => {
+    latestUsage.current = usage.data;
+  }, [usage.data]);
+  const ready =
+    server?.status === "RUNNING" && server.management_available && !server.deletion_pending;
+  const has = (action) => server?.permissions?.includes(action);
+  const pendingActive =
+    pending &&
+    (pending.action === "start"
+      ? usage.data?.power_state !== "running"
+      : pending.action === "stop"
+        ? usage.data?.power_state !== "offline"
+        : !usage.data || usage.data === pending.reading);
+  const transitioning = ["starting", "stopping"].includes(usage.data?.power_state);
+  const blocked =
+    !ready ||
+    !!info.error ||
+    !!busy ||
+    !!usage.error ||
+    usage.loading ||
+    transitioning ||
+    pendingActive;
+  const offline = !blocked && usage.data?.power_state === "offline";
+  const displayState = usage.error
+    ? "UNKNOWN"
+    : pendingActive && pending.action !== "restart"
+      ? pending.action === "start"
+        ? "starting"
+        : "stopping"
+      : usage.data?.power_state || server?.status;
   async function power(action) {
-    setBusy(true);
+    if (
+      inFlight.current ||
+      blocked ||
+      !has(action) ||
+      (action === "start"
+        ? usage.data?.power_state !== "offline"
+        : usage.data?.power_state !== "running")
+    )
+      return;
+    inFlight.current = true;
+    setBusy(action);
     setError(null);
+    setNotice("");
+    if (attempt.current?.action !== action) attempt.current = { action, key: crypto.randomUUID() };
     try {
       await api(`/servers/${id}/${action}`, {
         method: "POST",
         body: {},
-        key: crypto.randomUUID(),
+        key: attempt.current.key,
       });
+      setPending({ action, reading: latestUsage.current });
+      attempt.current = null;
+      setNotice(`${action[0].toUpperCase() + action.slice(1)} requested.`);
       usage.refresh();
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(false);
+      inFlight.current = false;
+      setBusy("");
     }
   }
-  const ready = server?.status === "RUNNING" && server.management_available;
-  const offline = usage.data?.power_state === "offline";
   return (
     <Shell>
       {info.loading ? (
@@ -119,7 +173,7 @@ export function ManagementPage({ id, section }) {
                 ? "Your Minecraft files, in one place."
                 : "Make this world your own."
             }
-            action={<Badge state={usage.data?.power_state || server.status} />}
+            action={<Badge state={displayState} />}
           />
           <div className="server-toolbar">
             <div className="mode-switch">
@@ -134,29 +188,41 @@ export function ManagementPage({ id, section }) {
               </Link>
             </div>
             <div className="power-controls">
-              <button
-                className="button primary"
-                disabled={!ready || busy || !offline}
-                onClick={() => power("start")}
-              >
-                Start
-              </button>
-              <button
-                className="button secondary"
-                disabled={!ready || busy || usage.data?.power_state !== "running"}
-                onClick={() => power("stop")}
-              >
-                Stop
-              </button>
-              <button
-                className="button secondary"
-                disabled={!ready || busy || usage.data?.power_state !== "running"}
-                onClick={() => power("restart")}
-              >
-                Restart
-              </button>
+              {["start", "stop", "restart"].filter(has).map((action) => (
+                <button
+                  key={action}
+                  className={`button ${action === "start" ? "primary" : "secondary"}`}
+                  disabled={
+                    blocked ||
+                    (action === "start" ? !offline : usage.data?.power_state !== "running")
+                  }
+                  onClick={() => power(action)}
+                >
+                  {busy === action || (pendingActive && pending.action === action)
+                    ? { start: "Starting…", stop: "Stopping…", restart: "Restarting…" }[action]
+                    : action[0].toUpperCase() + action.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
+          {(notice || usage.error) && (
+            <div className="management-power-status">
+              <p role="status">
+                {pendingActive && pending.action === "stop"
+                  ? "Saving and stopping…"
+                  : pendingActive && pending.action === "start"
+                    ? "Starting Minecraft…"
+                    : notice || "Live status unavailable."}
+              </p>
+              <button
+                className="button secondary"
+                disabled={usage.loading || !!busy || usage.error?.status === 429}
+                onClick={usage.refresh}
+              >
+                Check status
+              </button>
+            </div>
+          )}
           <FeatureLinks id={id} server={server} advanced={section === "files"} active={section} />
           <ErrorMessage error={info.error || error} />
           {!server.permissions?.includes(
@@ -172,7 +238,11 @@ export function ManagementPage({ id, section }) {
               <ErrorMessage error={usage.error} />
               {!offline && section !== "backups" && section !== "players" && (
                 <p className="notice">
-                  Stop your server before changing {section}. You can browse while it is online.
+                  {usage.error || info.error ? (
+                    "Check live status before making changes."
+                  ) : (
+                    <>Stop your server before changing {section}.</>
+                  )}
                 </p>
               )}
               {section === "files" ? (

@@ -6821,3 +6821,185 @@ test("public joining details open on demand and close with Escape", async ({ pag
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toHaveCount(0);
 });
+
+test("management stop stays pending until offline and prevents repeated requests", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { initiallyRunning: true, holdStop: true });
+  await login(page);
+  await page.goto(`/servers/${serverID}/settings`);
+  await page.getByRole("textbox", { name: /Server message/ }).fill("My pending draft");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  const stopping = page.getByRole("button", { name: "Stopping…", exact: true });
+  await expect(stopping).toBeDisabled();
+  await expect(page.getByText("Saving and stopping…", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeDisabled();
+  await stopping.evaluate((button) => button.click());
+  expect(
+    calls.filter((call) => call.path.endsWith("/stop") && call.method === "POST"),
+  ).toHaveLength(1);
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({
+      json: {
+        power_state: "offline",
+        cpu_percent: 0,
+        memory_bytes: 0,
+        disk_bytes: 0,
+        uptime_ms: 0,
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save settings", exact: true })).toBeEnabled();
+  await expect(page.getByRole("textbox", { name: /Server message/ })).toHaveValue(
+    "My pending draft",
+  );
+});
+
+test("management controls follow moderator permissions without requesting restricted files", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { role: "MODERATOR", initiallyRunning: true });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await expect(page.getByRole("button", { name: "Restart", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Your server role does not allow this page.", { exact: true }),
+  ).toBeVisible();
+  expect(calls.filter((call) => call.path.includes("/files"))).toHaveLength(0);
+});
+
+test("unknown management status blocks power and saving until a read succeeds", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let failed = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    failed
+      ? route.fulfill({ status: 503, json: { error: "Live status unavailable" } })
+      : route.fulfill({
+          json: {
+            power_state: "offline",
+            cpu_percent: 0,
+            memory_bytes: 0,
+            disk_bytes: 0,
+            uptime_ms: 0,
+          },
+        }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  await page.getByRole("textbox", { name: "File content", exact: true }).fill("motd=Keep my draft");
+  for (const name of ["Start", "Stop", "Restart", "Save file"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  failed = false;
+  await page.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeEnabled();
+  await expect(page.getByRole("textbox", { name: "File content", exact: true })).toHaveValue(
+    "motd=Keep my draft",
+  );
+});
+
+test("failed management power retry retains its key and accepted restart waits for a fresh read", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  const attempts = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/restart`, (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    return attempts.length === 1
+      ? route.fulfill({ status: 503, json: { error: "Request outcome uncertain" } })
+      : route.fulfill({ json: { status: "accepted" } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/settings`);
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(page.getByText("Request outcome uncertain", { exact: true })).toBeVisible();
+  let pendingRead;
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) => {
+    pendingRead = route;
+  });
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Restarting…", exact: true })).toBeDisabled();
+  await expect.poll(() => !!pendingRead).toBe(true);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toEqual(attempts[0]);
+  await pendingRead.fulfill({
+    json: {
+      power_state: "running",
+      cpu_percent: 20,
+      memory_bytes: 1000,
+      disk_bytes: 1000,
+      uptime_ms: 1000,
+    },
+  });
+  await expect(page.getByRole("button", { name: "Restart", exact: true })).toBeEnabled();
+  await expect(page.getByText("Restart requested.", { exact: true })).toBeVisible();
+});
+
+test("overview power controls do not trust a retained running reading after polling fails", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  let failed = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    failed
+      ? route.fulfill({ status: 503, json: { error: "Metrics temporarily unavailable" } })
+      : route.fulfill({
+          json: {
+            power_state: "running",
+            cpu_percent: 20,
+            memory_bytes: 1000,
+            disk_bytes: 1000,
+            uptime_ms: 420000,
+          },
+        }),
+  );
+  await page.clock.install();
+  await openServer(page);
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+  failed = true;
+  await page.clock.fastForward(5001);
+  await expect(page.getByText("Metrics temporarily unavailable", { exact: true })).toBeVisible();
+  for (const name of ["Start", "Stop", "Restart"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  failed = false;
+  await page.clock.fastForward(5001);
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
+});
+
+test("server-details polling failure keeps an open file draft while disabling saves", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let failed = false;
+  await page.route(`http://localhost:8080/servers/${serverID}`, (route) =>
+    failed
+      ? route.fulfill({ status: 503, json: { error: "Server details temporarily unavailable" } })
+      : route.fallback(),
+  );
+  await login(page);
+  await page.clock.install();
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "server.properties", exact: true }).click();
+  const text = page.getByRole("textbox", { name: "File content", exact: true });
+  await text.fill("motd=Keep this through an outage");
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeEnabled();
+  failed = true;
+  await page.clock.fastForward(10001);
+  await expect(
+    page.getByText("Server details temporarily unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(text).toHaveValue("motd=Keep this through an outage");
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeDisabled();
+  failed = false;
+  await page.clock.fastForward(10001);
+  await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeEnabled();
+  await expect(text).toHaveValue("motd=Keep this through an outage");
+});

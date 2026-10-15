@@ -197,6 +197,7 @@ export function ServerDetail({ id, advanced = false }) {
         : usage?.power_state;
   const startDisabled =
     !canStart ||
+    !!error ||
     !!busy ||
     powerPending ||
     transitioning ||
@@ -234,6 +235,7 @@ export function ServerDetail({ id, advanced = false }) {
     }
   }
   async function power(action) {
+    if (action !== "kill" && (usageError || error)) return;
     if (busy || (powerPending && !(action === "kill" && pendingPower === "stop"))) return;
     setBusy(action);
     setActionError(null);
@@ -349,6 +351,8 @@ export function ServerDetail({ id, advanced = false }) {
                     disabled={
                       !ready ||
                       !!busy ||
+                      !!usageError ||
+                      !!error ||
                       powerPending ||
                       transitioning ||
                       usage?.power_state !== "running"
@@ -367,6 +371,8 @@ export function ServerDetail({ id, advanced = false }) {
                     disabled={
                       !canStart ||
                       !!busy ||
+                      !!usageError ||
+                      !!error ||
                       powerPending ||
                       transitioning ||
                       usage?.power_state !== "running"
