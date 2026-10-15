@@ -764,6 +764,7 @@ function Settings({ id, offline }) {
   const [draft, setDraft] = useState(null);
   const action = useAction(resource.refresh);
   const saveAttempt = useRef(null);
+  const saving = useRef(false);
   const form = draft?.source === resource.data ? draft.values : resource.data;
   const set = (key, value) =>
     setDraft({ source: resource.data, values: { ...form, [key]: value } });
@@ -803,23 +804,36 @@ function Settings({ id, offline }) {
   ];
   async function save(e) {
     e.preventDefault();
-    if (!offline || action.busy || resource.error || !changes.length) return;
+    if (
+      !offline ||
+      saving.current ||
+      action.busy ||
+      resource.error ||
+      !changes.length ||
+      !e.currentTarget.checkValidity()
+    )
+      return;
+    saving.current = true;
     const fingerprint = JSON.stringify([id, form]);
     if (saveAttempt.current?.fingerprint !== fingerprint)
       saveAttempt.current = { fingerprint, key: crypto.randomUUID() };
-    if (
-      await action.run(
-        () =>
-          api(`/servers/${id}/settings`, {
-            method: "PUT",
-            body: form,
-            key: saveAttempt.current.key,
-          }),
-        "Settings saved. Start your server to apply them.",
-      )
-    ) {
-      saveAttempt.current = null;
-      setDraft(null);
+    try {
+      if (
+        await action.run(
+          () =>
+            api(`/servers/${id}/settings`, {
+              method: "PUT",
+              body: form,
+              key: saveAttempt.current.key,
+            }),
+          "Settings saved. Start your server to apply them.",
+        )
+      ) {
+        saveAttempt.current = null;
+        setDraft(null);
+      }
+    } finally {
+      saving.current = false;
     }
   }
   return (
@@ -835,7 +849,12 @@ function Settings({ id, offline }) {
           </div>
           <button
             className="button secondary"
-            disabled={action.busy || changes.length > 0}
+            disabled={
+              action.busy ||
+              resource.loading ||
+              resource.error?.status === 429 ||
+              changes.length > 0
+            }
             onClick={resource.refresh}
           >
             Reload settings
@@ -849,10 +868,6 @@ function Settings({ id, offline }) {
               <fieldset disabled={action.busy} className="settings-fields">
                 <div className="gameplay-presets">
                   <h3>How do you want to play?</h3>
-                  <p className="field-help">
-                    Choose a starting point, then adjust anything below. Joining rules and player
-                    limits stay as you set them.
-                  </p>
                   <div className="gameplay-preset-grid">
                     {presets.map((preset) => (
                       <button
@@ -860,6 +875,9 @@ function Settings({ id, offline }) {
                         type="button"
                         className="button secondary gameplay-preset"
                         disabled={action.busy}
+                        aria-pressed={Object.entries(preset.values).every(
+                          ([key, value]) => form[key] === value,
+                        )}
                         onClick={() =>
                           setDraft({ source: resource.data, values: { ...form, ...preset.values } })
                         }
@@ -907,6 +925,7 @@ function Settings({ id, offline }) {
                         </option>
                       ))}
                     </Select>
+                    <small>Default for new players.</small>
                   </label>
                 </div>
                 <div className="field-row">
@@ -923,7 +942,9 @@ function Settings({ id, offline }) {
                         max={max}
                         required
                         value={form[key]}
-                        onChange={(e) => set(key, Number(e.target.value))}
+                        onChange={(e) =>
+                          set(key, e.target.value === "" ? "" : Number(e.target.value))
+                        }
                       />
                     </label>
                   ))}
@@ -936,7 +957,7 @@ function Settings({ id, offline }) {
                     [
                       "online_mode",
                       "Verify Minecraft accounts",
-                      "Require a Microsoft account that owns Java Edition. No server password is needed unless a login plugin is installed.",
+                      "Only accounts that own Minecraft Java Edition may join.",
                     ],
                   ].map(([key, label, help]) => (
                     <label key={key} className="setting-toggle">
@@ -959,12 +980,8 @@ function Settings({ id, offline }) {
                     AuthMe or a trusted proxy with its own authentication.
                   </p>
                 )}
-                <p className="field-help">
-                  Your hosting resources stay allocated by your plan. More players or a larger view
-                  distance can use more memory and CPU.
-                </p>
                 <section
-                  className="settings-review"
+                  className={"settings-review" + (changes.length ? "" : " settings-review-clean")}
                   aria-label="Review settings changes"
                   aria-live="polite"
                 >
@@ -993,13 +1010,11 @@ function Settings({ id, offline }) {
                       </button>
                     </>
                   )}
-                  <p className="field-help">
-                    {offline
-                      ? "Save these changes, then start your server to apply them."
-                      : "Stop your server before saving. Your edits are kept on this page."}{" "}
-                    Game mode sets the default for new players; existing players may keep their
-                    current mode.
-                  </p>
+                  {!offline && (
+                    <p className="field-help">
+                      Stop your server before saving. Your edits are kept here.
+                    </p>
+                  )}
                 </section>
                 <button
                   className="button primary"

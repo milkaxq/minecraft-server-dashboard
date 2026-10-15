@@ -6363,3 +6363,17 @@ input {
     width: 100%;
   }
 }
+
+.gameplay-preset[aria-pressed="true"] {
+  border-color: var(--accent, #a9ed64);
+  box-shadow: inset 0 0 0 1px var(--accent, #a9ed64);
+}
+.settings-review-clean {
+  border: 0;
+  padding: 0;
+}
+.settings-review-clean h3 {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+}

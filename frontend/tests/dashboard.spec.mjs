@@ -7409,3 +7409,41 @@ test("console reconnects after browser connectivity returns without sending comm
   await expect(page.getByRole("status", { name: "Console connection" })).toHaveText("Connected");
   expect(calls.some((c) => c.path.endsWith("/commands"))).toBe(false);
 });
+
+test("settings preset selection follows draft values without changing joining rules", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const survival = page.getByRole("button", { name: /Survival adventure/ });
+  const creative = page.getByRole("button", { name: /Creative building/ });
+  await expect(survival).toHaveAttribute("aria-pressed", "true");
+  await creative.click();
+  await expect(creative).toHaveAttribute("aria-pressed", "true");
+  await expect(survival).toHaveAttribute("aria-pressed", "false");
+  await selectValue(page, page.getByRole("combobox", { name: "Difficulty", exact: true }), "hard");
+  await expect(creative).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await expect(survival).toHaveAttribute("aria-pressed", "true");
+  expect(calls.some((c) => c.path.endsWith("/settings") && c.method === "PUT")).toBe(false);
+});
+
+test("settings number fields allow replacement and prevent saving empty values", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await openServer(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  const distance = page.getByRole("spinbutton", { name: "View distance (chunks)", exact: true });
+  await distance.fill("");
+  await expect(distance).toHaveValue("");
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  expect(calls.filter((c) => c.path.endsWith("/settings") && c.method === "PUT")).toHaveLength(0);
+  await distance.fill("8");
+  await page.getByRole("button", { name: "Save settings", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Settings saved");
+  expect(
+    calls.find((c) => c.path.endsWith("/settings") && c.method === "PUT").body.view_distance,
+  ).toBe(8);
+});
