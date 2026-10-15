@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -20,12 +20,23 @@ export function Checkout({ id }) {
   const info = useResource(`/orders/${id}`, 3000);
   const config = useResource("/billing/config");
   const order = info.data;
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
+  const inFlight = useRef(false);
+  const unavailable = info.loading || !!info.error || !order;
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
   async function pay() {
-    if (busy) return;
-    setBusy(true);
+    if (
+      inFlight.current ||
+      unavailable ||
+      order.status !== "PENDING" ||
+      config.error ||
+      !config.data?.checkout_enabled ||
+      config.data?.provider !== "mock"
+    )
+      return;
+    inFlight.current = true;
+    setBusy("pay");
     setError(null);
     try {
       await api(`/orders/${id}/checkout`, { method: "POST", body: {} });
@@ -35,11 +46,14 @@ export function Checkout({ id }) {
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(false);
+      inFlight.current = false;
+      setBusy("");
     }
   }
   async function cancel() {
-    setBusy(true);
+    if (inFlight.current || unavailable || order.status !== "PENDING") return;
+    inFlight.current = true;
+    setBusy("cancel");
     setError(null);
     try {
       await api(`/orders/${id}/cancel`, { method: "POST", body: {} });
@@ -47,17 +61,31 @@ export function Checkout({ id }) {
     } catch (e) {
       setError(e);
     } finally {
-      setBusy(false);
+      inFlight.current = false;
+      setBusy("");
     }
   }
   return (
     <Shell>
-      <PageHeading
-        eyebrow="YOUR ORDER"
-        title="One step closer to your world."
-        description="Review your hosting plan before confirming."
-      />
+      <PageHeading eyebrow="YOUR ORDER" title="Review your order." />
       <ErrorMessage error={info.error || config.error || error} />
+      {(info.error || config.error) && (
+        <button
+          className="button secondary"
+          disabled={
+            info.loading ||
+            config.loading ||
+            info.error?.status === 429 ||
+            config.error?.status === 429
+          }
+          onClick={() => {
+            info.refresh();
+            config.refresh();
+          }}
+        >
+          Refresh order
+        </button>
+      )}
       {notice && (
         <p className="notice success" role="status">
           {notice}
@@ -80,7 +108,7 @@ export function Checkout({ id }) {
               <div>
                 <dt>Order</dt>
                 <dd>
-                  <code>{order.id}</code>
+                  <code>{order.id.slice(0, 8)}</code>
                 </dd>
               </div>
               <div>
@@ -106,13 +134,23 @@ export function Checkout({ id }) {
                 </div>
                 <button
                   className="button primary wide"
-                  disabled={busy || config.data?.provider !== "mock"}
+                  disabled={
+                    !!busy ||
+                    unavailable ||
+                    !!config.error ||
+                    !config.data?.checkout_enabled ||
+                    config.data?.provider !== "mock"
+                  }
                   onClick={pay}
                 >
-                  {busy ? "Confirming…" : "Confirm demo payment"}
+                  {busy === "pay" ? "Confirming…" : "Confirm demo payment"}
                 </button>
-                <button className="button secondary wide" disabled={busy} onClick={cancel}>
-                  Cancel this order
+                <button
+                  className="button secondary wide"
+                  disabled={!!busy || unavailable}
+                  onClick={cancel}
+                >
+                  {busy === "cancel" ? "Cancelling…" : "Cancel this order"}
                 </button>
               </>
             ) : order.status === "PAID" ? (
@@ -142,24 +180,39 @@ export function Billing() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
+  const inFlight = useRef(false);
+  const renewalAttempts = useRef(new Map());
+  const subscriptionsUnavailable = subscriptions.loading || !!subscriptions.error;
   async function renew(id) {
-    setBusy(id);
+    if (
+      inFlight.current ||
+      subscriptionsUnavailable ||
+      config.error ||
+      !config.data?.checkout_enabled
+    )
+      return;
+    inFlight.current = true;
+    if (!renewalAttempts.current.has(id)) renewalAttempts.current.set(id, crypto.randomUUID());
+    setBusy("renew:" + id);
     setError(null);
     try {
       const order = await api(`/servers/${id}/renewals`, {
         method: "POST",
         body: {},
-        key: crypto.randomUUID(),
+        key: renewalAttempts.current.get(id),
       });
       router.push(`/checkout/${order.id}`);
     } catch (e) {
       setError(e);
     } finally {
+      inFlight.current = false;
       setBusy("");
     }
   }
   async function cancellation(s) {
-    setBusy(s.server_id);
+    if (inFlight.current || subscriptionsUnavailable) return;
+    inFlight.current = true;
+    setBusy("subscription:" + s.server_id);
     setError(null);
     try {
       await api(`/servers/${s.server_id}/subscription`, {
@@ -175,6 +228,7 @@ export function Billing() {
     } catch (e) {
       setError(e);
     } finally {
+      inFlight.current = false;
       setBusy("");
     }
   }
@@ -182,8 +236,7 @@ export function Billing() {
     <Shell>
       <PageHeading
         eyebrow="YOUR BILLING"
-        title="Keep your adventures going."
-        description="Your subscriptions, paid periods, and order history."
+        title="Billing"
         action={
           <Link className="button secondary" href="/servers/new">
             Choose a hosting plan
@@ -191,6 +244,24 @@ export function Billing() {
         }
       />
       <ErrorMessage error={orders.error || subscriptions.error || config.error || error} />
+      {(orders.error || subscriptions.error || config.error) && (
+        <button
+          className="button secondary"
+          disabled={
+            orders.loading ||
+            subscriptions.loading ||
+            config.loading ||
+            [orders.error, subscriptions.error, config.error].some((e) => e?.status === 429)
+          }
+          onClick={() => {
+            orders.refresh();
+            subscriptions.refresh();
+            config.refresh();
+          }}
+        >
+          Refresh billing
+        </button>
+      )}
       {notice && (
         <p role="status" className="notice success">
           {notice}
@@ -198,7 +269,7 @@ export function Billing() {
       )}
       <p className="notice">
         {config.data?.provider === "mock" ? "Demo payments only — no real money is charged. " : ""}
-        Subscriptions renew manually. No automatic charges or saved payment cards.
+        Manual renewal. No automatic charges.
       </p>
       <section className="panel management-panel">
         <div className="section-heading">
@@ -206,10 +277,10 @@ export function Billing() {
         </div>
         {subscriptions.loading ? (
           <Loading />
+        ) : subscriptions.error && !subscriptions.data ? (
+          <p className="management-empty">Subscriptions unavailable.</p>
         ) : !subscriptions.data?.length ? (
-          <p className="management-empty">
-            No paid hosting periods yet. Choose a plan to create your first world.
-          </p>
+          <p className="management-empty">No subscriptions yet.</p>
         ) : (
           <ul className="subscription-list">
             {subscriptions.data.map((s) => {
@@ -241,18 +312,27 @@ export function Billing() {
                     </span>
                     <button
                       className="button primary"
-                      disabled={!!busy || !config.data?.checkout_enabled}
+                      disabled={
+                        !!busy ||
+                        subscriptionsUnavailable ||
+                        !!config.error ||
+                        !config.data?.checkout_enabled
+                      }
                       onClick={() => renew(s.server_id)}
                     >
-                      Renew
+                      {busy === "renew:" + s.server_id ? "Opening checkout…" : "Renew"}
                     </button>
                     {!expired && s.status === "ACTIVE" && (
                       <button
                         className="button secondary"
-                        disabled={!!busy}
+                        disabled={!!busy || subscriptionsUnavailable}
                         onClick={() => cancellation(s)}
                       >
-                        {s.cancel_at_period_end ? "Keep service" : "End after this period"}
+                        {busy === "subscription:" + s.server_id
+                          ? "Updating…"
+                          : s.cancel_at_period_end
+                            ? "Keep service"
+                            : "End after this period"}
                       </button>
                     )}
                   </div>
@@ -269,6 +349,8 @@ export function Billing() {
         </div>
         {orders.loading ? (
           <Loading />
+        ) : orders.error && !orders.data ? (
+          <p className="management-empty">Order history unavailable.</p>
         ) : !orders.data?.length ? (
           <p className="management-empty">Your orders will appear here.</p>
         ) : (

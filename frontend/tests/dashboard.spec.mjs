@@ -7003,3 +7003,84 @@ test("server-details polling failure keeps an open file draft while disabling sa
   await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeEnabled();
   await expect(text).toHaveValue("motd=Keep this through an outage");
 });
+
+test("billing distinguishes unavailable history and recovers without a write", async ({ page }) => {
+  const calls = await mockAPI(page);
+  let failed = true;
+  await page.route("http://localhost:8080/orders", async (route) => {
+    if (!failed) return route.fallback();
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Temporarily unavailable" }),
+    });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Billing", exact: true }).click();
+  await expect(page.getByText("Order history unavailable.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your orders will appear here.", { exact: true })).toHaveCount(0);
+  failed = false;
+  await page.getByRole("button", { name: "Refresh billing" }).click();
+  await expect(page.getByRole("link", { name: "Finish checkout" })).toBeVisible();
+  expect(calls.some((c) => c.path.endsWith("/renewals"))).toBe(false);
+});
+
+test("billing renewal retry retains its request key and blocks duplicate clicks", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const keys = [];
+  let release;
+  await page.route(`http://localhost:8080/servers/${serverID}/renewals`, async (route) => {
+    keys.push(route.request().headers()["idempotency-key"]);
+    if (keys.length === 1) {
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Try again" }),
+      });
+    }
+    return route.fallback();
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Billing", exact: true }).click();
+  await page.getByRole("button", { name: "Renew", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Opening checkout…" })).toBeDisabled();
+  await expect.poll(() => keys.length).toBe(1);
+  release();
+  await expect(page.getByRole("button", { name: "Renew", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Renew", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/checkout/${orderID}$`));
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+  expect(keys[1]).toBe(keys[0]);
+});
+
+test("billing keeps stale subscriptions visible but blocks changes until refreshed", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let fail = false;
+  await page.route("http://localhost:8080/subscriptions", async (route) => {
+    if (!fail) return route.fallback();
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Subscriptions unavailable" }),
+    });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Billing", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Renew", exact: true })).toBeEnabled();
+  fail = true;
+  await page.clock.runFor(10001);
+  await expect(page.getByRole("button", { name: "Renew", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "End after this period" })).toBeDisabled();
+  fail = false;
+  await page.getByRole("button", { name: "Refresh billing" }).click();
+  await expect(page.getByRole("button", { name: "Renew", exact: true })).toBeEnabled();
+});
