@@ -24,3 +24,11 @@ Chunky command retries and Voice Chat save retries retain the same operation key
 Voice Chat and Minecraft settings warn on browser refresh/tab close/full navigation when there are unsaved changes. This browser guard does not intercept Next.js client-side links. Voice Chat also displays an unsaved indicator and an explicit discard action.
 
 Recurring authenticated dashboard reads pause while the tab is hidden or the browser reports offline. Returning to a visible, connected tab triggers a refresh, while preserving any outstanding HTTP 429 Retry-After delay. In-flight requests are not duplicated. One-time resource reads keep their existing behavior.
+
+## Detected worlds and lifecycle reports
+
+`GET /servers/:id/addons/chunky/worlds` requires the same server console permission as Chunky commands. It reads the actual `level-name` and a single top-level directory listing through Pterodactyl, without recursively scanning world files. Only existing, non-symlink directories with command-safe names are offered. Paper-family servers can offer existing Nether and End roots too; other loaders get the main world only. Other properties, including credentials, are never included in the response.
+
+The guide defaults to a detected world instead of guessing `world`. Failed/empty lookups block the normal controls until a detected world is available or the user explicitly chooses manual entry. Manual input still permits only one ASCII command-safe world argument. Custom dimension identifiers outside that format require the advanced console. The start command remains a circle centered at 0, 0; it does not imply spawn coordinates or change the world border.
+
+Recognized English Chunky lifecycle messages display the last reported paused, resuming, cancelled, stopped or finished state. A running task showing 100% remains classified as running until Chunky emits its explicit finish message. Historical replay and disconnection warnings continue to apply. Unknown/localized messages remain available in the full console.

@@ -85,6 +85,7 @@ func TestManagementHTTPAuthorizationCORSAndStrictInput(t *testing.T) {
 		{"GET", "/plugins/catalog/updates", "", "application/json"},
 		{"GET", "/startup-check", "", "application/json"},
 		{"GET", "/client-requirements", "", "application/json"},
+		{"GET", "/addons/chunky/worlds", "", "application/json"},
 		{"GET", "/addons/simple-voice-chat", "", "application/json"},
 		{"GET", "/addons/simple-voice-chat/network", "", "application/json"},
 		{"PUT", "/addons/simple-voice-chat", `{"max_voice_distance":48,"whisper_distance":24,"enable_groups":true,"revision":"` + strings.Repeat("a", 64) + `"}`, "application/json"},

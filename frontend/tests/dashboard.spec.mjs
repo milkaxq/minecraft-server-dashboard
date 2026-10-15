@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { parseChunkyProgress } from "../lib/chunky-progress.js";
+import { parseChunkyProgress, parseChunkyEvent } from "../lib/chunky-progress.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
 import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
 import { nextServerAction } from "../lib/next-action.js";
@@ -221,6 +221,11 @@ async function mockAPI(
     });
     const reply = (data, status = 200) =>
       route.fulfill({ status, contentType: "application/json", body: JSON.stringify(data) });
+    if (path.endsWith("/addons/chunky/worlds"))
+      return reply([
+        { name: "world", label: "Main world" },
+        { name: "world_nether", label: "Nether" },
+      ]);
     if (path === "/auth/session")
       return loggedIn
         ? reply({
@@ -5135,6 +5140,7 @@ test("installed Chunky offers confirmed terrain controls without typing commands
   await page.getByRole("button", { name: "Pause preparation" }).click();
   await expect.poll(() => commands.length).toBe(2);
   expect(commands[1]).toBe("chunky pause world");
+  await page.getByRole("button", { name: "Enter world name manually" }).click();
   await page.getByLabel("World name", { exact: true }).fill("world;stop");
   await expect(page.getByRole("button", { name: "Pause preparation" })).toBeDisabled();
 });
@@ -5229,7 +5235,7 @@ test("Chunky progress is opt-in, world-specific and honest after stream disconne
     page.getByText("Updates disconnected. Task status cannot be confirmed."),
   ).toBeVisible();
   await expect(page.getByText("This report may be out of date.", { exact: false })).toBeVisible();
-  await page.getByLabel("World name", { exact: true }).fill("another_world");
+  await selectValue(page, page.getByRole("combobox", { name: "Choose a world" }), "world_nether");
   await expect(page.getByRole("progressbar")).toHaveCount(0);
 });
 
@@ -5382,4 +5388,167 @@ test("dashboard polling waits while offline and resumes on reconnect", async ({
   await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true);
   await page.clock.fastForward(1);
   await expect.poll(() => requests).toBe(2);
+});
+
+test("Chunky lifecycle reports require explicit plugin messages rather than 100 percent", () => {
+  expect(parseChunkyEvent("[05:53:40 INFO]: [Chunky] Task paused for world.")).toEqual({
+    world: "world",
+    status: "paused",
+  });
+  expect(
+    parseChunkyEvent(
+      "[Chunky] Task finished for world. Processed: 16000 chunks (100.00%), Total time: 0:12:34",
+    ),
+  ).toEqual({
+    world: "world",
+    chunks: 16000,
+    percent: 100,
+    elapsed: "0:12:34",
+    status: "finished",
+  });
+  expect(
+    parseChunkyEvent(
+      "[Chunky] Task running for world. Processed: 16000 chunks (100.00%), ETA: 0:00:00, Rate: 20.0 cps",
+    ).status,
+  ).toBe("running");
+  expect(parseChunkyEvent("[05:53:40 INFO]: <player> [Chunky] Task paused for world.")).toBeNull();
+  expect(
+    parseChunkyEvent(
+      "[Chunky] Task finished for world. Processed: 1 chunks (101%), Total time: 0:00:01",
+    ),
+  ).toBeNull();
+});
+
+test("terrain preparation uses actual custom world choices instead of guessing world", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  const commands = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/addons/chunky/worlds`, (route) =>
+    route.fulfill({
+      json: [
+        { name: "Campfire", label: "Main world" },
+        { name: "Campfire_nether", label: "Nether" },
+      ],
+    }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/commands`, (route) => {
+    commands.push(route.request().postDataJSON().command);
+    return route.fulfill({ status: 204 });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Choose a world" })).toContainText(
+    "Main world · Campfire",
+  );
+  await selectValue(
+    page,
+    page.getByRole("combobox", { name: "Choose a world" }),
+    "Campfire_nether",
+  );
+  await page.getByLabel("I’m ready to generate").check();
+  await page.getByRole("button", { name: "Prepare terrain", exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0]).toBe("chunky start Campfire_nether circle 0 0 500");
+});
+
+test("unavailable world detection blocks guessed commands and offers explicit manual setup", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  const commands = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/addons/chunky/worlds`, (route) =>
+    route.fulfill({ status: 503, json: { error: "World lookup unavailable" } }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/commands`, (route) => {
+    commands.push(route.request().postDataJSON().command);
+    return route.fulfill({ status: 204 });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await expect(page.getByText("World lookup unavailable", { exact: true })).toBeVisible();
+  await page.getByLabel("I’m ready to generate").check();
+  await expect(page.getByRole("button", { name: "Prepare terrain", exact: true })).toBeDisabled();
+  expect(commands).toEqual([]);
+  await page.getByRole("button", { name: "Enter world name manually" }).click();
+  await page.getByLabel("World name", { exact: true }).fill("My_world");
+  await page.getByLabel("I’m ready to generate").check();
+  await page.getByRole("button", { name: "Prepare terrain", exact: true }).click();
+  await expect.poll(() => commands.length).toBe(1);
+  expect(commands[0]).toBe("chunky start My_world circle 0 0 500");
+});
+
+test("Chunky pause and finish reports replace running estimates in the setup panel", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  let stream;
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) => {
+    stream = ws;
+    ws.send(JSON.stringify({ event: "connected" }));
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await expect.poll(() => !!stream).toBe(true);
+  stream.send(
+    JSON.stringify({ event: "console output", args: ["[Chunky] Task paused for world."] }),
+  );
+  const progress = page.getByRole("region", { name: "Terrain preparation progress" });
+  await expect(progress).toContainText("Last reported state: Paused");
+  await expect(progress.getByRole("progressbar")).toHaveCount(0);
+  stream.send(
+    JSON.stringify({
+      event: "console output",
+      args: [
+        "[Chunky] Task finished for world. Processed: 16000 chunks (100.00%), Total time: 0:12:34",
+      ],
+    }),
+  );
+  await expect(progress).toContainText("Last reported state: Finished");
+  await expect(progress.getByRole("progressbar")).toHaveAttribute("value", "100");
+  await expect(progress).toContainText("Terrain outside this area may still need generation");
+});
+
+test("failed world lookup retries as a read without sending Chunky commands", async ({ page }) => {
+  const calls = await mockAPI(page, { initiallyRunning: true });
+  let reads = 0;
+  await page.route(`http://localhost:8080/servers/${serverID}/addons/chunky/worlds`, (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ status: 503, json: { error: "World lookup unavailable" } })
+      : route.fulfill({ json: [{ name: "Campfire", label: "Main world" }] });
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByRole("button", { name: "Retry world lookup" }).click();
+  await expect(page.getByRole("combobox", { name: "Choose a world" })).toContainText(
+    "Main world · Campfire",
+  );
+  expect(reads).toBe(2);
+  expect(calls.filter((call) => call.path.endsWith("/commands"))).toHaveLength(0);
 });

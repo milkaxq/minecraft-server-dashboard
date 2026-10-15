@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "./auth";
 import { consoleURL } from "../lib/api";
-import { parseChunkyProgress } from "../lib/chunky-progress";
+import { parseChunkyEvent } from "../lib/chunky-progress";
 
 export function ChunkyProgress({ id, world, running, allowed }) {
   const { api } = useAuth();
@@ -37,7 +37,7 @@ export function ChunkyProgress({ id, world, running, allowed }) {
           if (message.event === "connected") setConnection("connected");
           if (message.event !== "console output" || typeof message.args?.[0] !== "string") return;
           for (const line of message.args[0].split("\n")) {
-            const progress = parseChunkyProgress(line);
+            const progress = parseChunkyEvent(line);
             if (progress?.world === world) {
               const received = Date.now();
               setResult({ ...progress, received, id });
@@ -74,27 +74,58 @@ export function ChunkyProgress({ id, world, running, allowed }) {
           ? "Connecting to server updates…"
           : connection === "disconnected"
             ? "Updates disconnected. Task status cannot be confirmed."
-            : "Listening for Chunky updates. No commands are run by opening this panel."}
+            : "Connected to server updates."}
       </p>
       {report ? (
         <>
-          <label>
-            Last reported: {report.percent}%<progress value={report.percent} max="100" />
-          </label>
           <p>
-            {report.chunks.toLocaleString()} chunks · {report.rate} chunks/second · Estimated
-            remaining {report.eta}
+            Last reported state:{" "}
+            <strong>
+              {
+                {
+                  running: "Preparing terrain",
+                  paused: "Paused",
+                  continuing: "Resuming",
+                  cancelled: "Cancelled",
+                  stopped: "Stopped",
+                  finished: "Finished",
+                }[report.status]
+              }
+            </strong>
           </p>
+          {typeof report.percent === "number" && (
+            <label>
+              Last reported: {report.percent}%<progress value={report.percent} max="100" />
+            </label>
+          )}
+          {report.status === "running" && (
+            <p>
+              {report.chunks.toLocaleString()} chunks · {report.rate} chunks/second · Estimated
+              remaining {report.eta}
+            </p>
+          )}
+          {report.status === "finished" && (
+            <p>
+              Chunky reported {report.chunks.toLocaleString()} chunks processed in {report.elapsed}.
+              Terrain outside this area may still need generation.
+            </p>
+          )}
+          {report.status === "paused" && (
+            <p>
+              Chunky reported a pause. Resume preparation when you’re ready to use server resources
+              again.
+            </p>
+          )}
           <p className="field-help">
             {fresh
-              ? "Received recently. Console history can include older reports; this does not confirm the task is still running."
+              ? "Received recently. Console history can include older reports; this is the last reported state, not a new status check."
               : "This report may be out of date. It does not confirm the task is still running or has finished."}
           </p>
         </>
       ) : (
         <p>
-          No progress received for this world yet. A task may be paused, finished, not started, or
-          using a different message format. Check View progress for the full response.
+          Waiting for a Chunky report for this world. Use View progress to check the full server
+          response.
         </p>
       )}
       {connection === "disconnected" && (

@@ -28,6 +28,7 @@ func (a *API) managementRoutes(mux *http.ServeMux) {
 		"GET /servers/{id}/activity":                         a.activity,
 		"GET /servers/{id}/startup-check":                    a.startupCheck,
 		"GET /servers/{id}/client-requirements":              a.clientRequirements,
+		"GET /servers/{id}/addons/chunky/worlds":             a.chunkyWorlds,
 		"GET /servers/{id}/addons/simple-voice-chat":         a.voiceChat,
 		"PUT /servers/{id}/addons/simple-voice-chat":         a.saveVoiceChat,
 		"GET /servers/{id}/addons/simple-voice-chat/network": a.voiceNetwork,

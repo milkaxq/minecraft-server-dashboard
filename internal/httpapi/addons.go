@@ -158,3 +158,16 @@ func (a *API) startupCheck(w http.ResponseWriter, r *http.Request) {
 	result.RequestReference = requestID(r)
 	write(w, http.StatusOK, result)
 }
+
+func (a *API) chunkyWorlds(w http.ResponseWriter, r *http.Request) {
+	id, ok := a.managementID(w, r)
+	if !ok {
+		return
+	}
+	worlds, err := a.Management.ChunkyWorlds(r.Context(), currentUser(r).ID, id)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	write(w, http.StatusOK, worlds)
+}

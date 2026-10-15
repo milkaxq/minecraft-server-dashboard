@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { ErrorMessage } from "./ui";
 import { Select } from "./select";
+import { useResource } from "./data";
 import { ChunkyProgress } from "./chunky-progress";
 
 // Reviewed recipes only. Project descriptions must never become executable commands.
@@ -77,7 +78,13 @@ export function AddonHelp({ id, file, metadata, server, usage }) {
 function ChunkySetup({ id, server, usage }) {
   const { api } = useAuth();
   const [radius, setRadius] = useState("500");
-  const [world, setWorld] = useState("world");
+  const worlds = useResource(
+    server.permissions?.includes("console") ? `/servers/${id}/addons/chunky/worlds` : null,
+  );
+  const [selection, setWorld] = useState(null);
+  const [manual, setManual] = useState(false);
+  const choices = worlds.data || [];
+  const world = selection ?? choices[0]?.name ?? "";
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -85,7 +92,10 @@ function ChunkySetup({ id, server, usage }) {
   const operation = useRef(null);
   const allowed = server.permissions?.includes("console");
   const running = usage?.power_state === "running";
-  const validWorld = /^[a-zA-Z0-9_-]{1,64}$/.test(world);
+  const validWorld =
+    /^[a-zA-Z0-9_-]{1,64}$/.test(world) &&
+    (manual || choices.some((option) => option.name === world)) &&
+    (manual || !worlds.error);
   async function send(action) {
     if (busy || !allowed || !running || !validWorld) return;
     if (action === "start" && (!confirmed || !["500", "1000", "2000"].includes(radius))) return;
@@ -118,26 +128,74 @@ function ChunkySetup({ id, server, usage }) {
   return (
     <div className="chunky-setup">
       <p>
-        Prepare terrain before friends explore. This reduces new-terrain generation work during
-        play; it does not fix network lag. Players do not need Chunky.
+        Prepare terrain before friends explore for smoother exploration. Players do not need Chunky.
       </p>
       <p className="field-help">
-        Generate a circle around coordinates 0, 0 in your selected world. Run while nobody is
-        playing: it uses CPU and grows your world’s disk usage. Your existing progress is not
-        changed just by opening this form.
+        Prepare a circle around coordinates 0, 0. Run while nobody is playing: generation uses CPU
+        and disk space.
       </p>
-      <label>
-        World name
-        <input
-          value={world}
-          maxLength={64}
-          onChange={(e) => {
-            setWorld(e.target.value);
-            setConfirmed(false);
-          }}
-        />
-      </label>
-      {!validWorld && (
+      <ErrorMessage error={worlds.error} />
+      {!manual &&
+        (worlds.loading ? (
+          <p>Finding your worlds…</p>
+        ) : worlds.error ? (
+          <p className="notice">
+            World choices are unavailable. Retry the lookup or enter a known world name manually.
+          </p>
+        ) : choices.length ? (
+          <label>
+            Choose a world
+            <Select
+              aria-label="Choose a world"
+              value={world}
+              onChange={(event) => {
+                setWorld(event.target.value);
+                setConfirmed(false);
+              }}
+            >
+              {choices.map((option) => (
+                <option key={option.name} value={option.name}>
+                  {option.label} · {option.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : (
+          <p className="notice">
+            No supported world folders were found. Start Minecraft once to create its world, or
+            enter a custom world name.
+          </p>
+        ))}
+      {!manual && worlds.error && (
+        <button type="button" className="button secondary" onClick={worlds.refresh}>
+          Retry world lookup
+        </button>
+      )}
+      <button
+        type="button"
+        className="button secondary"
+        onClick={() => {
+          setManual(!manual);
+          setWorld(null);
+          setConfirmed(false);
+        }}
+      >
+        {manual ? "Use detected worlds" : "Enter world name manually"}
+      </button>
+      {manual && (
+        <label>
+          World name
+          <input
+            value={world}
+            maxLength={64}
+            onChange={(event) => {
+              setWorld(event.target.value);
+              setConfirmed(false);
+            }}
+          />
+        </label>
+      )}
+      {manual && !validWorld && (
         <p className="notice">
           Use a world name containing letters, numbers, underscores or hyphens.
         </p>
@@ -156,6 +214,9 @@ function ChunkySetup({ id, server, usage }) {
           <option value="2000">Large · 2,000-block radius</option>
         </Select>
       </label>
+      <p className="field-help">
+        Start small and expand later. Doubling the radius prepares about four times the area.
+      </p>
       <label className="chunky-confirm">
         <input
           type="checkbox"
