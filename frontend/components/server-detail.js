@@ -1,14 +1,11 @@
 "use client";
 import { nextServerAction } from "../lib/next-action";
-import { serverHealth } from "../lib/server-health";
 import { softwareName } from "../lib/software";
 import { ServerInsights } from "./server-insights";
 import { SetupProgress } from "./setup-progress";
 import { PlayerInvite } from "./player-invite";
 import { JoinServer } from "./join-server";
-import { FirstServerChecklist } from "./first-server";
 import { FeatureLinks } from "./management";
-import { ContextHelp } from "./context-help";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { VersionSafety } from "./change-safety";
@@ -181,7 +178,6 @@ export function ServerDetail({ id, advanced = false }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteKey, setDeleteKey] = useState("");
   const [copied, setCopied] = useState(false);
-  const [addressCopied, setAddressCopied] = useState(false);
   const ready =
     server?.status === "RUNNING" && server.management_available && !server.deletion_pending;
   const eula = useResource(ready ? `/servers/${id}/eula` : null, 10000);
@@ -206,6 +202,7 @@ export function ServerDetail({ id, advanced = false }) {
     transitioning ||
     !!usageError ||
     usage?.power_state !== "offline";
+  const [overviewView, setOverviewView] = useState("play");
   const nextAction = server
     ? nextServerAction({
         server,
@@ -267,7 +264,6 @@ export function ServerDetail({ id, advanced = false }) {
     try {
       await navigator.clipboard.writeText(address);
       setCopied(true);
-      setAddressCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setNotice("Copy the server address from the connection panel below.");
@@ -458,10 +454,30 @@ export function ServerDetail({ id, advanced = false }) {
             )}
             <FeatureLinks id={id} server={server} advanced={advanced} />
             {!advanced && (
+              <nav className="overview-views" aria-label="Overview views">
+                {[
+                  ["play", "Play"],
+                  ["joining", "Join"],
+                  ["health", "Health"],
+                  ["maintenance", "Manage"],
+                ]
+                  .filter(([view]) => view !== "maintenance" || has("delete"))
+                  .map(([view, label]) => (
+                    <button
+                      key={view}
+                      type="button"
+                      className={`button ${overviewView === view ? "primary" : "secondary"}`}
+                      aria-pressed={overviewView === view}
+                      onClick={() => setOverviewView(view)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+              </nav>
+            )}
+            {!advanced && overviewView === "play" && (
               <section className="server-play-card" aria-label="Play on your server">
-                <span className="eyebrow">YOUR NEXT STEP</span>
                 <h2>{nextAction.title}</h2>
-                <p>{nextAction.help}</p>
                 <div className="next-action-buttons">
                   {nextAction.kind === "start" && (
                     <button
@@ -510,7 +526,9 @@ export function ServerDetail({ id, advanced = false }) {
                 </div>
               </section>
             )}
-            {!advanced && <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />}
+            {!advanced && overviewView === "play" && (
+              <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />
+            )}
             {ready && !notice && ["starting", "stopping"].includes(displayPowerState) && (
               <p className="notice" role="status">
                 {displayPowerState === "starting"
@@ -518,7 +536,6 @@ export function ServerDetail({ id, advanced = false }) {
                   : "Saving your world and shutting down. Wait for Offline before starting again."}
               </p>
             )}
-            {advanced && <ContextHelp topic="console" />}
             {advanced ? (
               <>
                 <div className="section-heading">
@@ -558,23 +575,11 @@ export function ServerDetail({ id, advanced = false }) {
             ) : (
               <>
                 <ErrorMessage error={usageError} />
-                <details
+                <section
                   className="panel server-secondary"
                   data-section="joining"
-                  open={!ready || eula.data?.accepted === false}
+                  hidden={overviewView !== "joining"}
                 >
-                  <summary>Joining help & client requirements</summary>
-                  <ContextHelp topic="overview" />
-                  <FirstServerChecklist
-                    server={server}
-                    ready={ready}
-                    eula={eula.data?.accepted}
-                    powerState={displayPowerState}
-                    address={address}
-                    addressCopied={addressCopied}
-                    onCopy={copy}
-                  />
-
                   {!advanced && !server.deletion_pending && server.status !== "CANCELLED" && (
                     <JoinServer
                       key={server.id}
@@ -585,145 +590,141 @@ export function ServerDetail({ id, advanced = false }) {
                       onCopy={copy}
                     />
                   )}
-                </details>
-                <details className="panel server-secondary" data-section="health">
-                  <summary>
-                    <span>Server health & activity</span>
-                    <small>
-                      {
-                        serverHealth({
-                          server,
-                          ready,
-                          powerState: displayPowerState,
-                          usage,
-                          usageError,
-                          eula: eula.data?.accepted,
-                        }).title
-                      }
-                    </small>
-                  </summary>
-                  {!server.deletion_pending && server.status !== "CANCELLED" && (
-                    <StartupCheck
-                      key={`startup:${id}`}
-                      server={server}
-                      ready={ready}
-                      powerState={displayPowerState}
-                      usage={usage}
-                      usageError={usageError}
-                      eula={eula.data?.accepted}
-                    />
-                  )}
-                  <ServerInsights key={`insights:${id}`} server={server} ready={ready} />
-                  <div className="metric-grid">
-                    <Metric
-                      icon="user"
-                      title="Players online"
-                      value={usage?.players_online ?? "—"}
-                      detail={
-                        usage?.players_max != null
-                          ? `of ${usage.players_max} slots`
-                          : usage?.players_available
-                            ? "Ready for friends"
-                            : "No player count available"
-                      }
-                    />
-                    <Metric
-                      icon="cpu"
-                      title="CPU usage"
-                      value={usage ? `${usage.cpu_percent.toFixed(1)}%` : "—"}
-                      detail={`${server.cpu_limit}% allocated`}
-                    />
-                    <Metric
-                      icon="server"
-                      title="Memory usage"
-                      value={formatBytes(usage?.memory_bytes)}
-                      detail={`of ${formatBytes(server.ram_mb * 1048576, 0)} allocated`}
-                    />
-                    <Metric
-                      icon="clock"
-                      title="Uptime"
-                      value={usage ? duration(usage.uptime_ms) : "—"}
-                      detail={
-                        usage?.power_state === "running"
-                          ? "Since the last start"
-                          : "Start your next adventure"
-                      }
-                    />
-                  </div>
-                  <div className="overview-grid server-performance-grid">
-                    <section className="panel performance-panel">
-                      <div className="section-heading">
-                        <div>
-                          <h2>Server performance</h2>
-                          <span>CPU allocation usage</span>
-                        </div>
-                        <span className="live-label">
-                          <span />
-                          Recent live samples
-                        </span>
-                      </div>
-                      <LiveResourceChart key={id} usage={usage} cpuLimit={server.cpu_limit} />
-                      <div className="chart-caption">
-                        <span>Older</span>
-                        <span>Now</span>
-                      </div>
-                      <div className="disk-meter">
-                        <div>
-                          <span>Disk usage</span>
-                          <strong>
-                            {formatBytes(usage?.disk_bytes)}{" "}
-                            <small>/ {formatBytes(server.disk_mb * 1048576, 0)}</small>
-                          </strong>
-                        </div>
-                        <progress
-                          max={server.disk_mb * 1048576}
-                          value={usage?.disk_bytes || 0}
-                          aria-label="Disk usage"
+                </section>
+                <section
+                  className="panel server-secondary"
+                  data-section="health"
+                  hidden={overviewView !== "health"}
+                >
+                  {overviewView === "health" && (
+                    <>
+                      {!server.deletion_pending && server.status !== "CANCELLED" && (
+                        <StartupCheck
+                          key={`startup:${id}`}
+                          server={server}
+                          ready={ready}
+                          powerState={displayPowerState}
+                          usage={usage}
+                          usageError={usageError}
+                          eula={eula.data?.accepted}
+                        />
+                      )}
+                      <ServerInsights key={`insights:${id}`} server={server} ready={ready} />
+                      <div className="metric-grid">
+                        <Metric
+                          icon="user"
+                          title="Players online"
+                          value={usage?.players_online ?? "—"}
+                          detail={
+                            usage?.players_max != null
+                              ? `of ${usage.players_max} slots`
+                              : usage?.players_available
+                                ? "Ready for friends"
+                                : "No player count available"
+                          }
+                        />
+                        <Metric
+                          icon="cpu"
+                          title="CPU usage"
+                          value={usage ? `${usage.cpu_percent.toFixed(1)}%` : "—"}
+                          detail={`${server.cpu_limit}% allocated`}
+                        />
+                        <Metric
+                          icon="server"
+                          title="Memory usage"
+                          value={formatBytes(usage?.memory_bytes)}
+                          detail={`of ${formatBytes(server.ram_mb * 1048576, 0)} allocated`}
+                        />
+                        <Metric
+                          icon="clock"
+                          title="Uptime"
+                          value={usage ? duration(usage.uptime_ms) : "—"}
+                          detail={
+                            usage?.power_state === "running"
+                              ? "Since the last start"
+                              : "Start your next adventure"
+                          }
                         />
                       </div>
-                    </section>
-                  </div>
-                  <section className="panel details-panel">
-                    <div>
-                      <h2>At a glance</h2>
-                      <Link href="/guide">Setup and installation guide →</Link>
-                      <p>The essentials for your world.</p>
-                    </div>
-                    <dl>
-                      <div>
-                        <dt>Server software</dt>
-                        <dd>{softwareName(server.server_type)}</dd>
+                      <div className="overview-grid server-performance-grid">
+                        <section className="panel performance-panel">
+                          <div className="section-heading">
+                            <div>
+                              <h2>Server performance</h2>
+                              <span>CPU allocation usage</span>
+                            </div>
+                            <span className="live-label">
+                              <span />
+                              Recent live samples
+                            </span>
+                          </div>
+                          <LiveResourceChart key={id} usage={usage} cpuLimit={server.cpu_limit} />
+                          <div className="chart-caption">
+                            <span>Older</span>
+                            <span>Now</span>
+                          </div>
+                          <div className="disk-meter">
+                            <div>
+                              <span>Disk usage</span>
+                              <strong>
+                                {formatBytes(usage?.disk_bytes)}{" "}
+                                <small>/ {formatBytes(server.disk_mb * 1048576, 0)}</small>
+                              </strong>
+                            </div>
+                            <progress
+                              max={server.disk_mb * 1048576}
+                              value={usage?.disk_bytes || 0}
+                              aria-label="Disk usage"
+                            />
+                          </div>
+                        </section>
                       </div>
-                      <div>
-                        <dt>Minecraft version</dt>
-                        <dd>{server.minecraft_version}</dd>
-                      </div>
-                      {server.loader_version && (
+                      <section className="panel details-panel">
                         <div>
-                          <dt>Loader version</dt>
-                          <dd>{server.loader_version}</dd>
+                          <h2>At a glance</h2>
+                          <Link href="/guide">Setup and installation guide →</Link>
+                          <p>The essentials for your world.</p>
                         </div>
-                      )}
-                      <div>
-                        <dt>Your access</dt>
-                        <dd>
-                          {server.role === "OWNER"
-                            ? "Owner"
-                            : server.role === "ADMIN"
-                              ? "Admin"
-                              : "Moderator"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Backup allowance</dt>
-                        <dd>{server.backup_limit}</dd>
-                      </div>
-                    </dl>
-                  </section>
-                </details>
+                        <dl>
+                          <div>
+                            <dt>Server software</dt>
+                            <dd>{softwareName(server.server_type)}</dd>
+                          </div>
+                          <div>
+                            <dt>Minecraft version</dt>
+                            <dd>{server.minecraft_version}</dd>
+                          </div>
+                          {server.loader_version && (
+                            <div>
+                              <dt>Loader version</dt>
+                              <dd>{server.loader_version}</dd>
+                            </div>
+                          )}
+                          <div>
+                            <dt>Your access</dt>
+                            <dd>
+                              {server.role === "OWNER"
+                                ? "Owner"
+                                : server.role === "ADMIN"
+                                  ? "Admin"
+                                  : "Moderator"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Backup allowance</dt>
+                            <dd>{server.backup_limit}</dd>
+                          </div>
+                        </dl>
+                      </section>
+                    </>
+                  )}
+                </section>
                 {has("delete") && server.status !== "CANCELLED" && !server.deletion_pending && (
-                  <details className="panel server-secondary" data-section="maintenance">
-                    <summary>Version & server management</summary>
+                  <section
+                    className="panel server-secondary"
+                    data-section="maintenance"
+                    hidden={overviewView !== "maintenance"}
+                  >
                     <section className="panel details-panel">
                       <VersionSafety server={server} offline={usage?.power_state === "offline"} />
                       <div>
@@ -741,7 +742,7 @@ export function ServerDetail({ id, advanced = false }) {
                         </button>
                       </div>
                     </section>
-                  </details>
+                  </section>
                 )}
               </>
             )}

@@ -709,7 +709,7 @@ test("owner power controls use a request key and refresh real status", async ({ 
   const call = calls.find((c) => c.path.endsWith("/start") && c.method === "POST");
   expect(call.headers["idempotency-key"]).toMatch(/^[0-9a-f-]{36}$/);
   expect(call.body).toEqual({});
-  await page.locator('[data-section="health"] > summary').click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   await expect(page.getByText("7m", { exact: true })).toBeVisible();
 });
 test("moderator UI excludes Stop and Force stop; console commands use REST", async ({ page }) => {
@@ -1012,7 +1012,7 @@ test("owner must type the server name before deletion is queued", async ({ page 
   const calls = await mockAPI(page);
   await login(page);
   await page.locator(`a[href="/servers/${serverID}"]`).first().click();
-  await page.locator('[data-section="maintenance"] > summary').click();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
   await page.getByRole("button", { name: "Delete server" }).click();
   await expect(page.getByRole("dialog")).toContainText("world, files and backups");
   await expect(
@@ -1278,32 +1278,12 @@ test("guide topic links reveal and focus the matching answer", async ({ page }) 
   await expect(page.getByText(/build a .jar with the correct plugin descriptor/)).toBeVisible();
 });
 
-test("mods contextual help links directly to installation instructions", async ({ page }) => {
+test("management pages omit generic help boxes", async ({ page }) => {
   await mockAPI(page, { servers: [{ ...baseServer, server_type: "FORGE" }] });
   await openServer(page);
   await page.getByRole("link", { name: "Mods", exact: true }).click();
-  const help = page.getByRole("complementary", { name: "Help with mods" });
-  await help.locator("summary").click();
-  await expect(help).toContainText("Minecraft version and loader");
-  await help.getByRole("link", { name: "Open the step-by-step guide" }).click();
-  await expect(page).toHaveURL(/\/guide#add-extras$/);
-  await expect(page.getByRole("heading", { name: "3. Add plugins or mods" })).toBeInViewport();
-});
-
-test("console help deep link opens startup troubleshooting", async ({ page }) => {
-  await mockAPI(page);
-  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
-    ws.send(JSON.stringify({ event: "connected" })),
-  );
-  await openServer(page);
-  await page.getByRole("link", { name: "Advanced", exact: true }).click();
-  const help = page.getByRole("complementary", { name: "Help with console" });
-  await help.locator("summary").click();
-  await expect(help).toContainText("without the chat’s leading slash");
-  await help.getByRole("link", { name: "Open the step-by-step guide" }).click();
-  await expect(page).toHaveURL(/\/guide#server-errors$/);
-  await expect(page.locator("#server-errors")).toHaveAttribute("open", "");
-  await expect(page.getByText(/find the first error/)).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Help with mods" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Find mods", exact: true })).toBeVisible();
 });
 
 test("forgot password requests mail without exposing account existence", async ({ page }) => {
@@ -1657,18 +1637,19 @@ test("beta onboarding explains manual access instead of checkout", async ({ page
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test("first-session checklist reflects the EULA and real startup state", async ({ page }) => {
+test("next action follows agreement acceptance and real startup without a checklist", async ({
+  page,
+}) => {
   await mockAPI(page, { eulaAccepted: false });
   await openServer(page);
-  const checklist = page.locator(".first-server-checklist");
-  await expect(checklist).toHaveAttribute("open", "");
-  await expect(checklist.locator("summary")).toContainText("1 of 4 steps complete");
-  await expect(checklist).toContainText("Minecraft Java 1.21.1");
+  const play = page.getByRole("region", { name: "Play on your server" });
+  await expect(play).toContainText("One agreement before your first adventure.");
+  await expect(page.locator(".first-server-checklist")).toHaveCount(0);
   await page.getByRole("checkbox", { name: /I have read and accept/ }).check();
   await page.getByRole("button", { name: "Accept agreement", exact: true }).click();
-  await expect(checklist.locator("summary")).toContainText("2 of 4 steps complete");
+  await expect(play).toContainText("Start your next adventure.");
   await page.getByRole("button", { name: "Start", exact: true }).click();
-  await expect(checklist.locator("summary")).toContainText("3 of 4 steps complete");
+  await expect(play).toContainText("Your world is ready. Bring your friends.");
 });
 
 const feedbackFixture = {
@@ -1996,13 +1977,11 @@ for (const width of [320, 1366]) {
     await page.setViewportSize({ width, height: 900 });
     await login(page);
     await page.goto(`/servers/${serverID}`);
-    await page.locator('[data-section="joining"] > summary').click();
+    await page.getByRole("button", { name: "Join", exact: true }).click();
     const card = page.getByRole("region", { name: "How to join" });
-    await card.getByText("Join instructions and player setup", { exact: true }).click();
     await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
     await expect(card.getByText("Whitelist is disabled.", { exact: false })).toBeVisible();
     await expect(card.getByText("play.example.com:25565", { exact: true })).toBeVisible();
-    await card.getByText("Having trouble connecting?", { exact: true }).click();
     await expect(card.getByText("Invalid session:", { exact: false })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -2013,9 +1992,8 @@ test("moderator joining help does not request privileged settings", async ({ pag
   const calls = await mockAPI(page, { role: "MODERATOR", initiallyRunning: true });
   await login(page);
   await page.goto(`/servers/${serverID}`);
-  await page.locator('[data-section="joining"] > summary').click();
+  await page.getByRole("button", { name: "Join", exact: true }).click();
   const card = page.getByRole("region", { name: "How to join" });
-  await card.getByText("Join instructions and player setup", { exact: true }).click();
   await expect(card.getByText("Check which account you need", { exact: true })).toBeVisible();
   await expect(card.getByRole("link", { name: "Manage allowed players →" })).toHaveCount(0);
   expect(calls.some((c) => c.path.endsWith("/settings"))).toBe(false);
@@ -2029,9 +2007,8 @@ test("offline joining guidance does not assume an authentication plugin is insta
   );
   await login(page);
   await page.goto(`/servers/${serverID}`);
-  await page.locator('[data-section="joining"] > summary').click();
+  await page.getByRole("button", { name: "Join", exact: true }).click();
   const card = page.getByRole("region", { name: "How to join" });
-  await card.getByText("Join instructions and player setup", { exact: true }).click();
   await expect(
     card.getByText("Check the server’s login instructions", { exact: true }),
   ).toBeVisible();
@@ -2894,8 +2871,7 @@ for (const [width, voiceRequired] of [
       route.fulfill({ json: { addons } }),
     );
     await openServer(page);
-    await page.locator('[data-section="joining"] > summary').click();
-    await page.getByText("Join instructions and player setup", { exact: true }).click();
+    await page.getByRole("button", { name: "Join", exact: true }).click();
     const notice = page.getByLabel("Player client requirements");
     await expect(
       notice.getByText(voiceRequired ? "Modded client required" : "Check client requirements", {
@@ -2983,8 +2959,7 @@ test("failed requirement lookup never claims vanilla compatibility", async ({ pa
     route.fulfill({ status: 503, json: { message: "Unavailable" } }),
   );
   await openServer(page);
-  await page.locator('[data-section="joining"] > summary').click();
-  await page.getByText("Join instructions and player setup", { exact: true }).click();
+  await page.getByRole("button", { name: "Join", exact: true }).click();
   const notice = page.getByLabel("Player client requirements");
   await expect(
     notice.getByText("Player requirements could not be checked", { exact: true }),
@@ -3029,16 +3004,14 @@ for (const width of [390, 1366]) {
       }),
     );
     await openServer(page);
-    await page.locator('[data-section="joining"] > summary').click();
+    await page.getByRole("button", { name: "Join", exact: true }).click();
     const card = page.getByRole("region", { name: "How to join" });
-    await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeHidden();
+    await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
     await expect(page.locator(".metric-grid")).not.toBeVisible();
-    await expect(page.getByRole("region", { name: "Play on your server" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Play on your server" })).not.toBeVisible();
     // Let the two independent setup reads finish before sharing the snapshot.
-    await card.getByText("Join instructions and player setup", { exact: true }).click();
     await expect(card.getByText("Client mod required to join", { exact: true })).toBeVisible();
     await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
-    await card.getByText("Join instructions and player setup", { exact: true }).click();
     await card.getByRole("button", { name: "Copy join instructions" }).click();
     await expect(card.getByRole("status")).toContainText("Join instructions copied");
     const text = await page.evaluate(() => window.sharedJoinInstructions);
@@ -3078,8 +3051,7 @@ test("join instruction copy falls back safely when clipboard and setup are unava
     route.fulfill({ status: 503, json: { error: "Unavailable" } }),
   );
   await openServer(page);
-  await page.locator('[data-section="joining"] > summary').click();
-  await page.getByText("Join instructions and player setup", { exact: true }).click();
+  await page.getByRole("button", { name: "Join", exact: true }).click();
   await expect(
     page.getByText("Player requirements could not be checked", { exact: true }),
   ).toBeVisible();
@@ -3095,9 +3067,8 @@ test("connection troubleshooting gives specific version mods whitelist and voice
 }) => {
   await mockAPI(page, { initiallyRunning: true });
   await openServer(page);
-  await page.locator('[data-section="joining"] > summary').click();
+  await page.getByRole("button", { name: "Join", exact: true }).click();
   const card = page.getByRole("region", { name: "How to join" });
-  await card.getByText("Having trouble connecting?", { exact: true }).click();
   const control = card.getByRole("combobox", { name: "What does Minecraft show?" });
   await selectValue(page, control, "version");
   await expect(card.getByText("Open Minecraft Java 1.21.1.", { exact: false })).toBeVisible();
@@ -3230,7 +3201,7 @@ test("no-backup risk acknowledgement is explicit", async ({ page }) => {
 test("version changes offer a backup before navigating to a new server", async ({ page }) => {
   await mockAPI(page);
   await openServer(page);
-  await page.locator('[data-section="maintenance"] > summary').click();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
   await page.getByRole("button", { name: "Prepare version change" }).click();
   await expect(page.getByRole("combobox", { name: "Completed backup" })).toContainText(
     "Before changes",
@@ -3262,8 +3233,8 @@ test("startup help shows safe actionable issues and preserves the console fallba
     }),
   );
   await openServer(page);
-  await page.locator('[data-section="health"] > summary').click();
-  await expect(page.locator(".startup-check")).toHaveCount(1);
+  await page.getByRole("button", { name: "Health", exact: true }).click();
+  await expect(page.getByRole("status", { name: "Startup alerts" })).toBeVisible();
   await expect(page.getByText("An addon is missing a dependency", { exact: true })).toBeVisible();
   await expect(
     page
@@ -3420,10 +3391,8 @@ test("server activity and bounded storage show safe results on mobile", async ({
   );
   await login(page);
   await page.goto(`/servers/${serverID}`);
-  await page.getByText("Server health & activity", { exact: true }).click();
-  await page.getByText("Activity history", { exact: true }).click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   await expect(page.getByText("Stop requested", { exact: true })).toBeVisible();
-  await page.getByText("Storage overview", { exact: true }).click();
   await expect(page.getByText("Storage is nearly full.", { exact: false })).toBeVisible();
   await expect(page.getByText("This scan is partial:", { exact: false })).toBeVisible();
   await page
@@ -3500,7 +3469,6 @@ test("addon update review names replaced files and requires backup choice", asyn
   );
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Updates for installed addons", { exact: true }).click();
   await page.getByRole("button", { name: "Check addon updates" }).click();
   await page.getByRole("button", { name: "Review update" }).click();
   const dialog = page.getByRole("dialog", { name: "Review addon update" });
@@ -3514,14 +3482,12 @@ test("player checklist download contains requirements and no automatic install c
   await mockAPI(page);
   await login(page);
   await page.goto(`/servers/${serverID}`);
-  await page.locator('[data-section="joining"] > summary').click();
-  const help = page.getByText("Missing mods or automatic downloads?", { exact: true });
-  await help.click();
+  await page.getByRole("button", { name: "Join", exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download player setup checklist" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("minecraft-player-setup.txt");
-  await expect(page.getByText("Forge can report missing", { exact: false })).toBeVisible();
+  await expect(page.locator(".join-server details")).toHaveCount(0);
 });
 
 test("new server selector hides legacy loaders even in stale options", async ({ page }) => {
@@ -3642,7 +3608,7 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   const panel = page.getByRole("region", { name: "Invite your friends" });
   await expect(panel.getByLabel("Include optional client features")).not.toBeChecked();
   await expect(panel.getByLabel("Include beta client builds")).not.toBeChecked();
-  await panel.getByText("Player download options", { exact: true }).click();
+
   await panel.getByLabel("Include beta client builds").check();
   await panel.getByRole("button", { name: "Prepare invite link" }).click();
   await expect
@@ -3653,7 +3619,6 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toContain(`/join/${playerSlug}`);
-  await panel.getByText("Link access", { exact: true }).click();
   await panel.getByRole("button", { name: "Disable invite link" }).click();
   await expect(panel.getByRole("button", { name: "Prepare invite link" })).toBeVisible();
 });
@@ -3771,7 +3736,7 @@ test("owner invite polling reflects changed server setup instead of a cached pub
   await openServer(page);
   const panel = page.getByRole("region", { name: "Invite your friends" });
   await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveClass(/primary/);
-  await expect(panel.getByLabel("Include optional client features")).not.toBeVisible();
+  await expect(panel.getByLabel("Include optional client features")).toBeVisible();
   await panel.getByRole("button", { name: "Refresh player setup" }).click();
   await expect(panel.getByText("Player download ready", { exact: true })).toBeVisible();
   current = {
@@ -3933,11 +3898,10 @@ test("server health explains pressure without claiming measured lag or player pi
     }),
   );
   await openServer(page);
-  await page.locator('[data-section="health"] > summary').click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   const card = page.getByRole("region", { name: "Server health" });
   await expect(card.getByRole("heading", { name: "Storage is nearly full" })).toBeVisible();
-  await card.getByText("Players are experiencing lag?", { exact: true }).click();
-  await expect(card).toContainText("does not measure Minecraft tick rate or each player’s ping");
+  await expect(card).toContainText("Tick rate and player ping aren’t measured here.");
 });
 test("health support links attach safe dashboard state and check time to a reviewed report", async ({
   page,
@@ -3949,7 +3913,7 @@ test("health support links attach safe dashboard state and check time to a revie
     return route.fulfill({ status: 201, json: { ...feedbackFixture, id: orderID } });
   });
   await openServer(page);
-  await page.locator('[data-section="health"] > summary').click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   await page
     .getByRole("region", { name: "Server health" })
     .getByRole("link", { name: "Report a problem →" })
@@ -3977,7 +3941,7 @@ test("unavailable live readings never claim online and support uses the failing 
     }),
   );
   await openServer(page);
-  await page.locator('[data-section="health"] > summary').click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   const card = page.getByRole("region", { name: "Server health" });
   await expect(card.getByRole("heading", { name: "Live status unavailable" })).toBeVisible();
   await expect(card.getByRole("link", { name: "Report a problem →" })).toHaveAttribute(
@@ -4465,14 +4429,10 @@ test("dashboard shortcuts use authorized server details and dropdowns keep reada
   expect((luminance(colors.fg) + 0.05) / (luminance(colors.bg) + 0.05)).toBeGreaterThan(4.5);
   await page.keyboard.press("Escape");
   await quick.getByRole("link", { name: /Game rules/ }).click();
-  const help = page.getByLabel("Help with settings");
-  const helpColors = await help.evaluate((element) => ({
-    bg: getComputedStyle(element).backgroundColor,
-    fg: getComputedStyle(element).color,
-  }));
-  expect((luminance(helpColors.fg) + 0.05) / (luminance(helpColors.bg) + 0.05)).toBeGreaterThan(
-    4.5,
-  );
+  await expect(page.getByLabel("Help with settings")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Minecraft settings", exact: true }),
+  ).toBeVisible();
 });
 
 test("moderator dashboard does not show owner or admin world shortcuts", async ({ page }) => {
@@ -4492,20 +4452,19 @@ test("root-domain homepage links account access to app without relative login UR
   expect(html).not.toContain('href="/login"');
 });
 
-test("server overview leads with play and invite while keeping technical work collapsed", async ({
-  page,
-}) => {
+test("server overview keeps play focused and opens technical views directly", async ({ page }) => {
   const calls = await mockAPI(page, { initiallyRunning: true });
   await openServer(page);
   await expect(page.getByRole("region", { name: "Play on your server" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Invite your friends" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Server pages" })).toBeVisible();
+  await expect(page.locator("main details:visible")).toHaveCount(0);
   for (const section of ["joining", "health", "maintenance"]) {
-    await expect(page.locator(`[data-section="${section}"]`)).not.toHaveAttribute("open", "");
+    await expect(page.locator(`[data-section="${section}"]`)).not.toBeVisible();
   }
   await expect(page.getByRole("button", { name: "Delete server", exact: true })).not.toBeVisible();
   await expect(page.getByText("CPU usage", { exact: true })).not.toBeVisible();
-  await page.locator('[data-section="health"] > summary').click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   await expect(page.getByText("CPU usage", { exact: true })).toBeVisible();
   expect(
     calls.filter((call) => call.method !== "GET" && call.path.startsWith(`/servers/${serverID}`)),
@@ -5135,7 +5094,7 @@ test("installed Chunky offers confirmed terrain controls without typing commands
   });
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath("chunky-setup-mobile.png"), fullPage: true });
   const prepare = page.getByRole("button", { name: "Prepare terrain", exact: true });
   await expect(prepare).toBeDisabled();
@@ -5230,9 +5189,9 @@ test("Chunky progress is opt-in, world-specific and honest after stream disconne
   await login(page);
   await page.clock.install();
   await page.goto(`/servers/${serverID}/plugins`);
-  await expect(page.getByText("Setup & help", { exact: true })).toBeVisible();
+  await expect(page.getByText("Terrain settings", { exact: true })).toBeVisible();
   expect(calls.filter((c) => c.path.endsWith("/console-ticket"))).toHaveLength(0);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await expect(page.getByText("Last reported: 26.55%")).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", "26.55");
   expect(calls.filter((c) => c.path.endsWith("/commands"))).toHaveLength(0);
@@ -5264,7 +5223,7 @@ test("retrying a failed Chunky request reuses its idempotency key", async ({ pag
   });
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await page.getByLabel("I’m ready to generate").check();
   const start = page.getByRole("button", { name: "Prepare terrain", exact: true });
   await start.click();
@@ -5452,7 +5411,7 @@ test("terrain preparation uses actual custom world choices instead of guessing w
   });
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Choose a world" })).toContainText(
     "Main world · Campfire",
   );
@@ -5487,7 +5446,7 @@ test("unavailable world detection blocks guessed commands and offers explicit ma
   });
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await expect(page.getByText("World lookup unavailable", { exact: true })).toBeVisible();
   await page.getByLabel("I’m ready to generate").check();
   await expect(page.getByRole("button", { name: "Prepare terrain", exact: true })).toBeDisabled();
@@ -5514,7 +5473,7 @@ test("Chunky pause and finish reports replace running estimates in the setup pan
   );
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await expect.poll(() => !!stream).toBe(true);
   stream.send(
     JSON.stringify({ event: "console output", args: ["[Chunky] Task paused for world."] }),
@@ -5552,7 +5511,7 @@ test("failed world lookup retries as a read without sending Chunky commands", as
   );
   await login(page);
   await page.goto(`/servers/${serverID}/plugins`);
-  await page.getByText("Setup & help", { exact: true }).click();
+  await page.getByText("Terrain settings", { exact: true }).click();
   await page.getByRole("button", { name: "Retry world lookup" }).click();
   await expect(page.getByRole("combobox", { name: "Choose a world" })).toContainText(
     "Main world · Campfire",
@@ -5794,7 +5753,7 @@ for (const width of [390, 1366])
     await page.getByRole("button", { name: "Show all installed", exact: true }).click();
     await expect(rows.locator(":scope > li")).toHaveCount(3);
     const chunky = rows.locator(":scope > li").filter({ hasText: "Chunky-Bukkit-1.5.3.jar" });
-    await chunky.getByText("Setup & help", { exact: true }).click();
+    await chunky.getByText("Terrain settings", { exact: true }).click();
     await expect(
       chunky.getByRole("link", { name: "Configuration files", exact: true }),
     ).toHaveCount(1);
@@ -6155,23 +6114,16 @@ for (const width of [390, 1366]) {
       });
     });
     await openServer(page);
-    await page.locator('[data-section="health"] > summary').click();
+    await page.getByRole("button", { name: "Health", exact: true }).click();
     const card = page.getByRole("region", { name: "Server health" });
-    await card.getByText("Players are experiencing lag?", { exact: true }).click();
-    await expect(
-      card.getByRole("heading", { name: "Compare players before changing the server" }),
-    ).toBeVisible();
+    await expect(card).toContainText("Everyone lagging?");
     await selectValue(page, card.getByLabel("What do players notice?"), "fps");
-    await expect(
-      card.getByRole("heading", { name: "Start with the player’s graphics settings" }),
-    ).toBeVisible();
+    await expect(card).toContainText("Lower client render distance");
     await expect(card.getByRole("link", { name: "Open Minecraft settings →" })).toHaveCount(0);
     await selectValue(page, card.getByLabel("What do players notice?"), "chunks");
-    await expect(
-      card.getByRole("heading", { name: "Check whether exploring new terrain triggers it" }),
-    ).toBeVisible();
+    await expect(card).toContainText("Pause terrain generation");
     await card.getByRole("button", { name: "Copy diagnostic report" }).click();
-    await expect(card.getByRole("status")).toContainText("Diagnostic report copied");
+    await expect(card.getByRole("status")).toContainText("Report copied.");
     const preview = card.getByLabel("Diagnostic report preview");
     const report = await preview.inputValue();
     expect(report).toContain("Player-reported symptom: Slow chunk loading");
@@ -6213,9 +6165,8 @@ test("diagnostic copy fallback shows a selectable report without stale usage", a
     route.fulfill({ status: 503, json: { error: "Readings unavailable" } }),
   );
   await openServer(page);
-  await page.locator('[data-section="health"] > summary').click();
+  await page.getByRole("button", { name: "Health", exact: true }).click();
   const card = page.getByRole("region", { name: "Server health" });
-  await card.getByText("Players are experiencing lag?", { exact: true }).click();
   await card.getByRole("button", { name: "Copy diagnostic report" }).click();
   await expect(card.getByRole("status")).toContainText("Select and copy the report below manually");
   await expect(card.getByLabel("Diagnostic report preview")).toHaveValue(/CPU use: Unavailable/);

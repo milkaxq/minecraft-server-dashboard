@@ -6086,3 +6086,34 @@ input {
   font-family: var(--font-mono), monospace;
   font-size: 13px;
 }
+
+.overview-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 16px;
+}
+.overview-views .button {
+  flex: 1;
+}
+.server-secondary[hidden] {
+  display: none;
+}
+.invite-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-block: 16px;
+}
+.invite-link-access {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.lag-help > .text-link {
+  display: inline-block;
+  margin-bottom: 12px;
+}

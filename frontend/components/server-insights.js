@@ -63,8 +63,6 @@ export function Notifications() {
 }
 
 export function ServerInsights({ server, ready }) {
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [storageOpen, setStorageOpen] = useState(false);
   const backups = useResource(
     ready && server.permissions?.includes("backups") ? `/servers/${server.id}/backups` : null,
     30000,
@@ -72,8 +70,10 @@ export function ServerInsights({ server, ready }) {
   const failedBackups = Array.isArray(backups.data)
     ? backups.data.filter((backup) => backup.completed_at && !backup.is_successful)
     : [];
-  const activity = useResource(activityOpen ? `/servers/${server.id}/activity` : null, 15000);
-  const storage = useResource(storageOpen && ready ? `/servers/${server.id}/storage` : null);
+  const activity = useResource(ready ? `/servers/${server.id}/activity` : null, 15000);
+  const storage = useResource(
+    ready && server.permissions?.includes("files") ? `/servers/${server.id}/storage` : null,
+  );
   const data = storage.error ? null : storage.data;
   const percent =
     data?.limit_bytes > 0 ? Math.round((data.used_bytes / data.limit_bytes) * 100) : 0;
@@ -94,14 +94,8 @@ export function ServerInsights({ server, ready }) {
           </Link>
         </div>
       )}
-      <details
-        className="panel server-insights"
-        onToggle={(event) => setActivityOpen(event.currentTarget.open)}
-      >
-        <summary>Activity history</summary>
-        <p className="field-help">
-          Recent server actions. Commands, file contents and private logs are never included.
-        </p>
+      <section className="panel server-insights">
+        <h3>Activity</h3>
         <ErrorMessage error={activity.error} />
         {activity.loading && <p>Loading activity…</p>}
         {Array.isArray(activity.data) && (
@@ -130,13 +124,10 @@ export function ServerInsights({ server, ready }) {
           Latest 50 events. A successful request does not mean Minecraft has finished starting or
           stopping.
         </p>
-      </details>
+      </section>
       {server.permissions?.includes("files") && (
-        <details
-          className="panel server-insights"
-          onToggle={(event) => setStorageOpen(event.currentTarget.open)}
-        >
-          <summary>Storage overview</summary>
+        <section className="panel server-insights">
+          <h3>Storage</h3>
           {!ready ? (
             <p>Available when server setup completes.</p>
           ) : (
@@ -195,7 +186,7 @@ export function ServerInsights({ server, ready }) {
               </button>
             </>
           )}
-        </details>
+        </section>
       )}
     </section>
   );

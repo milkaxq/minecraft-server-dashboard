@@ -170,26 +170,13 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
           {copying ? "Copying…" : "Copy join instructions"}
         </button>
       </div>
-      <details className="player-install-help">
-        <summary>Missing mods or automatic downloads?</summary>
-        <p>
-          Missing a required mod? Install it in your launcher’s profile before joining, then restart
-          Minecraft. Forge can report missing or incompatible mods, but it does not automatically
-          download and install the server’s mod list.
-        </p>
-        <p className="field-help">
-          An in-game download page needs a helper mod or launcher already installed on the player’s
-          computer. Resource-pack prompts do not install mods. This checklist contains project
-          links, not executable downloads, and unknown uploads must be checked with the host.
-        </p>
-        <button
-          className="button secondary"
-          disabled={!address || setup.loading}
-          onClick={downloadSetup}
-        >
-          Download player setup checklist
-        </button>
-      </details>
+      <button
+        className="button secondary"
+        disabled={!address || setup.loading}
+        onClick={downloadSetup}
+      >
+        Download player setup checklist
+      </button>
       {copied && <p role="status">Join instructions copied. Send them to your friends.</p>}
       {fallback && (
         <label className="clipboard-fallback">
@@ -203,16 +190,16 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
           />
         </label>
       )}
-      <details className="join-setup-details" ref={details}>
-        <summary>Join instructions and player setup</summary>
+      <section className="join-setup-details" ref={details}>
+        <h3>Join instructions</h3>
         <ClientRequirementsNotice server={server} ready={ready} resource={setup} />
         <ol className="join-steps">
           <li>
             <strong>Open Minecraft Java {server.minecraft_version}</strong>
             <p>
               {supportsMods(server.server_type)
-                ? `For required client mods, install ${softwareName(server.server_type)}${server.loader_version ? ` ${server.loader_version}` : ""} and those mods on your computer. Match the server’s Minecraft version and check each addon’s instructions.`
-                : "Use the matching Java Edition version. Most plugins work with vanilla; check the player setup above for addons that need a client mod."}
+                ? `Use ${softwareName(server.server_type)}${server.loader_version ? ` ${server.loader_version}` : ""} with the required mods listed above.`
+                : "Use this Java Edition version and the required client mods listed above."}
             </p>
           </li>
           <li>
@@ -225,10 +212,10 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
             </strong>
             <p>
               {verified === true
-                ? "Use an account that owns Minecraft Java Edition, including in SKlauncher. No separate server password is needed unless the owner installed a login plugin."
+                ? "Use your Microsoft account with Minecraft Java Edition."
                 : verified === false
-                  ? "Minecraft account verification is off. Ask the owner whether AuthMe or another login plugin is installed. Offline players need server authentication to protect their usernames; plugins are not installed automatically."
-                  : "Ask the owner whether Microsoft account verification is enabled or a server login plugin is required. Login settings could not be checked here."}
+                  ? "Account verification is off. Follow the owner’s login instructions; plugins are not installed automatically."
+                  : "Ask the owner which login to use."}
             </p>
           </li>
           <li>
@@ -236,10 +223,10 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
             <p>Paste the full address, including its port, then choose Join Server.</p>
             <p>
               {whitelist === true
-                ? "Whitelist is enabled. The owner must add your Minecraft username before you can join."
+                ? "Whitelist is enabled. Ask the owner to add your username."
                 : whitelist === false
-                  ? "Whitelist is disabled. Anyone who meets the login requirements can join."
-                  : "Ask the owner whether your username needs to be added to the whitelist."}
+                  ? "Whitelist is disabled."
+                  : "Ask the owner if you need whitelist access."}
             </p>
             {canReadSettings && (
               <Link className="text-link" href={`/servers/${server.id}/players`}>
@@ -248,9 +235,9 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
             )}
           </li>
         </ol>
-      </details>
-      <details className="join-troubleshooting">
-        <summary>Having trouble connecting?</summary>
+      </section>
+      <section className="join-troubleshooting">
+        <h3>Can’t connect?</h3>
         <label>
           What does Minecraft show?
           <Select value={problem} onChange={(event) => setProblem(event.target.value)}>
@@ -268,7 +255,6 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
             <button
               className="button secondary"
               onClick={() => {
-                details.current.open = true;
                 details.current.scrollIntoView({ block: "start", behavior: "smooth" });
               }}
             >
@@ -292,7 +278,7 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
         <Link className="text-link" href={`/feedback?server=${server.id}`}>
           Still stuck? Contact your host →
         </Link>
-      </details>
+      </section>
     </section>
   );
 }

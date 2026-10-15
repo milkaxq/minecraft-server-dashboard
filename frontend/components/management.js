@@ -13,7 +13,6 @@ import { ProjectIcon } from "./project-icon";
 import { supportsPlugins, supportsMods, softwareName } from "../lib/software";
 import { Players } from "./players";
 import Link from "next/link";
-import { ContextHelp } from "./context-help";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
@@ -157,7 +156,6 @@ export function ManagementPage({ id, section }) {
             </div>
           </div>
           <FeatureLinks id={id} server={server} advanced={section === "files"} active={section} />
-          <ContextHelp topic={section} />
           <ErrorMessage error={info.error || error} />
           {!server.permissions?.includes(
             section === "mods" ? "files" : section === "players" ? "settings" : section,
@@ -1465,31 +1463,10 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
         For {softwareName(server.server_type)} · Minecraft {server.minecraft_version} · Stable
         matching releases only
       </p>
-      <p className="field-help">
-        Browse Modrinth releases matched to your server software and Minecraft version. Review
-        required dependencies before installing. Stop your server to install.
-      </p>
-      {collection === "plugins" ? (
-        <p className="field-help">
-          Want newer Java clients to join? Search for ViaVersion. Your server keeps its existing
-          gameplay version.
-        </p>
-      ) : (
-        <p className="field-help">
-          Players may need the same mods on their computers. Complete modpacks also include settings
-          and client files; use the pack author’s server setup instructions.
-        </p>
-      )}
       <Feedback action={action} />
       {!preview && failureHelp}
       <ErrorMessage error={resource.error || installed.error} />
-      <details className="addon-updates">
-        <summary>Updates for installed addons</summary>
-        <p className="field-help">
-          Checks up to 20 catalog-tracked projects per request, using stable releases for your
-          server version and software. Uploaded JARs need manual review. An author’s compatible
-          release can still change gameplay; read its release notes.
-        </p>
+      <section className="addon-updates">
         <button
           className="button secondary"
           disabled={updates.loading || action.busy}
@@ -1538,7 +1515,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
         {Array.isArray(updates.data) && updates.data.length === 0 && (
           <p>No catalog-tracked addons found. Uploaded JARs are not checked automatically.</p>
         )}
-      </details>
+      </section>
       <form onSubmit={browse} className="catalog-controls">
         <label>
           Search {collection}
@@ -1855,8 +1832,7 @@ function Backups({ id, offline, limit }) {
         </p>
         {oldCopy && !resource.error && (
           <p className="notice">
-            Your newest usable copy is over two days old. Create a fresh backup before making
-            changes you may want to undo.
+            Your latest backup is over two days old. Create a fresh copy before changes.
           </p>
         )}
         {latest && !resource.error && (
@@ -1890,17 +1866,6 @@ function Backups({ id, offline, limit }) {
             </button>
           </div>
         )}
-        <p className="field-help">
-          Backups save your server’s worlds, settings and add-on files. Files excluded by backup
-          rules are not included. A ready backup is a recovery option; it does not prove that a
-          restore has been tested.
-        </p>
-        {latest && (
-          <p className="field-help">
-            Changes made since the backup are not protected by that copy. Download a copy to keep it
-            somewhere you control.
-          </p>
-        )}
       </section>
       <section className="panel management-panel">
         <div className="section-heading">
@@ -1914,10 +1879,7 @@ function Backups({ id, offline, limit }) {
             Refresh
           </button>
         </div>
-        <p className="field-help">
-          For a consistent world backup, stop your server first. You can create backups while it is
-          online, but files may change during the backup.
-        </p>
+        <p className="field-help">Stop the server first for a consistent backup.</p>
         {limit <= 0 && (
           <p className="notice">
             This server’s plan has no backup slots. Ask your host about backup access before making
@@ -2189,8 +2151,7 @@ function Worlds({ id, offline, limit }) {
               </div>
               <h3>Before changing your world</h3>
               <p className="field-help">
-                Stop the server, then create a safety backup. Wait for it to finish before uploading
-                or resetting. Starting the server or editing files means you need a new backup.
+                Stop the server and create a backup before replacing your world.
               </p>
               <button
                 className="button secondary"
@@ -2265,8 +2226,7 @@ function Worlds({ id, offline, limit }) {
                 }}
               />
               <p className="field-help">
-                Settings and plugins stay in place. You can recover your previous world by restoring
-                its safety backup from Backups.
+                Settings and plugins stay. Restore a backup to undo world changes.
               </p>
             </>
           )

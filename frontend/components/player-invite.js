@@ -77,20 +77,12 @@ export function PlayerInvite({ server, ready }) {
     <section id="invite-friends" className="panel invite-friends" aria-label="Invite your friends">
       <div className="section-heading">
         <div>
-          <span className="eyebrow">PLAY TOGETHER</span>
           <h2>Invite your friends</h2>
-          <p>One player page. No dashboard account needed.</p>
         </div>
         <Icon name="user" size={28} />
       </div>
       <ErrorMessage error={error || resource.error} />
       {resource.loading && <p role="status">Checking your player invitation…</p>}
-      {!resource.loading && !resource.error && !invite && ready && (
-        <p className="notice">
-          Prepare player setup before sharing. After changing addons or access rules, refresh player
-          setup so friends get matching downloads.
-        </p>
-      )}
       {invite && (
         <div className="invite-preview">
           <strong>
@@ -114,22 +106,9 @@ export function PlayerInvite({ server, ready }) {
                     ? "Their launcher can download the verified client mods."
                     : "Friends get the address, version and join steps.")}
           </p>
-          {!!invite.setup?.notes?.length && (
-            <details>
-              <summary>What is included in the player setup?</summary>
-              {invite.setup.notes.map((note) => (
-                <p key={note}>{note}</p>
-              ))}
-            </details>
-          )}
-          <small>
-            Published {new Date(invite.setup?.published_at).toLocaleString()}. Refresh after
-            changing addons or access settings.
-          </small>
         </div>
       )}
-      <details className="invite-options">
-        <summary>Player download options</summary>
+      <div className="invite-options">
         <label className="checkbox-label">
           <input
             type="checkbox"
@@ -139,9 +118,6 @@ export function PlayerInvite({ server, ready }) {
           />
           Include beta client builds
         </label>
-        <p>
-          Allows matching beta downloads from Modrinth. Version, loader and file checks still apply.
-        </p>
         <label className="checkbox-label">
           <input
             type="checkbox"
@@ -151,11 +127,7 @@ export function PlayerInvite({ server, ready }) {
           />
           Include optional client features
         </label>
-        <p>
-          Off by default: friends download only required client mods and their dependencies. Server
-          plugins stay installed.
-        </p>
-      </details>
+      </div>
       <div className="invite-actions">
         <button
           className={`button ${shareReady ? "secondary" : "primary"}`}
@@ -186,17 +158,12 @@ export function PlayerInvite({ server, ready }) {
       {copied && <p role="status">Invite link copied. Send it to your friends.</p>}
       {!ready && <p className="field-help">Available when server installation finishes.</p>}
       {invite && (
-        <details>
-          <summary>Link access</summary>
-          <p>
-            Anyone with this link can see the connection address and published player setup until{" "}
-            {new Date(invite.expires_at).toLocaleDateString()}. It does not grant server management
-            or whitelist access.
-          </p>
+        <div className="invite-link-access">
+          <small>Link expires {new Date(invite.expires_at).toLocaleDateString()}.</small>
           <button className="button secondary" disabled={busy} onClick={revoke}>
             Disable invite link
           </button>
-        </details>
+        </div>
       )}
     </section>
   );

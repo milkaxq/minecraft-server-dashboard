@@ -21,23 +21,13 @@ export function LagHelp({ server, ready, powerState, usage, usageError }) {
     setReport(snapshot);
     try {
       await navigator.clipboard.writeText(snapshot);
-      setMessage("Diagnostic report copied. Review it below before sharing.");
+      setMessage("Report copied.");
     } catch {
       setMessage("Copy is unavailable. Select and copy the report below manually.");
     }
   }
   return (
-    <details className="lag-help">
-      <summary>Players are experiencing lag?</summary>
-      <p>
-        Delayed block breaks and rubber-banding can come from server workload or a slow connection.
-        Low FPS is usually a client-side issue.
-      </p>
-      <p>
-        CPU and memory readings help spot resource pressure, but this dashboard does not measure
-        Minecraft tick rate or each player’s ping. Compare whether everyone has delays or only one
-        player before changing settings.
-      </p>
+    <div className="lag-help">
       <label className="field">
         What do players notice?
         <Select value={symptom} onChange={(event) => setSymptom(event.target.value)}>
@@ -48,72 +38,20 @@ export function LagHelp({ server, ready, powerState, usage, usageError }) {
           ))}
         </Select>
       </label>
-      <div className="lag-guidance" aria-live="polite">
-        {symptom === "blocks" && (
-          <>
-            <h3>Compare players before changing the server</h3>
-            <ol>
-              <li>
-                Ask whether everyone gets the delay at the same time. If only one player does,
-                compare their connection and distance from the server.
-              </li>
-              <li>
-                If everyone is affected, watch CPU usage during the delay. A brief spike is not
-                proof of a problem.
-              </li>
-              <li>
-                If terrain generation is running, pause it from its guided setup. Try a lower view
-                distance and change one setting at a time.
-              </li>
-            </ol>
-          </>
-        )}
-        {symptom === "chunks" && (
-          <>
-            <h3>Check whether exploring new terrain triggers it</h3>
-            <ol>
-              <li>
-                Compare an already explored area with new terrain. Generating new chunks adds server
-                work.
-              </li>
-              <li>
-                Try a lower view distance. If using Chunky, generate terrain while nobody is playing
-                and pause it before inviting friends.
-              </li>
-              <li>
-                If only one player sees slow chunks, compare their connection too. CPU usage alone
-                cannot identify the cause.
-              </li>
-            </ol>
-          </>
-        )}
-        {symptom === "fps" && (
-          <>
-            <h3>Start with the player’s graphics settings</h3>
-            <ol>
-              <li>
-                Lower the client’s render distance and graphics quality, then test without shaders.
-              </li>
-              <li>
-                Compare another area or an unmodified client profile where the server allows it.
-                Keep required client mods installed.
-              </li>
-              <li>
-                More server memory does not directly increase a player’s FPS. Check server workload
-                separately if block actions are delayed too.
-              </li>
-            </ol>
-          </>
-        )}
-        {server.permissions?.includes("settings") && symptom !== "fps" && (
-          <Link className="text-link" href={`/servers/${server.id}/settings`}>
-            Open Minecraft settings →
-          </Link>
-        )}
-      </div>
-      <p className="field-help">
-        High memory use alone does not prove lag: Minecraft can reserve most of its allowance.
+      <p aria-live="polite">
+        {symptom === "blocks" &&
+          "Everyone lagging? Check CPU and lower view distance. Just one player? Check their connection."}
+        {symptom === "chunks" &&
+          "Try a lower view distance. Pause terrain generation while friends are playing."}
+        {symptom === "fps" &&
+          "Lower client render distance or turn off shaders. Keep required mods installed."}
       </p>
+      {server.permissions?.includes("settings") && symptom !== "fps" && (
+        <Link className="text-link" href={`/servers/${server.id}/settings`}>
+          Open Minecraft settings →
+        </Link>
+      )}
+      <p className="field-help">Tick rate and player ping aren’t measured here.</p>
       <button className="button secondary" type="button" onClick={copyReport}>
         Copy diagnostic report
       </button>
@@ -122,12 +60,9 @@ export function LagHelp({ server, ready, powerState, usage, usageError }) {
         <label className="field diagnostic-report">
           Diagnostic report preview
           <textarea readOnly rows={12} value={report} spellCheck={false} />
-          <span className="field-help">
-            A snapshot of the last dashboard reading when you pressed Copy. Capture time is not
-            measurement time. Copy again to refresh the report. Nothing is sent automatically.
-          </span>
+          <span className="field-help">Last dashboard reading. Nothing is sent automatically.</span>
         </label>
       )}
-    </details>
+    </div>
   );
 }

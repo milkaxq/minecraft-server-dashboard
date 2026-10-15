@@ -16,63 +16,19 @@ export function AddonHelp({ id, file, metadata, server, usage }) {
     : null;
   const { guide } = installedAddonInfo(file.name);
   const chunky = guide === "chunky";
-  const voice = guide === "voice";
+  if (!chunky)
+    return projectURL ? (
+      <a className="text-link" href={projectURL} target="_blank" rel="noreferrer">
+        Documentation ↗
+      </a>
+    ) : null;
   return (
     <details
       className={`installed-addon-help ${hasGuidedSetup(file.name, server.permissions) ? "has-guided-setup" : ""}`}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>Setup &amp; help</summary>
-      {voice ? (
-        <>
-          <p>Set voice distance, group chats and player requirements with the guided settings.</p>
-          {server.permissions?.includes("settings") && (
-            <Link className="button secondary" href={`/servers/${id}/addons/simple-voice-chat`}>
-              Open voice settings
-            </Link>
-          )}
-          <p>
-            Players join with the client mod, then press <kbd>V</kbd> to set up their microphone. If
-            the key was changed, check Minecraft → Options → Controls → Key Binds → Voice Chat.
-          </p>
-        </>
-      ) : chunky ? (
-        open && <ChunkySetup id={id} server={server} usage={usage} />
-      ) : (
-        <p>
-          This addon does not have a guided form yet. Start the server once to let the addon create
-          its configuration, then stop it before editing files. Follow its author’s instructions;
-          some addons need no changes.
-        </p>
-      )}
-      <div className="file-actions">
-        {chunky && (
-          <a
-            className="button secondary"
-            href="https://github.com/pop4959/Chunky/wiki/Pregeneration"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Chunky documentation ↗
-          </a>
-        )}
-        {projectURL && (
-          <a className="button secondary" href={projectURL} target="_blank" rel="noreferrer">
-            Project &amp; documentation ↗
-          </a>
-        )}
-        {voice && server.permissions?.includes("files") && (
-          <Link className="button secondary" href={`/servers/${id}/files`}>
-            Configuration files
-          </Link>
-        )}
-      </div>
-      {!projectURL && !chunky && !voice && (
-        <p className="field-help">
-          No catalog project is linked to this file. Check the original download for its
-          documentation.
-        </p>
-      )}
+      <summary>Terrain settings</summary>
+      {open && <ChunkySetup id={id} server={server} usage={usage} />}
     </details>
   );
 }
