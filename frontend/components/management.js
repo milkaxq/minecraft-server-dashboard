@@ -1,4 +1,5 @@
 "use client";
+import { AddonHelp } from "./addon-help";
 import { ChangeSafety } from "./change-safety";
 import { PluginCheck } from "./plugin-check";
 import { Select } from "./select";
@@ -1031,6 +1032,13 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                         </span>
                       )}
                   </div>
+                  <AddonHelp
+                    id={id}
+                    file={v}
+                    metadata={clientSetup.data?.addons?.find((addon) => addon.filename === v.name)}
+                    server={server}
+                    usage={usage}
+                  />
                   <ClientRequirementTag
                     explain
                     addon={

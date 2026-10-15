@@ -4564,12 +4564,17 @@ input {
   font-size: 15px;
   margin-bottom: 10px;
 }
-.addon-client-guide kbd {
+.addon-client-guide kbd,
+.installed-addon-help kbd {
   background: #edf4ea;
   border: 1px solid #d8e1d9;
   padding: 2px 6px;
   border-radius: 4px;
-  color: var(--ink);
+  color: #173322;
+  font-weight: 800;
+  display: inline-block;
+  min-width: 1.5em;
+  text-align: center;
 }
 @media (max-width: 1100px) {
   .addon-settings-layout {
@@ -5880,4 +5885,37 @@ input {
     padding-top: 16px;
     border-top: 1px solid #ffffff12;
   }
+}
+
+.installed-addon-help {
+  margin-top: 12px;
+  max-width: 680px;
+}
+.installed-addon-help summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding-block: 8px;
+}
+.installed-addon-help p {
+  margin-block: 12px;
+  line-height: 1.6;
+}
+.installed-addon-help .file-actions {
+  flex-wrap: wrap;
+  margin-block: 12px;
+}
+.chunky-setup label {
+  display: grid;
+  gap: 8px;
+  margin-block: 16px;
+}
+.chunky-setup .chunky-confirm {
+  display: flex;
+  align-items: flex-start;
+}
+.chunky-confirm input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-top: 3px;
 }

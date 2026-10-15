@@ -5097,3 +5097,49 @@ test("admin sales keep demo payments separate and save explicit cost assumptions
   });
   await page.screenshot({ path: testInfo.outputPath("admin-finances-mobile.png"), fullPage: true });
 });
+
+test("installed Chunky offers confirmed terrain controls without typing commands", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await mockAPI(page, { initiallyRunning: true });
+  const commands = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+    route.fulfill({ json: [{ name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true }] }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/commands`, (route) => {
+    commands.push(route.request().postDataJSON().command);
+    return route.fulfill({ status: 204 });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByText("Setup & help", { exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("chunky-setup-mobile.png"), fullPage: true });
+  const prepare = page.getByRole("button", { name: "Prepare terrain", exact: true });
+  await expect(prepare).toBeDisabled();
+  expect(commands).toEqual([]);
+  await page.getByLabel("I’m ready to generate").check();
+  await prepare.click();
+  await expect(page.getByRole("status").filter({ hasText: "Request sent" })).toBeVisible();
+  expect(commands).toEqual(["chunky start world circle 0 0 500"]);
+  await expect(prepare).toBeDisabled();
+  await page.getByRole("button", { name: "Pause preparation" }).click();
+  await expect.poll(() => commands.length).toBe(2);
+  expect(commands[1]).toBe("chunky pause world");
+  await page.getByLabel("World name", { exact: true }).fill("world;stop");
+  await expect(page.getByRole("button", { name: "Pause preparation" })).toBeDisabled();
+});
+
+test("voice setup keyboard hint has visible contrasting text", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/addons/simple-voice-chat`);
+  const key = page.locator(".addon-client-guide kbd").filter({ hasText: /^V$/ });
+  await expect(key).toBeVisible();
+  const colors = await key.evaluate((el) => ({
+    foreground: getComputedStyle(el).color,
+    background: getComputedStyle(el).backgroundColor,
+  }));
+  expect(colors.foreground).toBe("rgb(23, 51, 34)");
+  expect(colors.background).toBe("rgb(237, 244, 234)");
+});
