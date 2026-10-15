@@ -6239,3 +6239,20 @@ input {
     padding: 20px;
   }
 }
+
+.invite-settings-button {
+  display: inline-block;
+  margin-top: 16px;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  font: inherit;
+  cursor: pointer;
+}
+.invite-settings-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.invite-copy-fallback {
+  margin-top: 16px;
+}

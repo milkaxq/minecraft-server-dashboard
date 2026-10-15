@@ -3615,11 +3615,15 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   });
   await openServer(page);
   const panel = page.getByRole("region", { name: "Invite your friends" });
+  await panel.getByRole("button", { name: "Download options", exact: true }).click();
   await expect(panel.getByLabel("Include optional client features")).not.toBeChecked();
   await expect(panel.getByLabel("Include beta client builds")).not.toBeChecked();
 
   await panel.getByLabel("Include beta client builds").check();
-  await panel.getByRole("button", { name: "Prepare invite link" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Update invitation", exact: true })
+    .click();
   await expect
     .poll(() => publishedOptions)
     .toEqual({ include_beta: true, include_optional: false });
@@ -3628,6 +3632,7 @@ test("owner publishes copies and revokes a player invite", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toContain(`/join/${playerSlug}`);
+  await panel.getByRole("button", { name: "Download options", exact: true }).click();
   await panel.getByRole("button", { name: "Disable invite link" }).click();
   await expect(panel.getByRole("button", { name: "Prepare invite link" })).toBeVisible();
 });
@@ -3745,7 +3750,7 @@ test("owner invite polling reflects changed server setup instead of a cached pub
   await openServer(page);
   const panel = page.getByRole("region", { name: "Invite your friends" });
   await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveClass(/primary/);
-  await expect(panel.getByLabel("Include optional client features")).toBeVisible();
+  await expect(panel.getByLabel("Include optional client features")).toHaveCount(0);
   await panel.getByRole("button", { name: "Refresh player setup" }).click();
   await expect(panel.getByText("Player download ready", { exact: true })).toBeVisible();
   current = {
@@ -3760,6 +3765,7 @@ test("owner invite polling reflects changed server setup instead of a cached pub
   await expect(panel.getByText("Player setup needs a check", { exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Refresh player setup" })).toHaveClass(/primary/);
   await expect(panel.getByRole("button", { name: "Copy invite link" })).toHaveClass(/secondary/);
+  await expect(panel.getByRole("button", { name: "Copy invite link" })).toBeDisabled();
 });
 test("expired owner invitation offers refresh and never copies its expired link", async ({
   page,
@@ -4409,7 +4415,14 @@ test("dashboard shortcuts use authorized server details and dropdowns keep reada
       ([key]) => !["permissions", "role", "management_available"].includes(key),
     ),
   );
-  await page.route("http://localhost:8080/servers", (route) => route.fulfill({ json: [listed] }));
+  await page.route("http://localhost:8080/servers", (route) =>
+    route.fulfill({
+      json: [
+        listed,
+        { ...listed, id: "30000000-0000-4000-8000-000000000099", name: "Second world" },
+      ],
+    }),
+  );
   await login(page);
   const quick = page.getByRole("navigation", { name: "Quick world actions" });
   await expect(quick.getByRole("link", { name: /Game rules/ })).toHaveAttribute(
@@ -6570,4 +6583,134 @@ test("offline server cards never describe a player count as currently playing", 
   await expect(card.getByText("Ready to start", { exact: true })).toBeVisible();
   await expect(card).toContainText("Manage");
   await expect(card).not.toContainText("0 playing");
+});
+
+for (const width of [390, 1366]) {
+  test(`single-server dashboard stays compact while the server directory keeps filters at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await expect(page.getByRole("heading", { name: baseServer.name, exact: true })).toBeVisible();
+    await expect(page.getByLabel("Search servers", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Server view", exact: true })).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`compact-dashboard-${width}.png`),
+      fullPage: true,
+    });
+    await page.goto("/servers");
+    await expect(page.getByLabel("Search servers", { exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Server view", exact: true })).toBeVisible();
+  });
+}
+
+test("owner invitation clipboard fallback stays selectable and excludes management credentials", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    }),
+  );
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) =>
+    route.fulfill({
+      json: { slug: playerSlug, expires_at: "2077-11-13T12:00:00Z", setup: playerSetup },
+    }),
+  );
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await panel.getByRole("button", { name: "Copy invite link", exact: true }).click();
+  const fallback = panel.getByLabel("Invite link", { exact: true });
+  await expect(fallback).toHaveValue(new RegExp(`/join/${playerSlug}$`));
+  await expect(fallback).toHaveAttribute("readonly", "");
+  await fallback.focus();
+  expect(await fallback.evaluate((input) => input.selectionEnd - input.selectionStart)).toBe(
+    (await fallback.inputValue()).length,
+  );
+  expect(await fallback.inputValue()).not.toContain("csrf");
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+});
+
+test("invitation read failure offers a read-only retry without replacing the link", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let reads = 0;
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) => {
+    reads++;
+    return reads === 1
+      ? route.fulfill({ status: 503, json: { error: "Invitation unavailable" } })
+      : route.fulfill({ json: null });
+  });
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(
+    panel.getByRole("button", { name: "Prepare invite link", exact: true }),
+  ).toBeDisabled();
+  await panel.getByRole("button", { name: "Retry invitation", exact: true }).click();
+  await expect(
+    panel.getByRole("button", { name: "Prepare invite link", exact: true }),
+  ).toBeEnabled();
+  expect(reads).toBe(2);
+  expect(
+    calls.filter((call) => call.path.endsWith("/player-invite") && call.method !== "GET"),
+  ).toHaveLength(0);
+});
+
+test("cancelled download choices never publish and an unready setup cannot be copied", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let writes = 0;
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) => {
+    if (route.request().method() !== "GET") writes++;
+    return route.fulfill({
+      json: {
+        slug: playerSlug,
+        expires_at: "2077-11-13T12:00:00Z",
+        setup: { ...playerSetup, pack_ready: true, pack_reason: "Refresh the changed setup" },
+      },
+    });
+  });
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(panel.getByText("Player setup needs a check", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Copy invite link", exact: true })).toBeDisabled();
+  await panel.getByRole("button", { name: "Download options", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Player download options", exact: true });
+  await dialog.getByLabel("Include beta client builds").check();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await panel.getByRole("button", { name: "Download options", exact: true }).click();
+  await expect(dialog.getByLabel("Include beta client builds")).not.toBeChecked();
+  expect(writes).toBe(0);
+});
+
+test("simple invite preparation defaults to stable required-only downloads", async ({ page }) => {
+  await mockAPI(page);
+  let invite = null;
+  let published;
+  await page.route(`http://localhost:8080/servers/${serverID}/player-invite`, (route) => {
+    if (route.request().method() === "POST") {
+      published = route.request().postDataJSON();
+      invite = {
+        slug: playerSlug,
+        expires_at: "2077-11-13T12:00:00Z",
+        setup: { ...playerSetup, ...published },
+      };
+    }
+    return route.fulfill({ json: invite });
+  });
+  await openServer(page);
+  const panel = page.getByRole("region", { name: "Invite your friends" });
+  await expect(panel.getByLabel("Include beta client builds")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Prepare invite link", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Copy invite link", exact: true })).toBeEnabled();
+  expect(published).toEqual({ include_beta: false, include_optional: false });
 });

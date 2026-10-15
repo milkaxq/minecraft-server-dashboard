@@ -124,6 +124,12 @@ export function Dashboard({ serversOnly = false }) {
         )
       : [];
   const deleting = servers?.filter((s) => s.deletion_pending).length || 0;
+  const showTools =
+    serversOnly ||
+    query !== "" ||
+    view !== "active" ||
+    (servers?.length || 0) > 1 ||
+    servers?.some((server) => server.status === "CANCELLED" || server.deletion_pending);
   return (
     <Shell>
       <PageHeading
@@ -185,21 +191,23 @@ export function Dashboard({ serversOnly = false }) {
             {view === "active" ? " · current hosting" : " · including cancelled"}
           </span>
         </div>
-        <div className="server-list-tools">
-          <Select aria-label="Server view" value={view} onChange={(e) => setView(e.target.value)}>
-            <option value="active">Active servers</option>
-            <option value="all">All servers</option>
-          </Select>
-          <label className="search-box">
-            <span aria-hidden="true">⌕</span>
-            <input
-              aria-label="Search servers"
-              placeholder="Search your servers…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-        </div>
+        {showTools && (
+          <div className="server-list-tools">
+            <Select aria-label="Server view" value={view} onChange={(e) => setView(e.target.value)}>
+              <option value="active">Active servers</option>
+              <option value="all">All servers</option>
+            </Select>
+            <label className="search-box">
+              <span aria-hidden="true">⌕</span>
+              <input
+                aria-label="Search servers"
+                placeholder="Search your servers…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
       </div>
       {!!deleting && (
         <p role="status">

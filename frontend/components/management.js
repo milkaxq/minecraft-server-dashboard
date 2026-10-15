@@ -1,4 +1,6 @@
 "use client";
+import { Confirm } from "./confirm";
+export { Confirm } from "./confirm";
 import { TextFileEditor } from "./text-file-editor";
 import { visibleFiles, folderBreadcrumbs } from "../lib/file-browser";
 import { UnsavedChangesGuard } from "./unsaved-changes";
@@ -212,52 +214,6 @@ export function ManagementPage({ id, section }) {
         </>
       )}
     </Shell>
-  );
-}
-export function Confirm({
-  title,
-  children,
-  label = "Confirm",
-  busy,
-  confirmDisabled = false,
-  confirmVariant = "danger",
-  onCancel,
-  onConfirm,
-}) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    el.showModal();
-    return () => el.close();
-  }, []);
-  return (
-    <dialog
-      ref={ref}
-      className={`confirm-dialog ${confirmVariant === "primary" ? "install-dialog" : ""}`}
-      aria-label={title}
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!busy) onCancel();
-      }}
-    >
-      <div className="confirm-icon">
-        <Icon name="shield" size={25} />
-      </div>
-      <h2>{title}</h2>
-      <div className="confirm-content">{children}</div>
-      <div className="dialog-actions">
-        <button className="button secondary" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          className={`button ${confirmVariant}`}
-          disabled={busy || confirmDisabled}
-          onClick={onConfirm}
-        >
-          {busy ? "Working…" : label}
-        </button>
-      </div>
-    </dialog>
   );
 }
 function useAction(refresh) {

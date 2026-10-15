@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
-import { ErrorMessage, Icon } from "./ui";
+import { ErrorMessage } from "./ui";
+import { Confirm } from "./confirm";
 import { LauncherSetup, LauncherPicker, useLauncherChoice } from "./player-launcher";
 import { useReturningPlayer } from "./player-returning";
 import { PlayerJoinHelp } from "./player-join-help";
@@ -17,7 +18,9 @@ export function PlayerInvite({ server, ready }) {
   const [error, setError] = useState(null);
   const [optionalChoice, setOptionalChoice] = useState(null);
   const [betaChoice, setBetaChoice] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const [fallback, setFallback] = useState(null);
+  const [optionsDraft, setOptionsDraft] = useState(null);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!permitted) return;
@@ -35,15 +38,22 @@ export function PlayerInvite({ server, ready }) {
   const shareReady =
     invite && !expired && !optionsChanged && !invite.setup?.pack_reason && !resource.error && ready;
   const href = invite?.slug && !expired ? `/join/${invite.slug}` : null;
-  async function publish() {
+  async function publish(
+    selection = { include_beta: includeBeta, include_optional: includeOptional },
+  ) {
+    if (!ready || busy || resource.loading || resource.error) return;
     setBusy(true);
     setError(null);
-    setCopied(false);
+    setCopied(null);
+    setFallback(null);
     try {
       await api(`/servers/${server.id}/player-invite`, {
         method: "POST",
-        body: { include_beta: includeBeta, include_optional: includeOptional },
+        body: selection,
       });
+      setBetaChoice(selection.include_beta);
+      setOptionalChoice(selection.include_optional);
+      setOptionsDraft(null);
       resource.refresh();
     } catch (e) {
       setError(e);
@@ -52,19 +62,27 @@ export function PlayerInvite({ server, ready }) {
     }
   }
   async function copy() {
+    if (!shareReady || !href || busy || resource.loading) return;
+    setError(null);
+    setCopied(null);
+    setFallback(null);
+    const text = new URL(href, location.origin).href;
     try {
-      await navigator.clipboard.writeText(new URL(href, location.origin).href);
-      setCopied(true);
+      await navigator.clipboard.writeText(text);
+      setCopied(href);
     } catch {
-      setError(new Error("Copy unavailable. Open the player page and share its address."));
+      setFallback({ href, text });
     }
   }
   async function revoke() {
+    if (busy || resource.error) return;
     setBusy(true);
     setError(null);
     try {
       await api(`/servers/${server.id}/player-invite`, { method: "DELETE" });
-      setCopied(false);
+      setCopied(null);
+      setFallback(null);
+      setOptionsDraft(null);
       resource.refresh();
     } catch (e) {
       setError(e);
@@ -79,9 +97,17 @@ export function PlayerInvite({ server, ready }) {
         <div>
           <h2>Invite your friends</h2>
         </div>
-        <Icon name="user" size={28} />
       </div>
       <ErrorMessage error={error || resource.error} />
+      {resource.error && (
+        <button
+          className="button secondary"
+          disabled={resource.loading || busy}
+          onClick={resource.refresh}
+        >
+          Retry invitation
+        </button>
+      )}
       {resource.loading && <p role="status">Checking your player invitation…</p>}
       {invite && (
         <div className="invite-preview">
@@ -90,49 +116,28 @@ export function PlayerInvite({ server, ready }) {
               ? "Invite link expired"
               : optionsChanged
                 ? "Save your player download choices"
-                : invite.setup?.pack_ready
-                  ? "Player download ready"
-                  : invite.setup?.pack_reason
-                    ? "Player setup needs a check"
+                : invite.setup?.pack_reason
+                  ? "Player setup needs a check"
+                  : invite.setup?.pack_ready
+                    ? "Player download ready"
                     : "Player page ready"}
           </strong>
-          <p>
-            {expired
-              ? "Refresh player setup to create a new working invite."
-              : optionsChanged
-                ? "Refresh player setup to apply these choices before sharing."
-                : invite.setup?.pack_reason ||
-                  (invite.setup?.pack_ready
-                    ? "Their launcher can download the verified client mods."
-                    : "Friends get the address, version and join steps.")}
-          </p>
+          {(expired || optionsChanged || invite.setup?.pack_reason) && (
+            <p>
+              {expired
+                ? "Refresh the invitation to share it again."
+                : optionsChanged
+                  ? "Refresh to apply your download choices."
+                  : invite.setup.pack_reason}
+            </p>
+          )}
         </div>
       )}
-      <div className="invite-options">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={includeBeta}
-            disabled={busy}
-            onChange={(event) => setBetaChoice(event.target.checked)}
-          />
-          Include beta client builds
-        </label>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={includeOptional}
-            disabled={busy}
-            onChange={(event) => setOptionalChoice(event.target.checked)}
-          />
-          Include optional client features
-        </label>
-      </div>
       <div className="invite-actions">
         <button
           className={`button ${shareReady ? "secondary" : "primary"}`}
-          disabled={!ready || busy || resource.loading}
-          onClick={publish}
+          disabled={!ready || busy || resource.loading || !!resource.error}
+          onClick={() => publish()}
         >
           {busy
             ? "Preparing player setup…"
@@ -144,7 +149,7 @@ export function PlayerInvite({ server, ready }) {
           <>
             <button
               className={`button ${shareReady ? "primary" : "secondary"}`}
-              disabled={busy || !ready || resource.loading || !!resource.error}
+              disabled={busy || !shareReady || resource.loading}
               onClick={copy}
             >
               Copy invite link
@@ -155,15 +160,85 @@ export function PlayerInvite({ server, ready }) {
           </>
         )}
       </div>
-      {copied && <p role="status">Invite link copied. Send it to your friends.</p>}
-      {!ready && <p className="field-help">Available when server installation finishes.</p>}
-      {invite && (
-        <div className="invite-link-access">
-          <small>Link expires {new Date(invite.expires_at).toLocaleDateString()}.</small>
-          <button className="button secondary" disabled={busy} onClick={revoke}>
-            Disable invite link
-          </button>
-        </div>
+      <button
+        className="text-link invite-settings-button"
+        type="button"
+        disabled={busy || !ready || resource.loading || !!resource.error}
+        onClick={() => {
+          setError(null);
+          setOptionsDraft({ include_beta: includeBeta, include_optional: includeOptional });
+        }}
+      >
+        Download options
+      </button>
+      {copied === href && shareReady && (
+        <p role="status">Invite link copied. Send it to your friends.</p>
+      )}
+      {fallback?.href === href && shareReady && (
+        <label className="field invite-copy-fallback">
+          Invite link
+          <input
+            aria-label="Invite link"
+            readOnly
+            spellCheck={false}
+            value={fallback.text}
+            onFocus={(event) => event.target.select()}
+          />
+          <span className="field-help">Select and copy this link.</span>
+        </label>
+      )}
+      {!ready && <p className="field-help">Available after installation.</p>}
+      {optionsDraft && (
+        <Confirm
+          title="Player download options"
+          label="Update invitation"
+          confirmVariant="primary"
+          busy={busy}
+          confirmDisabled={!ready || !!resource.error || resource.loading}
+          onCancel={() => {
+            setOptionsDraft(null);
+            setError(null);
+          }}
+          onConfirm={() => publish(optionsDraft)}
+        >
+          <div className="invite-options">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={optionsDraft.include_beta}
+                disabled={busy}
+                onChange={(event) =>
+                  setOptionsDraft({ ...optionsDraft, include_beta: event.target.checked })
+                }
+              />
+              Include beta client builds
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={optionsDraft.include_optional}
+                disabled={busy}
+                onChange={(event) =>
+                  setOptionsDraft({ ...optionsDraft, include_optional: event.target.checked })
+                }
+              />
+              Include optional client features
+            </label>
+          </div>
+          <ErrorMessage error={error || resource.error} />
+          {invite && (
+            <div className="invite-link-access">
+              <small>Link expires {new Date(invite.expires_at).toLocaleDateString()}.</small>
+              <button
+                className="button secondary"
+                disabled={busy || !!resource.error}
+                onClick={revoke}
+              >
+                Disable invite link
+              </button>
+            </div>
+          )}
+        </Confirm>
       )}
     </section>
   );

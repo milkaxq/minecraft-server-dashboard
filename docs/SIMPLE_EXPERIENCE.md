@@ -55,3 +55,23 @@ A bounded local set prevents an old list from flashing the acknowledged item bac
 normal polling remains authoritative for newly arriving notifications. Failed
 reads show a retry button, and failed writes keep the item available for retry.
 No acknowledgement is sent automatically.
+
+## Sharing with fewer choices
+
+A one-active-server dashboard omits search/view controls. The Servers directory
+keeps them, and the dashboard also shows them for multiple servers, cancellation
+history, pending deletion or an existing filter. Removed servers therefore remain
+reachable through All servers.
+
+The invitation card keeps publish/copy/preview as its main actions. Beta and
+optional-download choices and link revocation live in the Player download options
+dialog. The dialog uses a separate draft; Cancel discards it without publishing.
+Update invitation explicitly publishes and closes only after success. Basic
+invitations still default to stable, required-only downloads.
+
+Copy requires the currently loaded, unexpired setup to be shareable. Errors or a
+changed/blocked pack pause copying. A pack error takes priority over a ready flag
+in the displayed status. Denied clipboard access shows a selectable public URL;
+it does not expose dashboard credentials. Old fallback/success messages are hidden
+when the invite changes or is no longer shareable. Failed reads offer a GET retry
+without replacing or revoking the invitation.
