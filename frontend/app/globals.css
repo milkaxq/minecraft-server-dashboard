@@ -5953,3 +5953,19 @@ input {
   margin: 0;
   min-width: 0;
 }
+
+.installed-addon-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+.installed-addon-filename {
+  overflow-wrap: anywhere;
+}
+.has-guided-setup > summary {
+  color: #c5efa3;
+}
+.installed-addon-filters .button {
+  min-height: 44px;
+}

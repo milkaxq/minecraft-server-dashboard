@@ -5,6 +5,7 @@ import { useAuth } from "./auth";
 import { ErrorMessage } from "./ui";
 import { Select } from "./select";
 import { useResource } from "./data";
+import { installedAddonInfo, hasGuidedSetup } from "../lib/installed-addons";
 import { ChunkyProgress } from "./chunky-progress";
 
 // Reviewed recipes only. Project descriptions must never become executable commands.
@@ -13,11 +14,12 @@ export function AddonHelp({ id, file, metadata, server, usage }) {
   const projectURL = /^[a-zA-Z0-9]{8}$/.test(metadata?.project_id || "")
     ? `https://modrinth.com/project/${metadata.project_id}`
     : null;
-  const chunky = /^chunky(?:[-_.]|\.jar$)/i.test(file.name);
-  const voice = file.name.toLowerCase().includes("voicechat");
+  const { guide } = installedAddonInfo(file.name);
+  const chunky = guide === "chunky";
+  const voice = guide === "voice";
   return (
     <details
-      className="installed-addon-help"
+      className={`installed-addon-help ${hasGuidedSetup(file.name, server.permissions) ? "has-guided-setup" : ""}`}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>Setup &amp; help</summary>
@@ -59,7 +61,7 @@ export function AddonHelp({ id, file, metadata, server, usage }) {
             Project &amp; documentation ↗
           </a>
         )}
-        {server.permissions?.includes("files") && (
+        {voice && server.permissions?.includes("files") && (
           <Link className="button secondary" href={`/servers/${id}/files`}>
             Configuration files
           </Link>

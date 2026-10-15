@@ -1,5 +1,6 @@
 "use client";
 import { UnsavedChangesGuard } from "./unsaved-changes";
+import { installedAddonInfo, hasGuidedSetup, filterInstalledAddons } from "../lib/installed-addons";
 import { AddonHelp } from "./addon-help";
 import { ChangeSafety } from "./change-safety";
 import { PluginCheck } from "./plugin-check";
@@ -941,9 +942,16 @@ function Plugins({ id, server, offline, mods = false, usage }) {
   const action = useAction(resource.refresh);
   const input = useRef(null);
   const [installedQuery, setInstalledQuery] = useState("");
-  const installedFiles = (resource.data || []).filter((file) =>
-    file.name.toLowerCase().includes(installedQuery.trim().toLowerCase()),
+  const [guidedOnly, setGuidedOnly] = useState(false);
+  const installedFiles = filterInstalledAddons(
+    resource.data || [],
+    installedQuery,
+    guidedOnly,
+    server.permissions,
   );
+  const guidedCount = (resource.data || []).filter((file) =>
+    hasGuidedSetup(file.name, server.permissions),
+  ).length;
   const [remove, setRemove] = useState(null);
   const [addonChange, setAddonChange] = useState(null);
   const [pendingUpload, setPendingUpload] = useState(null);
@@ -1082,15 +1090,42 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           <Link href="/guide">Read the setup guide</Link>.
         </p>
         {!!resource.data?.length && (
-          <label className="installed-addon-search">
-            Find an installed {label}
-            <input
-              type="search"
-              value={installedQuery}
-              onChange={(event) => setInstalledQuery(event.target.value)}
-              placeholder={`Search your ${collection}…`}
-            />
-          </label>
+          <div>
+            <div
+              className="installed-addon-filters"
+              role="group"
+              aria-label="Installed addon filters"
+            >
+              <button
+                type="button"
+                className={`button ${!guidedOnly ? "primary" : "secondary"}`}
+                aria-pressed={!guidedOnly}
+                onClick={() => setGuidedOnly(false)}
+              >
+                All installed ({resource.data.length})
+              </button>
+              <button
+                type="button"
+                className={`button ${guidedOnly ? "primary" : "secondary"}`}
+                aria-pressed={guidedOnly}
+                onClick={() => setGuidedOnly(true)}
+              >
+                With guided setup ({guidedCount})
+              </button>
+            </div>
+            <label className="installed-addon-search">
+              Find an installed {label}
+              <input
+                type="search"
+                value={installedQuery}
+                onChange={(event) => setInstalledQuery(event.target.value)}
+                placeholder={`Search names or filenames…`}
+              />
+            </label>
+            <p className="field-help" aria-live="polite">
+              Showing {installedFiles.length} of {resource.data.length} installed {collection}.
+            </p>
+          </div>
         )}
         {resource.loading ? (
           <Loading />
@@ -1098,9 +1133,17 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           <p className="management-empty">No {collection} installed yet.</p>
         ) : !installedFiles.length ? (
           <p className="management-empty" role="status">
-            No installed {collection} match “{installedQuery}”.{" "}
-            <button className="button secondary" onClick={() => setInstalledQuery("")}>
-              Clear search
+            {guidedOnly
+              ? `No installed ${collection} match your guided setup filter${installedQuery ? ` and “${installedQuery}”` : ""}.`
+              : `No installed ${collection} match “${installedQuery}”.`}{" "}
+            <button
+              className="button secondary"
+              onClick={() => {
+                setInstalledQuery("");
+                setGuidedOnly(false);
+              }}
+            >
+              {guidedOnly ? "Show all installed" : "Clear search"}
             </button>
           </p>
         ) : (
@@ -1108,7 +1151,10 @@ function Plugins({ id, server, offline, mods = false, usage }) {
             {installedFiles.map((v) => (
               <li key={v.name}>
                 <span>
-                  <strong>{v.name}</strong>
+                  <strong>{installedAddonInfo(v.name).name}</strong>
+                  {installedAddonInfo(v.name).name !== v.name && (
+                    <small className="installed-addon-filename">{v.name}</small>
+                  )}
                   <small>{formatBytes(v.size)} · File installed</small>
                   <div className="installed-addon-status" aria-label={`${v.name} status`}>
                     <span className="client-requirement-tag">Installed</span>
@@ -1119,12 +1165,9 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                           ? "Check load status"
                           : "Waiting for server status"}
                     </span>
-                    {server.permissions?.includes("settings") &&
-                      v.name.toLowerCase().includes("voicechat") && (
-                        <span className="client-requirement-tag">
-                          Guided configuration available
-                        </span>
-                      )}
+                    {hasGuidedSetup(v.name, server.permissions) && (
+                      <span className="client-requirement-tag">Guided configuration available</span>
+                    )}
                   </div>
                   <AddonHelp
                     id={id}

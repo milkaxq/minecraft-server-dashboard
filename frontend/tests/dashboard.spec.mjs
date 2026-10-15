@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { parseChunkyProgress, parseChunkyEvent } from "../lib/chunky-progress.js";
+import {
+  installedAddonInfo,
+  hasGuidedSetup,
+  filterInstalledAddons,
+} from "../lib/installed-addons.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
 import { availableSlots, monthlySale, planMargin, mixForecast } from "../lib/margins.js";
 import { nextServerAction } from "../lib/next-action.js";
@@ -5734,3 +5739,75 @@ test("unsaved settings link guard supports Escape and leaves new-tab documentati
   await page.getByRole("link", { name: "Dashboard", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
 });
+
+test("installed addon labels and guided filters preserve filenames and permissions", () => {
+  expect(installedAddonInfo("voicechat-fabric-2.6.jar")).toEqual({
+    name: "Simple Voice Chat",
+    guide: "voice",
+  });
+  expect(installedAddonInfo("Chunky-Bukkit-1.5.3.jar")).toEqual({
+    name: "Chunky",
+    guide: "chunky",
+  });
+  expect(installedAddonInfo("my-custom-addon.jar").name).toBe("my-custom-addon.jar");
+  expect(hasGuidedSetup("voicechat.jar", ["console"])).toBe(false);
+  expect(hasGuidedSetup("Chunky.jar", ["console"])).toBe(true);
+  const files = [{ name: "voicechat-fabric-2.6.jar" }, { name: "other.jar" }];
+  expect(filterInstalledAddons(files, "simple voice", false, ["settings"])).toEqual([files[0]]);
+  expect(filterInstalledAddons(files, "", true, ["console"])).toEqual([]);
+});
+
+for (const width of [390, 1366])
+  test(`installed addon names and guided setup filters stay clear at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) =>
+      route.fulfill({
+        json: [
+          { name: "voicechat-bukkit-2.6.jar", size: 1234, is_file: true },
+          { name: "Chunky-Bukkit-1.5.3.jar", size: 1234, is_file: true },
+          { name: "my-custom-addon.jar", size: 1234, is_file: true },
+        ],
+      }),
+    );
+    await login(page);
+    await page.goto(`/servers/${serverID}/plugins`);
+    const rows = page.locator(".plugin-list").first();
+    await expect(rows.locator(":scope > li")).toHaveCount(3);
+    await expect(rows.getByText("Simple Voice Chat", { exact: true })).toBeVisible();
+    await expect(rows.getByText("voicechat-bukkit-2.6.jar", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "With guided setup (2)", exact: true }).click();
+    await expect(rows.locator(":scope > li")).toHaveCount(2);
+    await expect(rows.getByText("my-custom-addon.jar", { exact: true })).toHaveCount(0);
+    await page.getByLabel("Find an installed plugin").fill("simple voice");
+    await expect(rows.locator(":scope > li")).toHaveCount(1);
+    await expect(rows).toContainText("voicechat-bukkit-2.6.jar");
+    await page.getByLabel("Find an installed plugin").fill("missing");
+    await expect(
+      page.getByRole("button", { name: "Show all installed", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Show all installed", exact: true }).click();
+    await expect(rows.locator(":scope > li")).toHaveCount(3);
+    const chunky = rows.locator(":scope > li").filter({ hasText: "Chunky-Bukkit-1.5.3.jar" });
+    await chunky.getByText("Setup & help", { exact: true }).click();
+    await expect(
+      chunky.getByRole("link", { name: "Configuration files", exact: true }),
+    ).toHaveCount(1);
+    expect(
+      calls.filter(
+        (call) =>
+          ["POST", "PUT", "DELETE"].includes(call.method) &&
+          call.path.startsWith(`/servers/${serverID}/`) &&
+          !call.path.endsWith("/console-ticket"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`installed-setup-${width}.png`),
+      fullPage: true,
+    });
+  });

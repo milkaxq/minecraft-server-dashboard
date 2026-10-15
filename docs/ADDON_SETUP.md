@@ -32,3 +32,7 @@ Recurring authenticated dashboard reads pause while the tab is hidden or the bro
 The guide defaults to a detected world instead of guessing `world`. Failed/empty lookups block the normal controls until a detected world is available or the user explicitly chooses manual entry. Manual input still permits only one ASCII command-safe world argument. Custom dimension identifiers outside that format require the advanced console. The start command remains a circle centered at 0, 0; it does not imply spawn coordinates or change the world border.
 
 Recognized English Chunky lifecycle messages display the last reported paused, resuming, cancelled, stopped or finished state. A running task showing 100% remains classified as running until Chunky emits its explicit finish message. Historical replay and disconnection warnings continue to apply. Unknown/localized messages remain available in the full console.
+
+## Finding installed addons
+
+The installed list keeps each original filename visible while giving recognized Voice Chat and Chunky files a friendly display name. Names are filename hints, not proof of identity, compatibility or runtime load. Search matches the friendly name and filename locally. “With guided setup” shows only recognized guides the current member has permission to use; it never treats other addons as uninstalled or misconfigured. Filter controls do not install files or execute commands. Configuration-file access appears once per installed card, with the existing server-side file authorization unchanged.
