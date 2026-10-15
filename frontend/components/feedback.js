@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
+import { UnsavedChangesGuard } from "./unsaved-changes";
 import { Shell, PageHeading, ErrorMessage, Loading } from "./ui";
 
 const categories = {
@@ -27,6 +28,7 @@ export function Feedback() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
   const submission = useRef(null);
+  const inFlight = useRef(false);
   const requested = params.get("server");
   const reference = /^[0-9a-f-]{36}$/i.test(params.get("reference") || "")
     ? params.get("reference")
@@ -66,9 +68,18 @@ export function Feedback() {
     ? `\n\nDashboard context (reported by browser):\nDisplayed state: ${observedState}${checkedAt ? `\nStartup check time: ${checkedAt}` : ""}`
     : "";
   const selection = serverId ?? (servers.data?.some((s) => s.id === requested) ? requested : "");
+  const serverUnavailable =
+    servers.loading || (!!servers.error && (!!selection || (serverId === null && !!requested)));
   async function submit(e) {
     e.preventDefault();
-    if (busy) return;
+    if (inFlight.current || serverUnavailable) return;
+    if (title.trim().length < 3 || message.trim().length < 10) {
+      setError(
+        new Error("Add a short summary and at least 10 characters describing what happened."),
+      );
+      return;
+    }
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     setNotice("");
@@ -85,9 +96,7 @@ export function Feedback() {
       submission.current = { fingerprint, key: crypto.randomUUID() };
     try {
       const report = await api("/feedback", { method: "POST", body, key: submission.current.key });
-      setNotice(
-        `Report ${report.id.slice(0, 8)} received. Your host can reply here; no email is sent automatically.`,
-      );
+      setNotice(`Report ${report.id.slice(0, 8)} received. Replies appear below.`);
       setTitle("");
       setMessage("");
       submission.current = null;
@@ -96,24 +105,29 @@ export function Feedback() {
     } catch (err) {
       setError(err);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
   return (
     <Shell>
-      <PageHeading
-        eyebrow="PRIVATE BETA"
-        title="Help us improve."
-        description="Tell your host what went wrong, what was confusing, or what would help you."
-      />
+      <UnsavedChangesGuard dirty={!!title.trim() || !!message.trim()} />
+      <PageHeading eyebrow="PRIVATE BETA" title="Help us improve." />
       <section className="panel management-panel feedback-panel">
         <h2>Send a report</h2>
         <p className="field-help">
-          Only you and hosting administrators can read your reports. Never include passwords,
-          invitation links, access tokens or private file contents. Console output and files are not
-          attached automatically.
+          Private to you and your host. Leave out passwords and private links.
         </p>
         <ErrorMessage error={error || servers.error} />
+        {servers.error && (
+          <button
+            className="button secondary"
+            disabled={busy || servers.loading || servers.error.status === 429}
+            onClick={servers.refresh}
+          >
+            Refresh servers
+          </button>
+        )}
         {notice && (
           <p className="notice success" role="status">
             {notice}
@@ -121,15 +135,15 @@ export function Feedback() {
         )}
         {(reference || safePage) && (
           <p className="feedback-context">
-            Attached context: {safePage && <code>{safePage}</code>}{" "}
+            Included: {safePage && <code>{safePage}</code>}{" "}
             {reference && <span>Support reference: {reference}</span>}. No logs or files are
             attached.
           </p>
         )}
         {healthContext && (
           <p className="feedback-context">
-            Attached dashboard state: {observedState}
-            {checkedAt ? ` · Startup check: ${checkedAt}` : ""}. No console contents are attached.
+            Dashboard state: {observedState}
+            {checkedAt ? ` · Checked: ${checkedAt}` : ""}.
           </p>
         )}
         <form className="feedback-form" onSubmit={submit}>
@@ -188,13 +202,10 @@ export function Feedback() {
               value={message}
               disabled={busy}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="What were you trying to do? What happened instead? Include steps we can follow, and any visible error or support reference."
+              placeholder="What were you trying to do? Include the error you saw."
             />
           </label>
-          <p className="field-help">
-            Reports are saved in the dashboard. This beta inbox is not an emergency support service.
-          </p>
-          <button className="button primary" disabled={busy || servers.loading}>
+          <button className="button primary" disabled={busy || serverUnavailable}>
             {busy ? "Sending…" : "Send report"}
           </button>
         </form>
@@ -202,7 +213,17 @@ export function Feedback() {
       <section className="panel management-panel feedback-panel">
         <h2>Your reports</h2>
         <ErrorMessage error={reports.error} />
+        {reports.error && (
+          <button
+            className="button secondary"
+            disabled={busy || reports.loading || reports.error.status === 429}
+            onClick={reports.refresh}
+          >
+            Refresh reports
+          </button>
+        )}
         <ReportList
+          error={reports.error}
           rows={reports.data || []}
           loading={reports.loading}
           offset={offset}
@@ -213,13 +234,15 @@ export function Feedback() {
   );
 }
 
-export function ReportList({ rows, loading, offset, setOffset, admin = false, refresh }) {
+export function ReportList({ rows, loading, offset, setOffset, admin = false, refresh, error }) {
   return (
     <>
       {loading ? (
         <Loading />
       ) : !rows.length ? (
-        <p className="management-empty">No reports on this page.</p>
+        <p className="management-empty">
+          {error ? "Reports unavailable." : "No reports on this page."}
+        </p>
       ) : (
         <div className="feedback-list">
           {rows.map((report) => (
@@ -227,23 +250,25 @@ export function ReportList({ rows, loading, offset, setOffset, admin = false, re
           ))}
         </div>
       )}
-      <div className="admin-pagination">
-        <button
-          className="button secondary"
-          disabled={offset === 0 || loading}
-          onClick={() => setOffset(Math.max(0, offset - 50))}
-        >
-          Previous
-        </button>
-        <span>Page {offset / 50 + 1}</span>
-        <button
-          className="button secondary"
-          disabled={rows.length < 50 || loading || offset >= 100000}
-          onClick={() => setOffset(offset + 50)}
-        >
-          Next
-        </button>
-      </div>
+      {(offset > 0 || rows.length >= 50) && (
+        <div className="admin-pagination">
+          <button
+            className="button secondary"
+            disabled={offset === 0 || loading || !!error}
+            onClick={() => setOffset(Math.max(0, offset - 50))}
+          >
+            Previous
+          </button>
+          <span>Page {offset / 50 + 1}</span>
+          <button
+            className="button secondary"
+            disabled={rows.length < 50 || loading || !!error || offset >= 100000}
+            onClick={() => setOffset(offset + 50)}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </>
   );
 }

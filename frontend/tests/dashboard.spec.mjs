@@ -3937,7 +3937,7 @@ test("health support links attach safe dashboard state and check time to a revie
     .getByRole("region", { name: "Server health" })
     .getByRole("link", { name: "Report a problem →" })
     .click();
-  await expect(page.getByText("Attached dashboard state:", { exact: false })).toBeVisible();
+  await expect(page.getByText("Dashboard state:", { exact: false })).toBeVisible();
   await page.getByLabel("Short summary").fill("Minecraft did not start");
   await page.getByLabel("What happened?").fill("I pressed Start and the world stayed offline.");
   await page.getByRole("button", { name: "Send report", exact: true }).click();
@@ -7446,4 +7446,67 @@ test("settings number fields allow replacement and prevent saving empty values",
   expect(
     calls.find((c) => c.path.endsWith("/settings") && c.method === "PUT").body.view_distance,
   ).toBe(8);
+});
+
+test("feedback history failure is distinct from empty and refreshing keeps the draft", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let failed = true;
+  await page.route("http://localhost:8080/feedback*", async (route) => {
+    if (!failed || route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "History unavailable" } });
+  });
+  await login(page);
+  await page.goto("/feedback");
+  await page.getByLabel("Short summary").fill("Joining issue");
+  await page.getByLabel("What happened?").fill("My friend cannot connect to the world.");
+  await expect(page.getByText("Reports unavailable.", { exact: true })).toBeVisible();
+  await expect(page.getByText("No reports on this page.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Previous", exact: true })).toHaveCount(0);
+  failed = false;
+  await page.getByRole("button", { name: "Refresh reports", exact: true }).click();
+  await expect(page.getByText("No reports on this page.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Short summary")).toHaveValue("Joining issue");
+  await expect(page.getByLabel("What happened?")).toHaveValue(
+    "My friend cannot connect to the world.",
+  );
+});
+
+test("feedback waits for a requested server instead of silently dropping its association", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let failed = false;
+  await page.route("http://localhost:8080/servers", async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Servers unavailable" } });
+  });
+  await login(page);
+  failed = true;
+  await page.goto(`/feedback?server=${serverID}`);
+  await page.getByLabel("Short summary").fill("Joining issue");
+  await page.getByLabel("What happened?").fill("My friend cannot connect to the world.");
+  await expect(page.getByRole("button", { name: "Send report", exact: true })).toBeDisabled();
+  expect(calls.some((c) => c.path === "/feedback" && c.method === "POST")).toBe(false);
+  failed = false;
+  await page.getByRole("button", { name: "Refresh servers", exact: true }).click();
+  await expect(page.getByLabel("Related server (optional)")).toHaveAttribute(
+    "data-value",
+    serverID,
+  );
+  await expect(page.getByRole("button", { name: "Send report", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Short summary")).toHaveValue("Joining issue");
+});
+
+test("feedback draft offers a choice before leaving the page", async ({ page }) => {
+  await mockAPI(page);
+  await login(page);
+  await page.goto("/feedback");
+  await page.getByLabel("Short summary").fill("Joining issue");
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Leave without saving?" })).toBeVisible();
+  await page.getByRole("button", { name: "Stay and keep editing", exact: true }).click();
+  await expect(page.getByLabel("Short summary")).toHaveValue("Joining issue");
+  await expect(page).toHaveURL(/feedback$/);
 });
