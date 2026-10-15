@@ -7084,3 +7084,79 @@ test("billing keeps stale subscriptions visible but blocks changes until refresh
   await page.getByRole("button", { name: "Refresh billing" }).click();
   await expect(page.getByRole("button", { name: "Renew", exact: true })).toBeEnabled();
 });
+
+test("account recovers a failed profile read without changing account data", async ({ page }) => {
+  const calls = await mockAPI(page);
+  let failed = true;
+  await page.route("http://localhost:8080/account", async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Account unavailable" }),
+    });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Refresh account" })).toBeVisible();
+  failed = false;
+  await page.getByRole("button", { name: "Refresh account" }).click();
+  await expect(page.getByLabel("Current password")).toBeVisible();
+  await expect(page.getByText("Account ID", { exact: true })).toHaveCount(0);
+  expect(calls.some((c) => c.path === "/account/password")).toBe(false);
+});
+
+test("account password submission locks fields and preserves them after failure", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let release;
+  let writes = 0;
+  await page.route("http://localhost:8080/account/password", async (route) => {
+    writes++;
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Please retry" }),
+    });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await page.getByLabel("Current password").fill("original-password");
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("replacement-password");
+  await page.getByRole("button", { name: "Change password and sign out" }).click();
+  await expect(page.getByLabel("Current password")).toBeDisabled();
+  await expect(page.getByLabel("New password", { exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Changing…" })).toBeDisabled();
+  await expect.poll(() => writes).toBe(1);
+  release();
+  await expect(page.getByLabel("Current password")).toBeEnabled();
+  await expect(page.getByLabel("New password", { exact: true })).toHaveValue(
+    "replacement-password",
+  );
+  await expect(page.getByLabel("Confirm new password")).toHaveValue("replacement-password");
+  expect(writes).toBe(1);
+});
+
+test("account password visibility is optional and the mobile page fits", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page);
+  await login(page);
+  await page.goto("/account");
+  const password = page.getByLabel("New password", { exact: true });
+  await expect(password).toHaveAttribute("type", "password");
+  await page.getByLabel("Show passwords").check();
+  await expect(password).toHaveAttribute("type", "text");
+  await page.getByLabel("Show passwords").uncheck();
+  await expect(password).toHaveAttribute("type", "password");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath("account-mobile.png"), fullPage: true });
+});

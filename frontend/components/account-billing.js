@@ -1,32 +1,55 @@
 "use client";
 import { useAuth } from "./auth";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useResource } from "./data";
 import { ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 export function Account() {
   const { logout } = useAuth();
-  const { data: account, error, loading } = useResource("/account");
+  const profile = useResource("/account");
+  const { data: account, error, loading } = profile;
+  const [signingOut, setSigningOut] = useState(false);
+  const signingOutRef = useRef(false);
+  async function signOut() {
+    if (signingOutRef.current) return;
+    signingOutRef.current = true;
+    setSigningOut(true);
+    try {
+      await logout();
+    } finally {
+      signingOutRef.current = false;
+      setSigningOut(false);
+    }
+  }
   return (
     <Shell>
-      <PageHeading
-        eyebrow="YOUR ACCOUNT"
-        title="A place to call your own."
-        description="Your profile and account security."
-      />
+      <PageHeading eyebrow="YOUR ACCOUNT" title="Account" />
       <ErrorMessage error={error} />
+      {error && (
+        <button
+          className="button secondary"
+          disabled={loading || error.status === 429}
+          onClick={profile.refresh}
+        >
+          Refresh account
+        </button>
+      )}
       {loading ? (
         <Loading />
       ) : (
         account && (
           <div className="account-grid">
             <section className="panel account-panel">
-              <span className="account-avatar">{account.name[0].toUpperCase()}</span>
+              <span className="account-avatar">
+                {account.name?.trim().charAt(0).toUpperCase() || "?"}
+              </span>
               <h2>{account.name}</h2>
               <p>{account.email}</p>
-              <span className="verified-tag">
-                <Icon name="check" size={14} />
-                Email verified
-              </span>
+              {account.verified_at && (
+                <span className="verified-tag">
+                  <Icon name="check" size={14} />
+                  Email verified
+                </span>
+              )}
               <dl className="profile-details">
                 <div>
                   <dt>Member since</dt>
@@ -38,23 +61,13 @@ export function Account() {
                     })}
                   </dd>
                 </div>
-                <div>
-                  <dt>Account ID</dt>
-                  <dd>
-                    <code>{account.id}</code>
-                  </dd>
-                </div>
               </dl>
-            </section>
-            <section className="panel security-panel">
-              <Icon name="shield" size={25} />
-              <h2>Keep your account safe.</h2>
-              <p>Your session expires automatically. Sign out when using a shared computer.</p>
-              <p>Signing out revokes this session and disconnects its live consoles.</p>
-              <button className="button secondary" onClick={logout}>
+              <button className="button secondary" disabled={signingOut} onClick={signOut}>
                 <Icon name="logout" size={16} />
-                Sign out of this session
+                {signingOut ? "Signing out…" : "Sign out of this session"}
               </button>
+            </section>
+            <section className="panel security-panel account-password-panel">
               <ChangePassword />
             </section>
           </div>
@@ -69,10 +82,12 @@ function ChangePassword() {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const inFlight = useRef(false);
   const [error, setError] = useState(null);
   async function submit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (inFlight.current) return;
     setError(null);
     if (password !== confirmation) {
       setError(new Error("Passwords do not match."));
@@ -82,6 +97,7 @@ function ChangePassword() {
       setError(new Error("Choose a password no longer than 72 bytes."));
       return;
     }
+    inFlight.current = true;
     setBusy(true);
     try {
       await api("/account/password", {
@@ -94,18 +110,20 @@ function ChangePassword() {
       passwordChanged();
     } catch (err) {
       setError(err);
+      inFlight.current = false;
       setBusy(false);
     }
   }
   return (
-    <form onSubmit={submit} className="password-change-form">
-      <h3>Change password</h3>
-      <p>Use at least 12 characters. Changing your password signs you out on every device.</p>
+    <form onSubmit={submit} className="password-change-form" aria-busy={busy}>
+      <h2>Change password</h2>
+      <p>At least 12 characters. You’ll sign in again on all devices.</p>
       <ErrorMessage error={error} />
       <label className="field">
         Current password
         <input
-          type="password"
+          type={visible ? "text" : "password"}
+          disabled={busy}
           autoComplete="current-password"
           required
           maxLength={72}
@@ -116,7 +134,8 @@ function ChangePassword() {
       <label className="field">
         New password
         <input
-          type="password"
+          type={visible ? "text" : "password"}
+          disabled={busy}
           autoComplete="new-password"
           required
           minLength={12}
@@ -128,7 +147,8 @@ function ChangePassword() {
       <label className="field">
         Confirm new password
         <input
-          type="password"
+          type={visible ? "text" : "password"}
+          disabled={busy}
           autoComplete="new-password"
           required
           minLength={12}
@@ -136,6 +156,15 @@ function ChangePassword() {
           value={confirmation}
           onChange={(e) => setConfirmation(e.target.value)}
         />
+      </label>
+      <label className="account-password-visibility">
+        <input
+          type="checkbox"
+          checked={visible}
+          disabled={busy}
+          onChange={(event) => setVisible(event.target.checked)}
+        />
+        Show passwords
       </label>
       <button className="button primary" disabled={busy}>
         {busy ? "Changing…" : "Change password and sign out"}
