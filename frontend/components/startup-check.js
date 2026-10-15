@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { LagHelp } from "./lag-help";
 import { useResource } from "./data";
 import { serverHealth } from "../lib/server-health";
 import { ErrorMessage } from "./ui";
@@ -36,18 +37,13 @@ export function StartupCheck({ server, ready, powerState, usage, usageError, eul
           Review server files
         </Link>
       )}
-      <details>
-        <summary>Players are experiencing lag?</summary>
-        <p>
-          Delayed block breaks and rubber-banding can come from server workload or a slow
-          connection. Low FPS is usually a client-side issue.
-        </p>
-        <p>
-          CPU and memory readings help spot resource pressure, but this dashboard does not measure
-          Minecraft tick rate or each player’s ping. Compare whether everyone has delays or only one
-          player before changing settings.
-        </p>
-      </details>
+      <LagHelp
+        server={server}
+        ready={ready}
+        powerState={powerState}
+        usage={usage}
+        usageError={usageError}
+      />
       <details className="startup-check" open={issues.length ? true : undefined}>
         <summary>
           Startup help

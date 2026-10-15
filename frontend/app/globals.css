@@ -6062,3 +6062,27 @@ input {
     flex: 1;
   }
 }
+
+.lag-help .field {
+  margin-block: 16px;
+}
+.lag-guidance {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.lag-guidance h3 {
+  margin-top: 0;
+}
+.lag-guidance ol {
+  padding-left: 24px;
+}
+.lag-guidance li + li {
+  margin-top: 12px;
+}
+.diagnostic-report textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+}

@@ -5,6 +5,7 @@ import {
   hasGuidedSetup,
   filterInstalledAddons,
 } from "../lib/installed-addons.js";
+import { diagnosticReport } from "../lib/lag-diagnostics.js";
 import { findInFile } from "../lib/find-in-file.js";
 import { formatBytes } from "../lib/api.js";
 import { PLAYER_GROUPS, recommendGroupPlan } from "../lib/group-plans.js";
@@ -6091,4 +6092,131 @@ test("stale backup history disables deletion confirmation until a successful ref
   expect(
     calls.filter((call) => call.path.includes("/backups") && call.method !== "GET"),
   ).toHaveLength(0);
+});
+
+test("diagnostic report excludes private fields, invalid numbers and stale readings", () => {
+  const input = {
+    server: {
+      id: serverID,
+      server_type: "PAPER",
+      cpu_limit: 200,
+      ram_mb: 4096,
+      disk_mb: 20480,
+      name: "PRIVATE-NAME",
+      hostname: "PRIVATE-HOST",
+      password: "PRIVATE-SECRET",
+    },
+    ready: true,
+    powerState: "running",
+    symptom: "blocks",
+    capturedAt: "2026-10-15T10:00:00.000Z",
+    usage: {
+      cpu_percent: 90,
+      memory_bytes: 1048576,
+      disk_bytes: 2097152,
+      uptime_ms: 10000,
+      logs: "PRIVATE-LOG",
+      players: ["PRIVATE-PLAYER"],
+    },
+  };
+  const report = diagnosticReport(input);
+  expect(report).toContain("CPU use: 90%");
+  expect(report).toContain("Memory use: 1 MB");
+  expect(report).toContain("Process uptime: 10 seconds");
+  expect(report).toContain("Minecraft tick rate: Not measured");
+  expect(report).not.toContain("PRIVATE-");
+  const unavailable = diagnosticReport({ ...input, usageError: new Error("PRIVATE-ERROR") });
+  expect(unavailable).toContain("no stale readings included");
+  expect(unavailable).toContain("CPU use: Unavailable");
+  expect(unavailable).toContain("Observed process state: unavailable");
+  expect(unavailable).not.toContain("PRIVATE-");
+  for (const value of [null, undefined, NaN, Infinity, -1, "99"]) {
+    expect(
+      diagnosticReport({ ...input, usage: { cpu_percent: value, memory_bytes: value } }),
+    ).toContain("CPU use: Unavailable");
+    expect(
+      diagnosticReport({ ...input, usage: { cpu_percent: value, memory_bytes: value } }),
+    ).toContain("Memory use: Unavailable");
+  }
+});
+
+for (const width of [390, 1366]) {
+  test(`lag guidance and diagnostic report work at ${width}px`, async ({ page }) => {
+    const calls = await mockAPI(page, { initiallyRunning: true });
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text) => {
+            window.copiedDiagnostics = text;
+          },
+        },
+      });
+    });
+    await openServer(page);
+    await page.locator('[data-section="health"] > summary').click();
+    const card = page.getByRole("region", { name: "Server health" });
+    await card.getByText("Players are experiencing lag?", { exact: true }).click();
+    await expect(
+      card.getByRole("heading", { name: "Compare players before changing the server" }),
+    ).toBeVisible();
+    await selectValue(page, card.getByLabel("What do players notice?"), "fps");
+    await expect(
+      card.getByRole("heading", { name: "Start with the player’s graphics settings" }),
+    ).toBeVisible();
+    await expect(card.getByRole("link", { name: "Open Minecraft settings →" })).toHaveCount(0);
+    await selectValue(page, card.getByLabel("What do players notice?"), "chunks");
+    await expect(
+      card.getByRole("heading", { name: "Check whether exploring new terrain triggers it" }),
+    ).toBeVisible();
+    await card.getByRole("button", { name: "Copy diagnostic report" }).click();
+    await expect(card.getByRole("status")).toContainText("Diagnostic report copied");
+    const preview = card.getByLabel("Diagnostic report preview");
+    const report = await preview.inputValue();
+    expect(report).toContain("Player-reported symptom: Slow chunk loading");
+    expect(report).toContain("Player ping / packet loss: Not measured");
+    expect(await page.evaluate(() => window.copiedDiagnostics)).toBe(report);
+    expect(await preview.getAttribute("readonly")).not.toBeNull();
+    await expect(card.getByRole("link", { name: "Open Minecraft settings →" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: test.info().outputPath(`lag-help-${width}.png`),
+      fullPage: true,
+    });
+    expect(
+      calls.filter(
+        (call) =>
+          call.method !== "GET" &&
+          !call.path.startsWith("/auth/") &&
+          !call.path.endsWith("/console-ticket"),
+      ),
+    ).toHaveLength(0);
+  });
+}
+
+test("diagnostic copy fallback shows a selectable report without stale usage", async ({ page }) => {
+  await mockAPI(page, { initiallyRunning: true });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    });
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, (route) =>
+    route.fulfill({ status: 503, json: { error: "Readings unavailable" } }),
+  );
+  await openServer(page);
+  await page.locator('[data-section="health"] > summary').click();
+  const card = page.getByRole("region", { name: "Server health" });
+  await card.getByText("Players are experiencing lag?", { exact: true }).click();
+  await card.getByRole("button", { name: "Copy diagnostic report" }).click();
+  await expect(card.getByRole("status")).toContainText("Select and copy the report below manually");
+  await expect(card.getByLabel("Diagnostic report preview")).toHaveValue(/CPU use: Unavailable/);
 });

@@ -32,3 +32,29 @@ No Minecraft client or gameplay test was performed for this dashboard change.
 Deployment verification: production readiness and the overview route returned
 200. Usage and startup-check API routes returned 401 without a session. Checks
 were read-only; no live support report or Minecraft command was submitted.
+
+## Guided lag troubleshooting and diagnostic copy
+
+The existing health card now offers three symptom choices: delayed blocks or
+rubber-banding, slow chunk loading, and low FPS/stuttering. Guidance distinguishes
+shared server workload from a single player's connection or graphics performance.
+It suggests comparing explored/new terrain, pausing terrain generation while
+playing, and changing view distance one step at a time. It never runs commands,
+changes settings or recommends buying resources based on one reading. Settings
+links appear only for members with settings permission.
+
+Copy diagnostic report prepares a preview and attempts to copy the same snapshot.
+Clipboard denial leaves a read-only text area for manual selection. The snapshot
+contains an application server UUID, allowlisted software name, selected symptom,
+resource values/allowances and process state/uptime. It does not serialize API
+objects or include player identities, hostnames, logs, file contents, request error
+text or credentials. Non-finite, negative and nonnumeric readings are unavailable.
+When usage is unavailable, retained readings are omitted. Capture time describes
+report creation, not measurement time; the report uses the last dashboard reading.
+Tick rate and ping/packet loss are explicitly unmeasured. No report is sent or
+persisted automatically, and no new network requests are added for this feature.
+
+Nine focused checks cover report fields/privacy, invalid values, unavailable usage,
+clipboard fallback, symptom navigation, existing support reporting and mobile and
+laptop layouts. Lint, formatting and production build also passed. Tests use
+mocked APIs; no gameplay performance diagnosis was performed.
