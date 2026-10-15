@@ -1776,6 +1776,11 @@ function Backups({ id, offline, limit }) {
   const latest = [...usable].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
   const oldCopy = latest && now - Date.parse(latest.created_at) > 48 * 60 * 60 * 1000;
   const pending = (resource.data || []).filter((backup) => !backup.completed_at).length;
+  const historyAvailable = !resource.loading && !resource.error && !!resource.data;
+  const selectedAvailable =
+    historyAvailable &&
+    target &&
+    resource.data.some((backup) => backup.uuid === target.backup.uuid && backup.completed_at);
   const selectedReady =
     target &&
     !resource.error &&
@@ -1785,6 +1790,7 @@ function Backups({ id, offline, limit }) {
 
   async function create(e) {
     e.preventDefault();
+    if (!historyAvailable || resource.data.length >= limit || !name.trim()) return;
     if (
       await action.run(
         () =>
@@ -1799,6 +1805,7 @@ function Backups({ id, offline, limit }) {
       setName("");
   }
   async function change() {
+    if (!selectedAvailable) return;
     if (target?.action === "restore" && (!offline || !restoreAcknowledged || !selectedReady))
       return;
     const v = target;
@@ -1900,7 +1907,7 @@ function Backups({ id, offline, limit }) {
           <div>
             <h2>Backups</h2>
             <span>
-              {resource.data?.length ?? "—"} of {limit} backup slots used
+              {historyAvailable ? resource.data.length : "—"} of {limit} backup slots used
             </span>
           </div>
           <button className="button secondary" onClick={resource.refresh}>
@@ -1931,7 +1938,7 @@ function Backups({ id, offline, limit }) {
           <button
             className="button primary"
             disabled={
-              action.busy || !name.trim() || !resource.data || resource.data.length >= limit
+              action.busy || !name.trim() || !historyAvailable || resource.data.length >= limit
             }
           >
             Create backup
@@ -1943,9 +1950,16 @@ function Backups({ id, offline, limit }) {
             free a slot. Backups are not removed automatically by this page.
           </p>
         )}
+        {resource.error && (
+          <p className="notice" role="status">
+            Couldn’t refresh backup history. Refresh to try again. Backup actions are paused until
+            history loads successfully.
+            {resource.data && " Entries below are from the last successful check."}
+          </p>
+        )}
         {resource.loading ? (
           <Loading />
-        ) : !resource.data?.length ? (
+        ) : !resource.data?.length && resource.error ? null : !resource.data?.length ? (
           <p className="management-empty">
             No backups yet. Save a copy of your world before making big changes.
           </p>
@@ -1976,7 +1990,9 @@ function Backups({ id, offline, limit }) {
                     <td>
                       <div className="row-actions">
                         <button
-                          disabled={action.busy || !b.is_successful || !b.completed_at}
+                          disabled={
+                            !historyAvailable || action.busy || !b.is_successful || !b.completed_at
+                          }
                           onClick={() =>
                             action.run(
                               () =>
@@ -1992,7 +2008,13 @@ function Backups({ id, offline, limit }) {
                           Download
                         </button>
                         <button
-                          disabled={!offline || action.busy || !b.is_successful || !b.completed_at}
+                          disabled={
+                            !historyAvailable ||
+                            !offline ||
+                            action.busy ||
+                            !b.is_successful ||
+                            !b.completed_at
+                          }
                           onClick={() => {
                             setRestoreAcknowledged(false);
                             setTarget({ action: "restore", backup: b });
@@ -2002,7 +2024,7 @@ function Backups({ id, offline, limit }) {
                         </button>
                         <button
                           className="text-danger"
-                          disabled={action.busy || !b.completed_at}
+                          disabled={!historyAvailable || action.busy || !b.completed_at}
                           onClick={() => setTarget({ action: "delete", backup: b })}
                         >
                           Delete
@@ -2026,7 +2048,8 @@ function Backups({ id, offline, limit }) {
           label={target.action === "restore" ? "Restore backup" : "Delete backup"}
           busy={action.busy}
           confirmDisabled={
-            target.action === "restore" && (!offline || !selectedReady || !restoreAcknowledged)
+            !selectedAvailable ||
+            (target.action === "restore" && (!offline || !selectedReady || !restoreAcknowledged))
           }
           onCancel={() => setTarget(null)}
           onConfirm={change}
@@ -2036,6 +2059,12 @@ function Backups({ id, offline, limit }) {
               ? `Restoring “${target.backup.name}” replaces all current server files, including your world, settings and plugins. Changes made after this backup will be lost.`
               : `“${target.backup.name}” will be permanently deleted.`}
           </p>
+          {!selectedAvailable && target.action === "delete" && (
+            <p className="notice">
+              This backup could not be verified. Close this dialog and refresh history before
+              deleting.
+            </p>
+          )}
           {target.action === "delete" &&
             usable.length === 1 &&
             latest?.uuid === target.backup.uuid && (

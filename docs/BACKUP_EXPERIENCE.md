@@ -45,3 +45,22 @@ backup is corrupt or cannot be restored. The age display updates once per minute
 Six targeted browser checks passed, including the slow-old/new-success/failed-new
 selection case, restore acknowledgement, changing power state and mobile/laptop
 visual checks. Frontend lint and production build passed.
+
+## Unavailable history
+
+An unsuccessful history read is distinct from an empty account: the page shows a
+retry message instead of “No backups yet”. Entries retained after a failed poll
+are explicitly identified as coming from the last successful check, and the slot
+count is unavailable until history loads successfully.
+
+Create, download, restore and delete controls pause while history is unavailable.
+An open deletion dialog also verifies that the selected backup still exists and
+is completed; its handler repeats this check before submitting. Restore retains
+its additional successful-backup, stopped-server and acknowledgement checks.
+Refresh recovers the controls after a successful read without submitting any
+backup mutation. Server-side authorization and validation remain authoritative.
+
+Validation: 25 related browser checks passed, including initial history failure,
+empty-history recovery, failure during deletion confirmation, existing restore
+and schedule flows, and mobile/laptop visual audits. Lint, formatting and the
+production build passed. All backup mutations in these checks use API fixtures.

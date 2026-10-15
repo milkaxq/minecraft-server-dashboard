@@ -6032,3 +6032,63 @@ test("file editor shortcut opens search and editing recalculates matches safely"
   await expect(page.getByRole("button", { name: "Next match", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save file", exact: true })).toBeEnabled();
 });
+
+test("backup history failure stays distinct from empty and refresh recovers", async ({ page }) => {
+  const calls = await mockAPI(page);
+  let fail = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    fail
+      ? route.fulfill({ status: 503, json: { error: "History unavailable" } })
+      : route.fulfill({ json: [] }),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  await expect(page.getByRole("heading", { name: "Backup status unavailable" })).toBeVisible();
+  await expect(page.getByText(/Couldn’t refresh backup history/)).toBeVisible();
+  await expect(page.getByText(/No backups yet\. Save a copy/)).toHaveCount(0);
+  await page.getByLabel("Backup name", { exact: true }).fill("Before our adventure");
+  await expect(page.getByRole("button", { name: "Create backup", exact: true })).toBeDisabled();
+  fail = false;
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText(/No backups yet\. Save a copy/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create backup", exact: true })).toBeEnabled();
+  expect(
+    calls.filter((call) => call.path.includes("/backups") && call.method !== "GET"),
+  ).toHaveLength(0);
+});
+
+test("stale backup history disables deletion confirmation until a successful refresh", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await page.clock.install();
+  let fail = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, (route) =>
+    fail
+      ? route.fulfill({ status: 503, json: { error: "History unavailable" } })
+      : route.fallback(),
+  );
+  await login(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  await expect(page.getByText("Before changes", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const confirm = dialog.getByRole("button", { name: "Delete backup", exact: true });
+  await expect(confirm).toBeEnabled();
+  fail = true;
+  await page.clock.fastForward(10001);
+  await expect(page.getByText(/Entries below are from the last successful check/)).toBeVisible();
+  await expect(confirm).toBeDisabled();
+  await expect(dialog).toContainText("This backup could not be verified");
+  await expect(page.getByRole("button", { name: "Download", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Restore", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  fail = false;
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText(/Entries below are from the last successful check/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+  expect(
+    calls.filter((call) => call.path.includes("/backups") && call.method !== "GET"),
+  ).toHaveLength(0);
+});
