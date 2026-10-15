@@ -7559,3 +7559,58 @@ test("daily backup schedule recovers an initial failed read without a write", as
     calls.filter((c) => c.path.endsWith("/backup-schedule") && c.method === "PUT"),
   ).toHaveLength(0);
 });
+
+test("catalog hide installed filters locally and reset restores all choices", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins/catalog/installed`, (route) =>
+    route.fulfill({ json: { projects: ["viaversion"] } }),
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  const catalog = page.locator(".addon-catalog");
+  await expect(catalog.getByRole("button", { name: "File installed", exact: true })).toBeDisabled();
+  await expect(catalog.getByRole("button", { name: "Reset filters", exact: true })).toHaveCount(0);
+  const reads = calls.filter((c) => c.path.endsWith("/plugins/catalog")).length;
+  await catalog.getByLabel("Hide installed", { exact: true }).check();
+  await expect(catalog.getByText("ViaVersion", { exact: true })).toHaveCount(0);
+  await expect(
+    catalog.getByText("Everything shown is already installed.", { exact: false }),
+  ).toBeVisible();
+  expect(calls.filter((c) => c.path.endsWith("/plugins/catalog")).length).toBe(reads);
+  await catalog.getByRole("button", { name: "Reset filters", exact: true }).click();
+  await expect(catalog.getByLabel("Hide installed", { exact: true })).not.toBeChecked();
+  await expect(catalog.getByText("ViaVersion", { exact: true })).toBeVisible();
+});
+
+test("catalog blocks installation while installed tracking is unavailable and recovers by reading", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let failed = true;
+  await page.route(
+    `http://localhost:8080/servers/${serverID}/plugins/catalog/installed`,
+    async (route) => {
+      if (!failed) return route.fallback();
+      return route.fulfill({ status: 503, json: { error: "Installed tracking unavailable" } });
+    },
+  );
+  await openServer(page);
+  await page.getByRole("link", { name: "Plugins", exact: true }).click();
+  const catalog = page.locator(".addon-catalog");
+  await expect(catalog.getByLabel("Hide installed", { exact: true })).toBeDisabled();
+  await catalog.getByRole("button", { name: "Review install", exact: true }).click();
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Install now", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+  failed = false;
+  await catalog.getByRole("button", { name: "Refresh installed addons", exact: true }).click();
+  await expect(catalog.getByLabel("Hide installed", { exact: true })).toBeEnabled();
+  await catalog.getByRole("button", { name: "Review install", exact: true }).click();
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Install now", exact: true }),
+  ).toBeEnabled();
+  expect(
+    calls.filter((c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST"),
+  ).toHaveLength(0);
+});

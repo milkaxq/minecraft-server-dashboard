@@ -1326,6 +1326,9 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           setAddonChange({ message: "Addon files installed" });
         }}
         files={resource.data}
+        filesUnavailable={resource.loading || !!resource.error || !resource.data}
+        filesError={resource.error}
+        refreshFiles={resource.refresh}
       />
       {pendingUpload && (
         <Confirm
@@ -1366,9 +1369,21 @@ function Plugins({ id, server, offline, mods = false, usage }) {
     </>
   );
 }
-function CatalogBrowser({ id, server, collection, offline, onInstalled, files }) {
+function CatalogBrowser({
+  id,
+  server,
+  collection,
+  offline,
+  onInstalled,
+  files,
+  filesUnavailable,
+  filesError,
+  refreshFiles,
+}) {
   const { api } = useAuth();
   const [search, setSearch] = useState("");
+  const [hideInstalled, setHideInstalled] = useState(false);
+  const installing = useRef(false);
   const [filters, setFilters] = useState({ query: "", sort: "downloads", category: "" });
   const [offset, setOffset] = useState(0);
   const filterKey = JSON.stringify([id, collection, filters]);
@@ -1409,21 +1424,33 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
   const installedProjects = new Set(installed.data?.projects || []);
   for (const file of receipt?.files || [])
     if (present.has(file.filename)) installedProjects.add(file.project_id);
+  const installationsUnavailable =
+    filesUnavailable || installed.loading || !!installed.error || !installed.data;
+  const visibleResults =
+    hideInstalled && !installationsUnavailable
+      ? results.filter((project) => !installedProjects.has(project.project_id))
+      : results;
+  const filtersActive =
+    search || filters.query || filters.sort !== "downloads" || filters.category || hideInstalled;
   const refreshInstalled = installed.refresh;
   useEffect(() => {
     refreshInstalled();
   }, [files, refreshInstalled]);
   function changeFilters(next) {
+    if (action.busy) return;
     setFilters(next);
     setOffset(0);
     setPreview(null);
   }
   function browse(e) {
     e.preventDefault();
+    if (action.busy) return;
     changeFilters({ ...filters, query: search.trim() });
     resource.refresh();
   }
   function resetFilters() {
+    if (action.busy) return;
+    setHideInstalled(false);
     setSearch("");
     changeFilters({ query: "", sort: "downloads", category: "" });
     resource.refresh();
@@ -1439,7 +1466,16 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
     });
   }
   async function install() {
-    if (!safety || !offline || action.busy) return;
+    if (
+      !safety ||
+      !offline ||
+      action.busy ||
+      installing.current ||
+      installationsUnavailable ||
+      !preview
+    )
+      return;
+    installing.current = true;
     setOperationStage("install");
     const body = { revision: preview.revision, ...safety };
     const fingerprint = JSON.stringify(body);
@@ -1460,6 +1496,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
         throw error;
       }
     }, "Installed. Start your server to load the changes.");
+    installing.current = false;
     setActiveInstall(null);
     if (success) {
       onInstalled();
@@ -1507,6 +1544,22 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
       <Feedback action={action} />
       {!preview && failureHelp}
       <ErrorMessage error={resource.error || installed.error} />
+      {(installed.error || filesError) && (
+        <button
+          className="button secondary"
+          disabled={
+            action.busy ||
+            installed.loading ||
+            [installed.error, filesError].some((error) => error?.status === 429)
+          }
+          onClick={() => {
+            installed.refresh();
+            refreshFiles();
+          }}
+        >
+          Refresh installed addons
+        </button>
+      )}
       <section className="addon-updates">
         <button
           className="button secondary"
@@ -1610,25 +1663,37 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
           <button className="button primary" disabled={action.busy}>
             Search Modrinth
           </button>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={resetFilters}
-            disabled={action.busy}
-          >
-            Reset filters
-          </button>
+          {filtersActive && (
+            <button
+              type="button"
+              className="button secondary"
+              onClick={resetFilters}
+              disabled={action.busy}
+            >
+              Reset filters
+            </button>
+          )}
         </div>
       </form>
+      <label className="catalog-installed-toggle">
+        <input
+          type="checkbox"
+          checked={hideInstalled}
+          disabled={action.busy || installationsUnavailable}
+          onChange={(event) => setHideInstalled(event.target.checked)}
+        />
+        Hide installed
+      </label>
       {resource.loading && <Loading message="Checking compatible releases…" />}
       {results.length > 0 && (
         <p className="field-help" role="status">
-          {results.length} compatible {results.length === 1 ? "project" : "projects"} shown
+          {visibleResults.length} compatible {visibleResults.length === 1 ? "project" : "projects"}{" "}
+          shown
         </p>
       )}
       {results && (
         <ul className="plugin-list">
-          {results.map((project) => (
+          {visibleResults.map((project) => (
             <li key={project.project_id}>
               <div className="catalog-project">
                 <ProjectIcon project={project} />
@@ -1675,6 +1740,14 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
           ))}
         </ul>
       )}
+      {!resource.loading &&
+        !resource.error &&
+        hideInstalled &&
+        !installationsUnavailable &&
+        results.length > 0 &&
+        !visibleResults.length && (
+          <p>Everything shown is already installed. Turn off Hide installed or load more.</p>
+        )}
       {!resource.loading && !resource.error && results.length === 0 && (
         <p>
           {resource.data?.has_more
@@ -1692,7 +1765,11 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
         </button>
       )}
       {resource.error && (
-        <button className="button secondary" onClick={resource.refresh}>
+        <button
+          className="button secondary"
+          disabled={action.busy || resource.loading || resource.error.status === 429}
+          onClick={resource.refresh}
+        >
           Retry catalog load
         </button>
       )}
@@ -1702,7 +1779,7 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
           title={preview.replaces?.length ? "Review addon update" : "Review installation"}
           label={preview.replaces?.length ? "Update now" : "Install now"}
           busy={action.busy}
-          confirmDisabled={!offline || !safety}
+          confirmDisabled={!offline || !safety || installationsUnavailable}
           onCancel={() => setPreview(null)}
           onConfirm={install}
         >
@@ -1742,6 +1819,11 @@ function CatalogBrowser({ id, server, collection, offline, onInstalled, files })
                 not atomic; an interrupted update needs inspection before restarting.
               </p>
             </div>
+          )}
+          {(installed.error || filesError) && (
+            <p className="notice">
+              Installed files could not be checked. Close this review and refresh installed addons.
+            </p>
           )}
           <ChangeSafety
             key={`${preview.project}:${preview.revision}`}
