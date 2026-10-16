@@ -8569,3 +8569,64 @@ test("addon delete retry keeps its request key and rechecks the installed select
   expect(deletes).toHaveLength(2);
   expect(deletes[1]).toEqual(deletes[0]);
 });
+
+test("account password rate limits preserve edits and wait before a manual retry", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let writes = 0;
+  await page.route("http://localhost:8080/account/password", (route) => {
+    writes++;
+    return route.fulfill({
+      status: 429,
+      headers: { "Retry-After": "4", "Access-Control-Expose-Headers": "Retry-After" },
+      json: { error: "Please wait before trying again" },
+    });
+  });
+  await login(page);
+  await page.goto("/account");
+  await page.getByLabel("Current password").fill("original-password");
+  await page.getByLabel("New password", { exact: true }).fill("replacement-password");
+  await page.getByLabel("Confirm new password").fill("replacement-password");
+  await page.getByRole("button", { name: "Change password and sign out", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Try again in 4s", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Current password")).toBeEnabled();
+  await expect(page.getByLabel("New password", { exact: true })).toHaveValue(
+    "replacement-password",
+  );
+  await page.getByLabel("Confirm new password").press("Enter");
+  expect(writes).toBe(1);
+  await page.clock.runFor(4001);
+  await expect(
+    page.getByRole("button", { name: "Change password and sign out", exact: true }),
+  ).toBeEnabled();
+  expect(writes).toBe(1);
+  await page.getByRole("button", { name: "Change password and sign out", exact: true }).click();
+  await expect.poll(() => writes).toBe(2);
+});
+
+test("account password validation focuses the field to fix without sending secrets", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto("/account");
+  await page.getByLabel("Current password").fill("original-password");
+  const password = page.getByLabel("New password", { exact: true });
+  const confirmation = page.getByLabel("Confirm new password");
+  await password.fill("replacement-password");
+  await confirmation.fill("different-password");
+  await page.getByRole("button", { name: "Change password and sign out", exact: true }).click();
+  await expect(page.getByText("Passwords do not match.", { exact: true })).toBeVisible();
+  await expect(confirmation).toBeFocused();
+  const longValue = "é".repeat(40);
+  await password.fill(longValue);
+  await confirmation.fill(longValue);
+  await page.getByRole("button", { name: "Change password and sign out", exact: true }).click();
+  await expect(password).toBeFocused();
+  await expect(
+    page.getByText("Choose a password no longer than 72 bytes.", { exact: true }),
+  ).toBeVisible();
+  expect(calls.some((c) => c.path === "/account/password")).toBe(false);
+});
