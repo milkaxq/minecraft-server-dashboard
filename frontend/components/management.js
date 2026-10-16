@@ -349,6 +349,9 @@ function Files({ id, offline }) {
   const changeAttempt = useRef(null);
   const changing = useRef(false);
   const uploadAttempt = useRef(null);
+  const uploadController = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  useEffect(() => () => uploadController.current?.abort(), []);
   const [pendingUpload, setPendingUpload] = useState(null);
   const filesReady = !resource.loading && !resource.error && !!resource.data;
   const writable = offline && filesReady && !action.busy;
@@ -425,6 +428,9 @@ function Files({ id, offline }) {
     if (uploadAttempt.current?.file !== file || uploadAttempt.current?.dir !== dir)
       uploadAttempt.current = { file, dir, key: crypto.randomUUID() };
     const attempt = uploadAttempt.current;
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setUploading(true);
     setPendingUpload({ file, dir });
     try {
       if (
@@ -442,8 +448,15 @@ function Files({ id, offline }) {
                 key: attempt.key,
                 raw: true,
                 body: file,
+                signal: controller.signal,
               },
             ).catch((error) => {
+              if (error.name === "AbortError") {
+                resource.refresh();
+                throw new Error(
+                  "Upload canceled. Check the folder before retrying; the file may have arrived.",
+                );
+              }
               if ([400, 403, 404, 409, 413, 422].includes(error.status))
                 uploadAttempt.current = null;
               throw error;
@@ -455,6 +468,8 @@ function Files({ id, offline }) {
         setPendingUpload(null);
       }
     } finally {
+      uploadController.current = null;
+      setUploading(false);
       changing.current = false;
     }
   }
@@ -463,7 +478,23 @@ function Files({ id, offline }) {
       <UnsavedChangesGuard dirty={editorDirty} />
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
-      {pendingUpload && !action.busy && (
+      {uploading && pendingUpload && (
+        <div className="notice" role="status">
+          <strong>Uploading {pendingUpload.file.name}</strong>
+          <p>{formatBytes(pendingUpload.file.size)} · Keep this page open</p>
+          <progress aria-label="File upload in progress" />
+          <div className="file-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => uploadController.current?.abort()}
+            >
+              Cancel upload
+            </button>
+          </div>
+        </div>
+      )}
+      {pendingUpload && !uploading && !action.busy && (
         <div className="notice" role="status">
           Upload needs attention: {pendingUpload.file.name} in {pendingUpload.dir}
           <div className="file-actions">

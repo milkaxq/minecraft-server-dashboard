@@ -8196,3 +8196,55 @@ test("expired-session sign-out returns to login without a false connection failu
   ).toBeVisible();
   await expect(page.getByText("Could not sign out.", { exact: false })).toHaveCount(0);
 });
+
+test("file upload shows honest progress and cancel preserves the exact retry", async ({ page }) => {
+  await mockAPI(page);
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (String(url).includes("/files/upload?"))
+        options.signal.addEventListener("abort", () => {
+          window.uploadAborted = true;
+        });
+      return original(url, options);
+    };
+  });
+  const uploads = [];
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/files/upload?**`, async (route) => {
+    uploads.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postData(),
+      url: route.request().url(),
+    });
+    if (uploads.length === 1) {
+      await held;
+      await route.fulfill({ json: { status: "saved" } }).catch(() => {});
+    } else await route.fallback();
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await expect(page.getByRole("button", { name: "Upload file", exact: true })).toBeEnabled();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Our world notes"),
+  });
+  await expect(page.getByText("Uploading notes.txt", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "File upload in progress" }),
+  ).not.toHaveAttribute("value");
+  await expect(page.getByRole("button", { name: "New file", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Cancel upload", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.uploadAborted)).toBe(true);
+  release();
+  await expect(page.getByText(/Upload canceled. Check the folder before retrying/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry upload", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Retry upload", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry upload", exact: true })).toHaveCount(0);
+  expect(uploads).toHaveLength(2);
+  expect(uploads[1]).toEqual(uploads[0]);
+});
