@@ -4,22 +4,9 @@ import { useRef, useState } from "react";
 import { useResource } from "./data";
 import { ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 export function Account() {
-  const { logout } = useAuth();
+  const { logout, signingOut } = useAuth();
   const profile = useResource("/account");
   const { data: account, error, loading } = profile;
-  const [signingOut, setSigningOut] = useState(false);
-  const signingOutRef = useRef(false);
-  async function signOut() {
-    if (signingOutRef.current) return;
-    signingOutRef.current = true;
-    setSigningOut(true);
-    try {
-      await logout();
-    } finally {
-      signingOutRef.current = false;
-      setSigningOut(false);
-    }
-  }
   return (
     <Shell>
       <PageHeading eyebrow="YOUR ACCOUNT" title="Account" />
@@ -62,7 +49,7 @@ export function Account() {
                   </dd>
                 </div>
               </dl>
-              <button className="button secondary" disabled={signingOut} onClick={signOut}>
+              <button className="button secondary" disabled={signingOut} onClick={logout}>
                 <Icon name="logout" size={16} />
                 {signingOut ? "Signing out…" : "Sign out of this session"}
               </button>

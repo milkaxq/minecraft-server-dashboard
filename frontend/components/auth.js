@@ -11,6 +11,8 @@ export function AuthProvider({ children, marketing = false }) {
   const [restoreError, setRestoreError] = useState(null);
   const [authNotice, setAuthNotice] = useState("");
   const generation = useRef(0);
+  const logoutInFlight = useRef(false);
+  const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
   const csrfToken = session?.csrf_token;
   const loadSession = useCallback(async (signal) => {
@@ -94,14 +96,26 @@ export function AuthProvider({ children, marketing = false }) {
     router.replace("/dashboard");
   }
   async function logout() {
+    if (logoutInFlight.current) return;
+    logoutInFlight.current = true;
+    const attempt = generation.current;
+    setSigningOut(true);
+    setAuthNotice("");
     try {
       if (session) await api("/auth/logout", { method: "POST" });
+      if (attempt !== generation.current) return;
       generation.current++;
       setSession(null);
       setRestoreError(null);
       router.replace("/login");
-    } catch {
-      setAuthNotice("Could not sign out. Check your connection and try again.");
+    } catch (error) {
+      // A current-session 401 is handled by api(); an older response must not
+      // replace the state of a newer authentication attempt.
+      if (error.status !== 401 && attempt === generation.current)
+        setAuthNotice("Could not sign out. Check your connection and try again.");
+    } finally {
+      logoutInFlight.current = false;
+      setSigningOut(false);
     }
   }
   function forgetSession() {
@@ -126,6 +140,7 @@ export function AuthProvider({ children, marketing = false }) {
         api,
         login,
         logout,
+        signingOut,
         passwordChanged,
         forgetSession,
         authNotice,

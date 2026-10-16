@@ -8121,3 +8121,78 @@ for (const ended of [{ status: "CANCELLED" }, { status: "RUNNING", deletion_pend
     ).toBeVisible();
   });
 }
+
+test("sign-out shares its pending state and prevents duplicate requests across controls", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let release;
+  let requests = 0;
+  await page.route("http://localhost:8080/auth/logout", async (route) => {
+    requests++;
+    if (requests > 1) return route.fallback();
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ status: 503, json: { error: "Logout temporarily unavailable" } });
+  });
+  await login(page);
+  await page.getByRole("link", { name: "Account", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Sign out of this session", exact: true })
+    .evaluate((button) => {
+      button.click();
+      button.click();
+    });
+  await expect.poll(() => requests).toBe(1);
+  await expect(page.locator(".profile-button")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Signing out…", exact: true })).toBeDisabled();
+  release();
+  await expect(page.getByRole("alert").filter({ hasText: "Could not sign out" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Sign out of this session", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "Sign out of this session", exact: true }).click();
+  await expect(page).toHaveURL(/login$/);
+  expect(requests).toBe(2);
+});
+
+test("mobile sign-out keeps its pending state and failure visible in navigation", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockAPI(page);
+  let release;
+  await page.route("http://localhost:8080/auth/logout", async (route) => {
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ status: 503, json: { error: "Logout temporarily unavailable" } });
+  });
+  await login(page);
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Your worlds", exact: true });
+  await menu.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(menu.getByRole("button", { name: "Signing out…", exact: true })).toBeDisabled();
+  await expect.poll(() => !!release).toBe(true);
+  release();
+  await expect(menu.getByRole("status")).toContainText("Could not sign out");
+  await expect(menu.getByRole("button", { name: "Sign out", exact: true })).toBeEnabled();
+  await expect(menu).toBeVisible();
+});
+
+test("expired-session sign-out returns to login without a false connection failure", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.route("http://localhost:8080/auth/logout", (route) =>
+    route.fulfill({ status: 401, json: { error: "Session expired" } }),
+  );
+  await login(page);
+  await page.getByRole("button", { name: "A Alex Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/login$/);
+  await expect(
+    page.getByRole("heading", { name: "Good to see you again.", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Could not sign out.", { exact: false })).toHaveCount(0);
+});

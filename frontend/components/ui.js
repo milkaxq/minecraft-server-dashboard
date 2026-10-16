@@ -125,7 +125,8 @@ export function Brand({ href = "/dashboard" }) {
   );
 }
 export function Shell({ children }) {
-  const { session, logout, restoring, restoreError, restoreSession, authNotice } = useAuth();
+  const { session, logout, signingOut, restoring, restoreError, restoreSession, authNotice } =
+    useAuth();
   const router = useRouter();
   const path = usePathname();
   const menu = useRef(null);
@@ -218,16 +219,15 @@ export function Shell({ children }) {
         </div>
         <p className="mobile-menu-user">{session.user.name}</p>
         <nav aria-label="Main navigation">{navigation}</nav>
-        <button
-          className="button mobile-signout"
-          onClick={() => {
-            menu.current?.close();
-            logout();
-          }}
-        >
+        <button className="button mobile-signout" disabled={signingOut} onClick={logout}>
           <Icon name="logout" size={18} />
-          Sign out
+          {signingOut ? "Signing out…" : "Sign out"}
         </button>
+        {authNotice && (
+          <p className="notice" role="status">
+            {authNotice}
+          </p>
+        )}
       </dialog>
       <aside className="sidebar">
         <Brand />
@@ -242,11 +242,11 @@ export function Shell({ children }) {
         <div className="nav-label">YOUR WORLDS</div>
         <nav aria-label="Main navigation">{navigation}</nav>
         <div className="sidebar-bottom">
-          <button className="profile-button" onClick={logout}>
+          <button className="profile-button" disabled={signingOut} onClick={logout}>
             <span className="profile-avatar">{session.user.name.slice(0, 1).toUpperCase()}</span>
             <span>
               <strong>{session.user.name}</strong>
-              <small>Sign out</small>
+              <small>{signingOut ? "Signing out…" : "Sign out"}</small>
             </span>
             <Icon name="logout" size={17} />
           </button>
