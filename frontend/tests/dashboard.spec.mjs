@@ -8037,3 +8037,87 @@ test("server deletion locks its confirmation field while pending and retains it 
   await expect(dialog.getByRole("textbox")).toBeEnabled();
   await expect(dialog.getByRole("textbox")).toHaveValue(baseServer.name);
 });
+
+test("server overview offers a selectable address when clipboard access is denied", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    }),
+  );
+  await openServer(page);
+  await page.getByRole("button", { name: "Copy server address", exact: true }).click();
+  const fallback = page.getByRole("region", { name: "Copy connection address", exact: true });
+  const input = fallback.getByLabel("Server address to copy", { exact: true });
+  await expect(input).toHaveValue("play.example.com:25565");
+  await expect(input).toHaveAttribute("readonly", "");
+  await expect(input).toBeFocused();
+  expect(await input.evaluate((element) => [element.selectionStart, element.selectionEnd])).toEqual(
+    [0, "play.example.com:25565".length],
+  );
+  await expect(
+    page.getByText("Copy the server address from the connection panel below.", { exact: true }),
+  ).toHaveCount(0);
+});
+
+test("overview copy feedback follows the current server address after polling", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page);
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async () => {} },
+    }),
+  );
+  let hostname = baseServer.hostname;
+  await page.route(`http://localhost:8080/servers/${serverID}`, (route) =>
+    route.fulfill({ json: { ...baseServer, hostname } }),
+  );
+  await openServer(page);
+  await page.getByRole("button", { name: "Copy server address", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+  hostname = "new.example.com";
+  await page.clock.runFor(10001);
+  await expect(
+    page.getByRole("region", { name: "Play on your server", exact: true }),
+  ).toContainText("new.example.com:25565");
+  await expect(page.getByRole("button", { name: "Copied", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Copy server address", exact: true }),
+  ).toBeVisible();
+});
+
+for (const ended of [{ status: "CANCELLED" }, { status: "RUNNING", deletion_pending: true }]) {
+  test(`ended overview hides connection controls for ${ended.deletion_pending ? "pending deletion" : "cancelled hosting"}`, async ({
+    page,
+  }) => {
+    await mockAPI(page);
+    await page.route(`http://localhost:8080/servers/${serverID}`, (route) =>
+      route.fulfill({ json: { ...baseServer, ...ended } }),
+    );
+    await login(page);
+    await page.goto(`/servers/${serverID}`);
+    await expect(
+      page.getByRole("heading", {
+        name: ended.deletion_pending ? "Your world is being removed." : "This world has ended.",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Copy server address", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator(".server-play-card .player-address")).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "Back to your worlds", exact: true }),
+    ).toBeVisible();
+  });
+}

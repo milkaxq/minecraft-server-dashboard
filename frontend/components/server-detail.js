@@ -131,6 +131,9 @@ function LiveResourceChart({ usage, cpuLimit }) {
 }
 
 export function ServerDetail({ id, advanced = false }) {
+  return <ServerDetailContent key={id} id={id} advanced={advanced} />;
+}
+function ServerDetailContent({ id, advanced }) {
   const { api, refreshServers, session } = useAuth();
   const router = useRouter();
   const { data: server, error, loading } = useResource(`/servers/${id}`, 10000);
@@ -151,7 +154,8 @@ export function ServerDetail({ id, advanced = false }) {
   const [confirm, setConfirm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteKey, setDeleteKey] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const [copyFallback, setCopyFallback] = useState(null);
   const ready =
     server?.status === "RUNNING" && server.management_available && !server.deletion_pending;
   const eula = useResource(ready ? `/servers/${id}/eula` : null, 10000);
@@ -237,12 +241,15 @@ export function ServerDetail({ id, advanced = false }) {
     }
   }
   async function copy() {
+    if (!address || server.deletion_pending || server.status === "CANCELLED") return;
+    const value = address;
+    setCopied(null);
+    setCopyFallback(null);
     try {
-      await navigator.clipboard.writeText(address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(value);
+      setCopied(value);
     } catch {
-      setNotice("Copy the server address from the connection panel below.");
+      setCopyFallback(value);
     }
   }
   async function removeServer() {
@@ -494,21 +501,44 @@ export function ServerDetail({ id, advanced = false }) {
                     </Link>
                   )}
                 </div>
-                <div className="player-address">
-                  <code>{address || "Address available after setup"}</code>
-                  <button
-                    className={`button ${nextAction.kind === "join" ? "primary" : "secondary"}`}
-                    onClick={copy}
-                    disabled={!address}
-                  >
-                    {copied ? "Copied" : "Copy server address"}
-                  </button>
-                </div>
+                {!server.deletion_pending && server.status !== "CANCELLED" && (
+                  <div className="player-address">
+                    <code>{address || "Address available after setup"}</code>
+                    <button
+                      className={`button ${nextAction.kind === "join" ? "primary" : "secondary"}`}
+                      onClick={copy}
+                      disabled={!address}
+                    >
+                      {copied && copied === address ? "Copied" : "Copy server address"}
+                    </button>
+                  </div>
+                )}
               </section>
             )}
-            {!advanced && overviewView === "play" && (
-              <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />
-            )}
+            {copyFallback &&
+              copyFallback === address &&
+              !server.deletion_pending &&
+              server.status !== "CANCELLED" && (
+                <section className="panel management-panel" aria-label="Copy connection address">
+                  <label className="field">
+                    Server address
+                    <input
+                      aria-label="Server address to copy"
+                      autoFocus
+                      readOnly
+                      value={address}
+                      onFocus={(event) => event.target.select()}
+                    />
+                  </label>
+                  <p className="field-help">Select and copy this address.</p>
+                </section>
+              )}
+            {!advanced &&
+              overviewView === "play" &&
+              !server.deletion_pending &&
+              server.status !== "CANCELLED" && (
+                <PlayerInvite key={`invite:${id}`} server={server} ready={ready} />
+              )}
             {ready && !notice && ["starting", "stopping"].includes(displayPowerState) && (
               <p className="notice" role="status">
                 {displayPowerState === "starting"
