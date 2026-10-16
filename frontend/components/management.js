@@ -327,8 +327,9 @@ function query(value) {
 function filePath(dir, name) {
   return `${dir === "/" ? "" : dir}/${name}`;
 }
-async function download(api, path, name) {
-  const blob = await api(path, { download: true });
+async function download(api, path, name, signal) {
+  const blob = await api(path, { download: true, ...(signal ? { signal } : {}) });
+  if (signal?.aborted) throw new DOMException("Download canceled", "AbortError");
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -2379,6 +2380,8 @@ function Worlds({ id, offline, limit }) {
   });
   const input = useRef(null);
   const inFlight = useRef(false);
+  const downloadController = useRef(null);
+  useEffect(() => () => downloadController.current?.abort(), []);
   const attempts = useRef(new Map());
   const [pending, setPending] = useState("");
   const unavailable = resource.loading || !!resource.error || !resource.data;
@@ -2393,6 +2396,33 @@ function Worlds({ id, offline, limit }) {
     } finally {
       inFlight.current = false;
       setPending("");
+    }
+  }
+  async function downloadWorld() {
+    if (inFlight.current || blocked || !resource.data?.generated) return;
+    const controller = new AbortController();
+    downloadController.current = controller;
+    try {
+      await runWorld(
+        "download",
+        async () => {
+          try {
+            await download(
+              api,
+              `/servers/${id}/world/download`,
+              `${resource.data.name}.zip`,
+              controller.signal,
+            );
+          } catch (error) {
+            if (error.name === "AbortError")
+              throw new Error("Download canceled. Your world is unchanged.");
+            throw error;
+          }
+        },
+        "World download ready.",
+      );
+    } finally {
+      downloadController.current = null;
     }
   }
   async function mutate(kind, values, file) {
@@ -2484,16 +2514,19 @@ function Worlds({ id, offline, limit }) {
                 <button
                   className="button secondary"
                   disabled={blocked || !world.generated}
-                  onClick={() =>
-                    runWorld(
-                      "download",
-                      () => download(api, `/servers/${id}/world/download`, `${world.name}.zip`),
-                      "World download ready.",
-                    )
-                  }
+                  onClick={downloadWorld}
                 >
                   {pending === "download" ? "Preparing download…" : "Download world"}
                 </button>
+                {pending === "download" && (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => downloadController.current?.abort()}
+                  >
+                    Cancel download
+                  </button>
+                )}
               </div>
               <h3>Change your world</h3>
               <p className="field-help">

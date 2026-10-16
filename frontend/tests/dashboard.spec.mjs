@@ -8711,3 +8711,73 @@ test("checkout pending payment blocks duplicate actions and keeps retryable erro
   ).toBeEnabled();
   expect(payments).toBe(1);
 });
+
+for (const leave of [false, true])
+  test(`world download aborts on ${leave ? "navigation" : "cancel"} without a late browser download`, async ({
+    page,
+  }) => {
+    const calls = await mockAPI(page);
+    await page.addInitScript(() => {
+      const original = window.fetch;
+      window.fetch = (url, options) => {
+        if (String(url).includes("/world/download"))
+          options.signal.addEventListener("abort", () => {
+            window.worldDownloadAborted = true;
+          });
+        return original(url, options);
+      };
+    });
+    let release;
+    let started = false;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await page.route(`http://localhost:8080/servers/${serverID}/world/download`, async (route) => {
+      started = true;
+      await held;
+      await route
+        .fulfill({ contentType: "application/zip", body: Buffer.from("test-world") })
+        .catch(() => {});
+    });
+    let downloads = 0;
+    page.on("download", () => {
+      downloads++;
+    });
+    await login(page);
+    await page.goto(`/servers/${serverID}/worlds`);
+    await page.getByRole("button", { name: "Download world", exact: true }).click();
+    await expect.poll(() => started).toBe(true);
+    await expect(
+      page.getByRole("button", { name: "Preparing download…", exact: true }),
+    ).toBeDisabled();
+    if (leave) await page.getByRole("link", { name: "Account", exact: true }).click();
+    else await page.getByRole("button", { name: "Cancel download", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.worldDownloadAborted)).toBe(true);
+    release();
+    if (leave) await expect(page).toHaveURL(/\/account$/);
+    else {
+      await expect(
+        page.getByText("Download canceled. Your world is unchanged.", { exact: false }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Download world", exact: true })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Cancel download", exact: true })).toHaveCount(
+        0,
+      );
+    }
+    expect(downloads).toBe(0);
+    expect(calls.some((c) => c.path.includes("/world") && c.method !== "GET")).toBe(false);
+  });
+
+test("world download saves one archive and returns controls to ready", async ({ page }) => {
+  const calls = await mockAPI(page);
+  await login(page);
+  await page.goto(`/servers/${serverID}/worlds`);
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download world", exact: true }).click();
+  const archive = await downloaded;
+  expect(archive.suggestedFilename()).toBe("world.zip");
+  await expect(page.getByText("World download ready.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download world", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Cancel download", exact: true })).toHaveCount(0);
+  expect(calls.filter((c) => c.path.endsWith("/world/download"))).toHaveLength(1);
+});
