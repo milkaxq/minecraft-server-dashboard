@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Icon } from "./ui";
@@ -12,12 +12,18 @@ const subscribeHash = (notify) => {
 const readHash = () => window.location.hash;
 const emptyHash = () => "";
 export function AuthScreen({ mode = "login" }) {
+  return <AuthForm key={mode} mode={mode} />;
+}
+function AuthForm({ mode }) {
   const { login, session, authNotice, forgetSession } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [visible, setVisible] = useState(false);
+  const inFlight = useRef(false);
+  const [configGeneration, setConfigGeneration] = useState(0);
   const [done, setDone] = useState(false);
   const forgot = mode === "forgot-password";
   const reset = mode === "reset-password";
@@ -26,16 +32,25 @@ export function AuthScreen({ mode = "login" }) {
   const [invitation, setInvitation] = useState("");
   const [registration, setRegistration] = useState(null);
   const [configError, setConfigError] = useState(null);
+  const [configRetryAt, setConfigRetryAt] = useState(0);
+  useEffect(() => {
+    if (!configRetryAt) return;
+    const timer = setTimeout(() => setConfigRetryAt(0), Math.max(0, configRetryAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [configRetryAt]);
   useEffect(() => {
     if (mode !== "register") return;
     const controller = new AbortController();
     request("/auth/config", { signal: controller.signal })
       .then(setRegistration)
       .catch((err) => {
-        if (err.name !== "AbortError") setConfigError(err);
+        if (err.name !== "AbortError") {
+          setConfigError(err);
+          setConfigRetryAt(err.status === 429 ? Date.now() + (err.retryAfterMs || 60000) : 0);
+        }
       });
     return () => controller.abort();
-  }, [mode]);
+  }, [mode, configGeneration]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState("");
@@ -62,7 +77,8 @@ export function AuthScreen({ mode = "login" }) {
   }, [consumedHash]);
   async function submit(event) {
     event.preventDefault();
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError(null);
     setNotice("");
     setBusy(true);
@@ -112,11 +128,14 @@ export function AuthScreen({ mode = "login" }) {
     } catch (err) {
       setError(err);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
   async function resend(event) {
     event.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -128,6 +147,7 @@ export function AuthScreen({ mode = "login" }) {
     } catch (err) {
       setError(err);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -185,6 +205,20 @@ export function AuthScreen({ mode = "login" }) {
                         : "Open the link in your email, or paste its verification token below. Links expire after 24 hours."}
           </p>
           <ErrorMessage error={error || configError} />
+          {mode === "register" && configError && (
+            <button
+              className="button secondary wide"
+              disabled={busy || configRetryAt > 0}
+              onClick={() => {
+                if (busy || configRetryAt > Date.now()) return;
+                setConfigError(null);
+                setRegistration(null);
+                setConfigGeneration((value) => value + 1);
+              }}
+            >
+              Retry registration settings
+            </button>
+          )}
           {(notice || (mode === "login" && authNotice)) && (
             <div className="notice success" role="status">
               {notice || authNotice}
@@ -202,6 +236,7 @@ export function AuthScreen({ mode = "login" }) {
                 <label className="field">
                   Your name
                   <input
+                    disabled={busy}
                     autoComplete="name"
                     required
                     maxLength={80}
@@ -215,6 +250,7 @@ export function AuthScreen({ mode = "login" }) {
                 <label className="field">
                   Invitation code
                   <input
+                    disabled={busy}
                     required
                     autoComplete="off"
                     spellCheck="false"
@@ -229,7 +265,10 @@ export function AuthScreen({ mode = "login" }) {
                 <label className="field">
                   Email address
                   <input
+                    disabled={busy}
                     type="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
                     autoComplete="email"
                     required
                     value={email}
@@ -243,7 +282,8 @@ export function AuthScreen({ mode = "login" }) {
                   <label className="field">
                     {reset ? "New password" : "Password"}
                     <input
-                      type="password"
+                      disabled={busy}
+                      type={visible ? "text" : "password"}
                       autoComplete={
                         mode === "register" || reset ? "new-password" : "current-password"
                       }
@@ -261,7 +301,8 @@ export function AuthScreen({ mode = "login" }) {
                 <label className="field">
                   Confirm new password
                   <input
-                    type="password"
+                    disabled={busy}
+                    type={visible ? "text" : "password"}
                     autoComplete="new-password"
                     required
                     minLength={12}
@@ -275,6 +316,7 @@ export function AuthScreen({ mode = "login" }) {
                 <label className="field">
                   {reset ? "Reset token" : "Verification token"}
                   <input
+                    disabled={busy}
                     autoComplete="off"
                     spellCheck="false"
                     required
@@ -282,6 +324,17 @@ export function AuthScreen({ mode = "login" }) {
                     onChange={(e) => setToken(e.target.value)}
                     placeholder="Paste the token from your email"
                   />
+                </label>
+              )}
+              {(mode === "login" || mode === "register" || reset) && (
+                <label className="account-password-visibility auth-password-visibility">
+                  <input
+                    type="checkbox"
+                    checked={visible}
+                    disabled={busy}
+                    onChange={(event) => setVisible(event.target.checked)}
+                  />
+                  {reset ? "Show passwords" : "Show password"}
                 </label>
               )}
               <button
@@ -337,7 +390,10 @@ export function AuthScreen({ mode = "login" }) {
               <label className="field">
                 Need another verification email?
                 <input
+                  disabled={busy}
                   type="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   autoComplete="email"
                   required
                   value={email}

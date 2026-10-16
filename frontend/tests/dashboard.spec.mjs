@@ -7776,3 +7776,99 @@ test("failed server-list polling does not present a stale empty account as new",
     page.getByRole("heading", { name: "Your next adventure starts here", exact: true }),
   ).toBeVisible();
 });
+
+test("sign-in password visibility is optional and resets when changing forms", async ({ page }) => {
+  await mockAPI(page);
+  await page.goto("/login");
+  const password = page.getByLabel("Password", { exact: true });
+  await password.fill("a-long-test-password");
+  await expect(password).toHaveAttribute("type", "password");
+  await page.getByLabel("Show password", { exact: true }).check();
+  await expect(password).toHaveAttribute("type", "text");
+  await page.getByRole("link", { name: "Create an account", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
+});
+
+test("sign-in locks inputs during the request and preserves them after rejection", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let release;
+  let submissions = 0;
+  await page.route("http://localhost:8080/auth/session-login", async (route) => {
+    submissions++;
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ status: 401, json: { error: "Email or password is incorrect" } });
+  });
+  await page.goto("/login");
+  await page.getByLabel("Email address").fill("alex@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("a-long-test-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByLabel("Email address")).toBeDisabled();
+  await expect(page.getByLabel("Password", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Show password", { exact: true })).toBeDisabled();
+  await expect.poll(() => submissions).toBe(1);
+  release();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Email or password is incorrect" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Email address")).toHaveValue("alex@example.com");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("a-long-test-password");
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+  expect(submissions).toBe(1);
+});
+
+test("registration settings retry keeps the form and invitation without registering automatically", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { inviteRequired: true });
+  let failed = true;
+  await page.route("http://localhost:8080/auth/config", async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Registration unavailable" } });
+  });
+  const invitation = "i".repeat(43);
+  await page.goto(`/register#invite=${invitation}`);
+  await page.getByLabel("Your name").fill("Alex");
+  await page.getByLabel("Email address").fill("alex@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("a-long-test-password");
+  await expect(page.getByRole("button", { name: "Create account", exact: true })).toBeDisabled();
+  failed = false;
+  await page.getByRole("button", { name: "Retry registration settings", exact: true }).click();
+  await expect(page.getByLabel("Invitation code")).toHaveValue(invitation);
+  await expect(page.getByLabel("Your name")).toHaveValue("Alex");
+  await expect(page.getByLabel("Email address")).toHaveValue("alex@example.com");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("a-long-test-password");
+  await expect(page.getByRole("button", { name: "Create account", exact: true })).toBeEnabled();
+  expect(calls.some((c) => c.path === "/auth/register")).toBe(false);
+  await expect(page).toHaveURL(/register$/);
+});
+
+test("registration retry respects rate limits and becomes available without reloading", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page);
+  let reads = 0;
+  await page.route("http://localhost:8080/auth/config", async (route) => {
+    reads++;
+    if (reads > 1) return route.fallback();
+    return route.fulfill({
+      status: 429,
+      headers: { "Retry-After": "2", "Access-Control-Expose-Headers": "Retry-After" },
+      json: { error: "Please wait before retrying" },
+    });
+  });
+  await page.goto("/register");
+  const retry = page.getByRole("button", { name: "Retry registration settings", exact: true });
+  await expect(retry).toBeDisabled();
+  await page.clock.runFor(2001);
+  await expect(retry).toBeEnabled();
+  expect(reads).toBe(1);
+  await retry.click();
+  await expect(page.getByRole("button", { name: "Create account", exact: true })).toBeEnabled();
+  expect(reads).toBe(2);
+});
