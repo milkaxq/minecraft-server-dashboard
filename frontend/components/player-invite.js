@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { ErrorMessage } from "./ui";
@@ -259,6 +259,7 @@ export function PublicPlayerJoin({ slug }) {
   const [showSetup, setShowSetup] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
   const player = useReturningPlayer(setup);
+  const downloading = useRef(false);
   const packDownloaded = downloadedRevision !== null && downloadedRevision === player.revision;
   const requiredMods = setup?.addons?.some((addon) => addon.required);
   const setupIssue =
@@ -353,6 +354,8 @@ export function PublicPlayerJoin({ slug }) {
     }
   }
   async function download() {
+    if (downloading.current || !setup?.pack_ready || setupIssue) return;
+    downloading.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -367,6 +370,7 @@ export function PublicPlayerJoin({ slug }) {
     } catch (e) {
       setError(e);
     } finally {
+      downloading.current = false;
       setBusy(false);
     }
   }
@@ -517,7 +521,12 @@ export function PublicPlayerJoin({ slug }) {
                 </article>
                 <article className="panel player-step">
                   <span className="step-number">2</span>
-                  <LauncherSetup launcher={launcher} setup={setup} slug={slug} />
+                  <LauncherSetup
+                    key={JSON.stringify([slug, player.revision, launcher])}
+                    launcher={launcher}
+                    setup={setup}
+                    slug={slug}
+                  />
                 </article>
               </>
             ) : setupIssue ? (

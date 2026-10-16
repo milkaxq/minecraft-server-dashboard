@@ -7872,3 +7872,104 @@ test("registration retry respects rate limits and becomes available without relo
   await expect(page.getByRole("button", { name: "Create account", exact: true })).toBeEnabled();
   expect(reads).toBe(2);
 });
+
+test("manual player downloads recover failed checks and refresh after a new publication", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const calls = await mockAPI(page);
+  await page.addInitScript(() => localStorage.setItem("blockyard-player-launcher", "official"));
+  let updated = false;
+  let failed = true;
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({
+      json: {
+        ...playerSetup,
+        published_at: updated ? "2026-10-16T12:00:00Z" : playerSetup.published_at,
+      },
+    }),
+  );
+  await page.route(`http://localhost:8080/join/${playerSlug}/files`, (route) => {
+    if (failed)
+      return route.fulfill({ status: 503, json: { error: "Client downloads unavailable" } });
+    const filename = updated ? "new-client.jar" : "old-client.jar";
+    return route.fulfill({
+      json: [
+        {
+          path: "mods/" + filename,
+          downloads: ["https://cdn.modrinth.com/" + filename],
+          fileSize: 1024,
+        },
+      ],
+    });
+  });
+  await page.goto(`/join/${playerSlug}`);
+  await expect(
+    page.getByRole("button", { name: "Retry client downloads", exact: true }),
+  ).toBeVisible();
+  failed = false;
+  await page.getByRole("button", { name: "Retry client downloads", exact: true }).click();
+  await page.getByText("Individual downloads", { exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Download old-client.jar ↗", exact: true }),
+  ).toBeVisible();
+  updated = true;
+  await page.clock.runFor(60001);
+  await expect(
+    page.getByRole("link", { name: "Download old-client.jar ↗", exact: true }),
+  ).toHaveCount(0);
+  await page.getByText("Individual downloads", { exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Download new-client.jar ↗", exact: true }),
+  ).toBeVisible();
+  expect(calls.some((c) => c.path.startsWith("/servers/"))).toBe(false);
+});
+
+test("switching launchers cancels an unfinished manual ZIP download", async ({ page }) => {
+  await mockAPI(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("blockyard-player-launcher", "official");
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (String(url).endsWith("/bundle"))
+        options.signal.addEventListener("abort", () => {
+          window.bundleAborted = true;
+        });
+      return original(url, options);
+    };
+  });
+  await page.route(`http://localhost:8080/join/${playerSlug}`, (route) =>
+    route.fulfill({ json: playerSetup }),
+  );
+  await page.route(`http://localhost:8080/join/${playerSlug}/files`, (route) =>
+    route.fulfill({ json: [] }),
+  );
+  let release;
+  await page.route(`http://localhost:8080/join/${playerSlug}/bundle`, async (route) => {
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    await route
+      .fulfill({ body: Buffer.from("test zip"), contentType: "application/zip" })
+      .catch(() => {});
+  });
+  let downloads = 0;
+  page.on("download", () => {
+    downloads++;
+  });
+  await page.goto(`/join/${playerSlug}`);
+  await page.getByRole("button", { name: "Download client mods ZIP", exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await expect(
+    page.getByRole("button", { name: "Preparing verified ZIP…", exact: true }),
+  ).toBeDisabled();
+  await selectValue(
+    page,
+    page.getByRole("combobox", { name: "Your Minecraft launcher", exact: true }),
+    "modrinth",
+  );
+  await expect.poll(() => page.evaluate(() => window.bundleAborted === true)).toBe(true);
+  release();
+  await expect(page.getByRole("heading", { name: "Import and launch", exact: true })).toBeVisible();
+  expect(downloads).toBe(0);
+});

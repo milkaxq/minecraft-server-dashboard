@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Select } from "./select";
 import { request } from "../lib/api";
 
@@ -53,9 +53,6 @@ export function LauncherPicker({ launcher, onChange }) {
           ))}
         </Select>
       </label>
-      <p className="field-help">
-        Choose yours to see its setup steps. This choice stays in this browser.
-      </p>
     </section>
   );
 }
@@ -64,7 +61,17 @@ export function LauncherSetup({ launcher, setup, slug }) {
   const manual =
     ["official", "other"].includes(launcher) || (launcher === "sklauncher" && fallbackOpen);
   const [files, setFiles] = useState(null);
-  const [error, setError] = useState(null);
+  const [filesError, setFilesError] = useState(null);
+  const [bundleError, setBundleError] = useState(null);
+  const [fileReload, setFileReload] = useState(0);
+  const [fileRetryAt, setFileRetryAt] = useState(0);
+  useEffect(() => {
+    if (!fileRetryAt) return;
+    const timer = setTimeout(() => setFileRetryAt(0), Math.max(0, fileRetryAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [fileRetryAt]);
+  const bundleRequest = useRef(null);
+  useEffect(() => () => bundleRequest.current?.abort(), []);
   const [bundleBusy, setBundleBusy] = useState(false);
   const [bundleDownloaded, setBundleDownloaded] = useState(false);
   useEffect(() => {
@@ -74,21 +81,32 @@ export function LauncherSetup({ launcher, setup, slug }) {
       .then((data) => {
         if (!controller.signal.aborted) {
           setFiles(data);
-          setError(null);
+          setFilesError(null);
         }
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setError(error);
+        if (!controller.signal.aborted) {
+          setFiles(null);
+          setFilesError(error);
+          setFileRetryAt(error.status === 429 ? Date.now() + (error.retryAfterMs || 60000) : 0);
+        }
       });
     return () => controller.abort();
-  }, [manual, slug]);
+  }, [manual, slug, fileReload]);
 
   async function downloadBundle() {
+    if (bundleRequest.current) return;
+    const controller = new AbortController();
+    bundleRequest.current = controller;
     setBundleBusy(true);
-    setError(null);
+    setBundleError(null);
     setBundleDownloaded(false);
     try {
-      const blob = await request(`/join/${encodeURIComponent(slug)}/bundle`, { download: true });
+      const blob = await request(`/join/${encodeURIComponent(slug)}/bundle`, {
+        download: true,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -97,9 +115,10 @@ export function LauncherSetup({ launcher, setup, slug }) {
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       setBundleDownloaded(true);
     } catch (error) {
-      setError(error);
+      if (!controller.signal.aborted) setBundleError(error);
     } finally {
-      setBundleBusy(false);
+      bundleRequest.current = null;
+      if (!controller.signal.aborted) setBundleBusy(false);
     }
   }
   if (launcher === "modrinth")
@@ -165,7 +184,7 @@ export function LauncherSetup({ launcher, setup, slug }) {
           <strong>
             {loader} {setup.loader_version}
           </strong>
-          . Use this player-pack loader even if the server uses Paper.
+          .
         </li>
         <li>
           {launcher === "sklauncher"
@@ -182,8 +201,22 @@ export function LauncherSetup({ launcher, setup, slug }) {
         These are the exact client files from the published player pack, including its required
         dependencies. A .mrpack itself is not a mod JAR.
       </p>
-      {error ? (
-        <p role="alert">{error.message}</p>
+      {bundleError && <p role="alert">{bundleError.message}</p>}
+      {filesError ? (
+        <div>
+          <p role="alert">{filesError.message}</p>
+          <button
+            className="button secondary"
+            disabled={bundleBusy || fileRetryAt > 0}
+            onClick={() => {
+              setFiles(null);
+              setFilesError(null);
+              setFileReload((value) => value + 1);
+            }}
+          >
+            Retry client downloads
+          </button>
+        </div>
       ) : !files ? (
         <p role="status">Getting matching client downloads…</p>
       ) : (
@@ -217,10 +250,6 @@ export function LauncherSetup({ launcher, setup, slug }) {
           </a>
         </>
       )}
-      <p className="field-help">
-        Selecting a launcher changes the instructions; it does not install software or open
-        Minecraft automatically.
-      </p>
     </>
   );
   if (launcher === "sklauncher")
