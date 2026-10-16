@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./ui";
 
 export function Confirm({
@@ -14,9 +14,28 @@ export function Confirm({
   onConfirm,
 }) {
   const ref = useRef(null);
+  const cancelButton = useRef(null);
+  const inFlight = useRef(false);
+  const [working, setWorking] = useState(false);
+  const locked = !!busy || working;
+  function cancel() {
+    if (!busy && !inFlight.current) onCancel();
+  }
+  async function confirm() {
+    if (busy || confirmDisabled || inFlight.current || !onConfirm) return;
+    inFlight.current = true;
+    setWorking(true);
+    try {
+      await onConfirm();
+    } finally {
+      inFlight.current = false;
+      setWorking(false);
+    }
+  }
   useEffect(() => {
     const el = ref.current;
     el.showModal();
+    if (!el.querySelector("input, textarea, select, [autofocus]")) cancelButton.current?.focus();
     return () => el.close();
   }, []);
   return (
@@ -26,7 +45,7 @@ export function Confirm({
       aria-label={title}
       onCancel={(e) => {
         e.preventDefault();
-        if (!busy) onCancel();
+        cancel();
       }}
     >
       <div className="confirm-icon">
@@ -35,16 +54,23 @@ export function Confirm({
       <h2>{title}</h2>
       <div className="confirm-content">{children}</div>
       <div className="dialog-actions">
-        <button className="button secondary" disabled={busy} onClick={onCancel}>
+        <button
+          ref={cancelButton}
+          type="button"
+          className="button secondary"
+          disabled={locked}
+          onClick={cancel}
+        >
           {cancelLabel}
         </button>
         {onConfirm && (
           <button
             className={`button ${confirmVariant}`}
-            disabled={busy || confirmDisabled}
-            onClick={onConfirm}
+            type="button"
+            disabled={locked || confirmDisabled}
+            onClick={confirm}
           >
-            {busy ? "Working…" : label}
+            {locked ? "Working…" : label}
           </button>
         )}
       </div>

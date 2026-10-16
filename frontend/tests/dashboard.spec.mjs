@@ -674,7 +674,7 @@ test("authentication and cookie session keep the dashboard focused", async ({ pa
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
   expect(await page.evaluate(() => sessionStorage.length)).toBe(0);
   await page.getByRole("link", { name: "Account", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Keep your account safe." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Change password", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sign out of this session" }).click();
   await expect(page.getByRole("heading", { name: "Good to see you again." })).toBeVisible();
 });
@@ -1480,7 +1480,7 @@ for (const width of [320, 768, 1024, 1366]) {
     await expect(page.getByRole("heading", { name: "How do you want to play?" })).toBeVisible();
     await fits();
     await navigate("Billing");
-    await expect(page.getByRole("heading", { name: "Keep your adventures going." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
     await fits();
     await navigate("Account");
     await expect(page.getByLabel("Current password")).toBeVisible();
@@ -4236,7 +4236,7 @@ test("players show reported names honestly and review ban kick and unban", async
   await page.getByRole("link", { name: "Players", exact: true }).click();
   const live = page.getByRole("region", { name: "Live players" });
   await expect(live).toContainText("3 players online");
-  await expect(live).toContainText("not a complete attendance list");
+  await expect(live).toContainText("list may be incomplete");
   await expect(live.getByText("Steve", { exact: true })).toBeVisible();
   await expect(live.getByRole("link", { name: "Invite friends" })).toHaveAttribute(
     "href",
@@ -4277,7 +4277,7 @@ test("unavailable player readings block moderation and help reflects actual logi
   await openServer(page);
   await page.getByRole("link", { name: "Players", exact: true }).click();
   await expect(page.getByRole("region", { name: "Live players" })).toContainText(
-    "Live readings unavailable",
+    "Live player count unavailable.",
   );
   await page.getByLabel("Player username", { exact: true }).fill("Steve");
   await page.getByLabel("Reason", { exact: true }).fill("Rules");
@@ -7972,4 +7972,68 @@ test("switching launchers cancels an unfinished manual ZIP download", async ({ p
   release();
   await expect(page.getByRole("heading", { name: "Import and launch", exact: true })).toBeVisible();
   expect(downloads).toBe(0);
+});
+
+test("force-stop confirmation keeps pending requests visible and shows failures inside the dialog", async ({
+  page,
+}) => {
+  await mockAPI(page, { initiallyRunning: true });
+  await page.routeWebSocket(`ws://localhost:8080/servers/${serverID}/console`, (ws) =>
+    ws.send(JSON.stringify({ event: "connected" })),
+  );
+  let release;
+  let requests = 0;
+  await page.route(`http://localhost:8080/servers/${serverID}/kill`, async (route) => {
+    requests++;
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ status: 503, json: { error: "Power control unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("link", { name: "Advanced", exact: true }).click();
+  await page.getByRole("button", { name: "Force stop", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Force stop this server?", exact: true });
+  await expect(dialog.getByRole("button", { name: "Keep playing", exact: true })).toBeFocused();
+  await dialog.getByRole("button", { name: "Force stop", exact: true }).evaluate((button) => {
+    button.click();
+    button.click();
+  });
+  await expect.poll(() => !!release).toBe(true);
+  await expect(dialog.getByRole("button", { name: "Keep playing", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  release();
+  await expect(dialog.getByRole("alert")).toContainText("Power control unavailable");
+  await expect(dialog.getByRole("button", { name: "Keep playing", exact: true })).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(requests).toBe(1);
+});
+
+test("server deletion locks its confirmation field while pending and retains it after failure", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let release;
+  await page.route(`http://localhost:8080/servers/${serverID}/terminate`, async (route) => {
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({ status: 503, json: { error: "Deletion unavailable" } });
+  });
+  await openServer(page);
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByRole("button", { name: "Delete server", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete this server?", exact: true });
+  await dialog.getByRole("textbox").fill(baseServer.name);
+  await dialog.getByRole("button", { name: "Delete server", exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await expect(dialog.getByRole("textbox")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  release();
+  await expect(dialog.getByRole("alert")).toContainText("Deletion unavailable");
+  await expect(dialog.getByRole("textbox")).toBeEnabled();
+  await expect(dialog.getByRole("textbox")).toHaveValue(baseServer.name);
 });

@@ -6,6 +6,7 @@ import { SetupProgress } from "./setup-progress";
 import { PlayerInvite } from "./player-invite";
 import { JoinServer } from "./join-server";
 import { FeatureLinks } from "./management";
+import { Confirm } from "./confirm";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { VersionSafety } from "./change-safety";
@@ -15,54 +16,33 @@ import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Badge, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 import { consoleURL, duration, formatBytes } from "../lib/api";
-function ConfirmStop({ onCancel, onConfirm, busy }) {
-  const dialog = useRef(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
+function ConfirmStop({ onCancel, onConfirm, busy, error }) {
   return (
-    <dialog
-      ref={dialog}
-      className="confirm-dialog"
-      onCancel={(e) => {
-        e.preventDefault();
-        onCancel();
-      }}
-      aria-labelledby="confirm-title"
+    <Confirm
+      title="Force stop this server?"
+      label="Force stop"
+      cancelLabel="Keep playing"
+      busy={busy}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
     >
-      <span className="danger-icon">
-        <Icon name="stop" size={25} />
-      </span>
-      <h2 id="confirm-title">Force stop this server?</h2>
       <p>Unsaved progress may be lost. Use this only when a normal stop is not responding.</p>
-      <div className="dialog-actions">
-        <button className="button secondary" onClick={onCancel} disabled={busy} autoFocus>
-          Keep playing
-        </button>
-        <button className="button danger" onClick={onConfirm} disabled={busy}>
-          {busy ? "Sending…" : "Force stop"}
-        </button>
-      </div>
-    </dialog>
+      <ErrorMessage error={error} />
+    </Confirm>
   );
 }
 function ConfirmDelete({ server, onCancel, onConfirm, busy, error }) {
-  const dialog = useRef(null);
   const [name, setName] = useState("");
-  useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
   return (
-    <dialog
-      ref={dialog}
-      className="confirm-dialog"
-      aria-labelledby="delete-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onCancel();
-      }}
+    <Confirm
+      title="Delete this server?"
+      label="Delete server"
+      cancelLabel="Keep server"
+      busy={busy}
+      confirmDisabled={name !== server.name}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
     >
-      <h2 id="delete-title">Delete this server?</h2>
       <p>
         This permanently removes its world, files and backups and ends its subscription. Download
         anything you want to keep first.
@@ -70,21 +50,15 @@ function ConfirmDelete({ server, onCancel, onConfirm, busy, error }) {
       <ErrorMessage error={error} />
       <label className="field">
         Type <strong>{server.name}</strong> to confirm
-        <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" />
+        <input
+          value={name}
+          disabled={busy}
+          onChange={(event) => setName(event.target.value)}
+          autoComplete="off"
+          autoFocus
+        />
       </label>
-      <div className="dialog-actions">
-        <button className="button secondary" disabled={busy} onClick={onCancel}>
-          Keep server
-        </button>
-        <button
-          className="button danger"
-          disabled={busy || name !== server.name}
-          onClick={onConfirm}
-        >
-          {busy ? "Queuing deletion…" : "Delete server"}
-        </button>
-      </div>
-    </dialog>
+    </Confirm>
   );
 }
 function ResourceChart({ samples }) {
@@ -754,6 +728,7 @@ export function ServerDetail({ id, advanced = false }) {
             )}
             {confirm && (
               <ConfirmStop
+                error={actionError}
                 onCancel={() => setConfirm(false)}
                 onConfirm={() => power("kill")}
                 busy={!!busy}
