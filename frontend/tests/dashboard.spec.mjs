@@ -7614,3 +7614,67 @@ test("catalog blocks installation while installed tracking is unavailable and re
     calls.filter((c) => c.path.endsWith("/catalog/viaversion") && c.method === "POST"),
   ).toHaveLength(0);
 });
+
+test("file upload retry keeps the original request and cannot target another folder", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const uploads = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/files/upload?**`, async (route) => {
+    uploads.push({
+      key: route.request().headers()["idempotency-key"],
+      query: new URL(route.request().url()).search,
+      bytes: route.request().postDataBuffer().toString(),
+    });
+    if (uploads.length === 1)
+      return route.fulfill({ status: 502, json: { error: "Upload response lost" } });
+    return route.fallback();
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await expect(page.getByRole("button", { name: "Upload file", exact: true })).toBeEnabled();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Our world notes"),
+  });
+  await expect(page.getByRole("button", { name: "Retry upload", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "world", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry upload", exact: true })).toBeDisabled();
+  await page
+    .getByRole("navigation", { name: "Folder location" })
+    .getByRole("button")
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Retry upload", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry upload", exact: true })).toHaveCount(0);
+  expect(uploads).toHaveLength(2);
+  expect(uploads[1]).toEqual(uploads[0]);
+});
+
+test("file create validates a single name and blocks changes when the listing fails", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let failed = false;
+  await page.route(`http://localhost:8080/servers/${serverID}/files?**`, async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Folder unavailable" } });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/files`);
+  await page.getByRole("button", { name: "New file", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Create file" });
+  await expect(dialog.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
+  await dialog.getByLabel("Name", { exact: true }).fill("../outside.txt");
+  await expect(dialog.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
+  await dialog.getByLabel("Name", { exact: true }).fill("notes.txt");
+  await expect(dialog.getByRole("button", { name: "Create", exact: true })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  failed = true;
+  await page.locator(".file-path").getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Folder unavailable" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New file", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Upload file", exact: true })).toBeDisabled();
+  expect(calls.some((c) => c.path.endsWith("/files") && c.method === "POST")).toBe(false);
+});

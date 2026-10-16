@@ -347,11 +347,23 @@ function Files({ id, offline }) {
   const [editor, setEditor] = useState(null);
   const [pendingEditorAction, setPendingEditorAction] = useState(null);
   const changeAttempt = useRef(null);
+  const changing = useRef(false);
+  const uploadAttempt = useRef(null);
+  const [pendingUpload, setPendingUpload] = useState(null);
+  const filesReady = !resource.loading && !resource.error && !!resource.data;
+  const writable = offline && filesReady && !action.busy;
   const editorDirty = !!editor && editor.content !== editor.originalContent;
   const [create, setCreate] = useState(null);
   const [name, setName] = useState("");
   const [target, setTarget] = useState(null);
   const uploader = useRef(null);
+  const validName =
+    !!name.trim() &&
+    name !== "." &&
+    name !== ".." &&
+    !name.includes("/") &&
+    !name.includes(String.fromCharCode(92)) &&
+    Array.from(name).every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
   async function executeEditorAction(next) {
     if (action.busy) return;
     if (next.kind === "close") {
@@ -381,43 +393,99 @@ function Files({ id, offline }) {
     requestEditorAction({ kind: "open", path: filePath(dir, entry.name) });
   }
   async function change(input, message) {
+    if (!writable || changing.current || ((create || target?.action === "rename") && !validName))
+      return false;
+    changing.current = true;
     const fingerprint = JSON.stringify([id, input]);
     if (changeAttempt.current?.fingerprint !== fingerprint)
       changeAttempt.current = { fingerprint, key: crypto.randomUUID() };
-    const ok = await action.run(
-      () =>
-        api(`/servers/${id}/files`, {
-          method: "POST",
-          key: changeAttempt.current.key,
-          body: input,
-        }),
-      message,
-    );
-    if (ok) {
-      changeAttempt.current = null;
-      setTarget(null);
-      setCreate(null);
+    try {
+      const ok = await action.run(
+        () =>
+          api(`/servers/${id}/files`, {
+            method: "POST",
+            key: changeAttempt.current.key,
+            body: input,
+          }),
+        message,
+      );
+      if (ok) {
+        changeAttempt.current = null;
+        setTarget(null);
+        setCreate(null);
+      }
+      return ok;
+    } finally {
+      changing.current = false;
     }
-    return ok;
   }
   async function upload(file) {
-    if (!file) return;
-    await action.run(
-      () =>
-        api(`/servers/${id}/files/upload?path=${query(dir)}&name=${query(file.name)}`, {
-          method: "POST",
-          key: crypto.randomUUID(),
-          raw: true,
-          body: file,
-        }),
-      "File uploaded. Start your server to use it.",
-    );
+    if (!file || !writable || changing.current) return;
+    changing.current = true;
+    if (uploadAttempt.current?.file !== file || uploadAttempt.current?.dir !== dir)
+      uploadAttempt.current = { file, dir, key: crypto.randomUUID() };
+    const attempt = uploadAttempt.current;
+    setPendingUpload({ file, dir });
+    try {
+      if (
+        await action.run(
+          () =>
+            api(
+              "/servers/" +
+                id +
+                "/files/upload?path=" +
+                query(attempt.dir) +
+                "&name=" +
+                query(file.name),
+              {
+                method: "POST",
+                key: attempt.key,
+                raw: true,
+                body: file,
+              },
+            ).catch((error) => {
+              if ([400, 403, 404, 409, 413, 422].includes(error.status))
+                uploadAttempt.current = null;
+              throw error;
+            }),
+          "File uploaded. Start your server to use it.",
+        )
+      ) {
+        uploadAttempt.current = null;
+        setPendingUpload(null);
+      }
+    } finally {
+      changing.current = false;
+    }
   }
   return (
     <>
       <UnsavedChangesGuard dirty={editorDirty} />
       <Feedback action={action} />
       <ErrorMessage error={resource.error} />
+      {pendingUpload && !action.busy && (
+        <div className="notice" role="status">
+          Upload needs attention: {pendingUpload.file.name} in {pendingUpload.dir}
+          <div className="file-actions">
+            <button
+              className="button secondary"
+              disabled={!writable || pendingUpload.dir !== dir}
+              onClick={() => upload(pendingUpload.file)}
+            >
+              Retry upload
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => {
+                setPendingUpload(null);
+                uploadAttempt.current = null;
+              }}
+            >
+              Dismiss upload
+            </button>
+          </div>
+        </div>
+      )}
       <section className="panel management-panel">
         <div className="section-heading">
           <div>
@@ -427,7 +495,7 @@ function Files({ id, offline }) {
           <div className="file-actions">
             <button
               className="button secondary"
-              disabled={!offline || action.busy}
+              disabled={!writable}
               onClick={() => {
                 setCreate("folder");
                 setName("");
@@ -437,7 +505,7 @@ function Files({ id, offline }) {
             </button>
             <button
               className="button secondary"
-              disabled={!offline || action.busy}
+              disabled={!writable}
               onClick={() => {
                 setCreate("create");
                 setName("");
@@ -447,7 +515,7 @@ function Files({ id, offline }) {
             </button>
             <button
               className="button primary"
-              disabled={!offline || action.busy}
+              disabled={!writable}
               onClick={() => uploader.current.click()}
             >
               Upload file
@@ -498,7 +566,12 @@ function Files({ id, offline }) {
             ↑ Parent
           </button>
           <code>{dir}</code>
-          <button onClick={resource.refresh}>Refresh</button>
+          <button
+            disabled={action.busy || resource.loading || resource.error?.status === 429}
+            onClick={resource.refresh}
+          >
+            Refresh
+          </button>
         </div>
         <p className="field-help">
           Text editor: up to 1 MB. Upload: up to 64 MB. Existing files are never overwritten by
@@ -598,7 +671,7 @@ function Files({ id, offline }) {
                           </button>
                         )}
                         <button
-                          disabled={!offline || entry.is_symlink || action.busy}
+                          disabled={!writable || entry.is_symlink}
                           onClick={() => {
                             setTarget({ action: "rename", name: entry.name });
                             setName(entry.name);
@@ -608,7 +681,7 @@ function Files({ id, offline }) {
                         </button>
                         <button
                           className="text-danger"
-                          disabled={!offline || entry.is_symlink || action.busy}
+                          disabled={!writable || entry.is_symlink}
                           onClick={() => setTarget({ action: "delete", name: entry.name })}
                         >
                           Delete
@@ -661,7 +734,7 @@ function Files({ id, offline }) {
             </button>
             <button
               className="button primary"
-              disabled={!offline || action.busy || !editorDirty}
+              disabled={!writable || !editorDirty}
               onClick={async () => {
                 if (
                   await change(
@@ -705,6 +778,7 @@ function Files({ id, offline }) {
           title={create === "folder" ? "Create folder" : "Create file"}
           label="Create"
           busy={action.busy}
+          confirmDisabled={!writable || !validName}
           onCancel={() => setCreate(null)}
           onConfirm={() =>
             change({ action: create, path: filePath(dir, name) }, "Created successfully.")
@@ -714,11 +788,15 @@ function Files({ id, offline }) {
             Name
             <input
               autoFocus
+              disabled={action.busy}
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={255}
             />
           </label>
+          {name && !validName && (
+            <p className="field-help">Use a single file or folder name, without a path.</p>
+          )}
           <ErrorMessage error={action.error} />
         </Confirm>
       )}
@@ -727,6 +805,9 @@ function Files({ id, offline }) {
           title={target.action === "delete" ? "Delete from your server?" : "Rename file or folder"}
           label={target.action === "delete" ? "Delete" : "Rename"}
           busy={action.busy}
+          confirmDisabled={
+            !writable || (target.action === "rename" && (!validName || name === target.name))
+          }
           onCancel={() => setTarget(null)}
           onConfirm={() =>
             change(
@@ -749,7 +830,12 @@ function Files({ id, offline }) {
           {target.action === "rename" && (
             <label className="field">
               New name
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={255} />
+              <input
+                disabled={action.busy}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={255}
+              />
             </label>
           )}
           <ErrorMessage error={action.error} />
