@@ -8630,3 +8630,84 @@ test("account password validation focuses the field to fix without sending secre
   ).toBeVisible();
   expect(calls.some((c) => c.path === "/account/password")).toBe(false);
 });
+
+test("disabled checkout does not offer a fake payment and preserves order cancellation", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, { paymentDisabled: true });
+  await login(page);
+  await page.goto(`/checkout/${orderID}`);
+  await expect(
+    page.getByText("Checkout is unavailable. Contact your host.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Development demo checkout", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Confirm demo payment", exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("button", { name: "Cancel this order", exact: true })).toBeEnabled();
+  expect(calls.some((c) => c.path.endsWith("/mock-pay") || c.path.endsWith("/checkout"))).toBe(
+    false,
+  );
+});
+
+test("checkout rechecks a lost payment response without submitting another payment", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let paid = false;
+  let payments = 0;
+  await page.route(`http://localhost:8080/orders/${orderID}`, (route) =>
+    route.fulfill({
+      json: {
+        id: orderID,
+        server_id: serverID,
+        plan_name: "Friends",
+        price_cents: 975,
+        currency: "USD",
+        billing_period: "MONTHLY",
+        status: paid ? "PAID" : "PENDING",
+      },
+    }),
+  );
+  await page.route(`http://localhost:8080/orders/${orderID}/mock-pay`, (route) => {
+    paid = true;
+    payments++;
+    return route.fulfill({ status: 502, json: { error: "Payment response lost" } });
+  });
+  await login(page);
+  await page.goto(`/checkout/${orderID}`);
+  await page.getByRole("button", { name: "Confirm demo payment", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Go to your server", exact: true })).toBeVisible();
+  await expect(page.getByText("Payment response lost", { exact: false })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Confirm demo payment", exact: true })).toHaveCount(
+    0,
+  );
+  expect(payments).toBe(1);
+});
+
+test("checkout pending payment blocks duplicate actions and keeps retryable errors", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let release;
+  let payments = 0;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.route(`http://localhost:8080/orders/${orderID}/mock-pay`, async (route) => {
+    payments++;
+    await held;
+    return route.fulfill({ status: 503, json: { error: "Payment temporarily unavailable" } });
+  });
+  await login(page);
+  await page.goto(`/checkout/${orderID}`);
+  await page.getByRole("button", { name: "Confirm demo payment", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Confirming…", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Cancel this order", exact: true })).toBeDisabled();
+  release();
+  await expect(page.getByText(/Payment temporarily unavailable/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Confirm demo payment", exact: true }),
+  ).toBeEnabled();
+  expect(payments).toBe(1);
+});

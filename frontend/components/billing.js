@@ -16,10 +16,18 @@ function date(value) {
   return new Date(value).toLocaleString();
 }
 export function Checkout({ id }) {
+  return <CheckoutOrder key={id} id={id} />;
+}
+function CheckoutOrder({ id }) {
   const { api } = useAuth();
   const info = useResource(`/orders/${id}`, 3000);
   const config = useResource("/billing/config");
   const order = info.data;
+  const demoAvailable =
+    !config.loading &&
+    !config.error &&
+    config.data?.checkout_enabled &&
+    config.data?.provider === "mock";
   const [busy, setBusy] = useState("");
   const inFlight = useRef(false);
   const unavailable = info.loading || !!info.error || !order;
@@ -41,10 +49,15 @@ export function Checkout({ id }) {
     try {
       await api(`/orders/${id}/checkout`, { method: "POST", body: {} });
       await api(`/orders/${id}/mock-pay`, { method: "POST", body: {} });
-      setNotice("Demo payment confirmed. Your server is being prepared.");
+      setNotice(
+        order.kind === "RENEWAL"
+          ? "Demo renewal confirmed."
+          : "Demo payment confirmed. Your server is being prepared.",
+      );
       info.refresh();
     } catch (e) {
       setError(e);
+      info.refresh();
     } finally {
       inFlight.current = false;
       setBusy("");
@@ -60,6 +73,7 @@ export function Checkout({ id }) {
       info.refresh();
     } catch (e) {
       setError(e);
+      info.refresh();
     } finally {
       inFlight.current = false;
       setBusy("");
@@ -68,7 +82,9 @@ export function Checkout({ id }) {
   return (
     <Shell>
       <PageHeading eyebrow="YOUR ORDER" title="Review your order." />
-      <ErrorMessage error={info.error || config.error || error} />
+      <ErrorMessage
+        error={info.error || config.error || (order?.status === "PENDING" ? error : null)}
+      />
       {(info.error || config.error) && (
         <button
           className="button secondary"
@@ -128,23 +144,33 @@ export function Checkout({ id }) {
             </dl>
             {order.status === "PENDING" ? (
               <>
-                <div className="notice">
-                  <strong>Development demo checkout</strong>
-                  <p>No real money is charged. Do not enter card or bank details.</p>
-                </div>
-                <button
-                  className="button primary wide"
-                  disabled={
-                    !!busy ||
-                    unavailable ||
-                    !!config.error ||
-                    !config.data?.checkout_enabled ||
-                    config.data?.provider !== "mock"
-                  }
-                  onClick={pay}
-                >
-                  {busy === "pay" ? "Confirming…" : "Confirm demo payment"}
-                </button>
+                {demoAvailable ? (
+                  <>
+                    <div className="notice">
+                      <strong>Development demo checkout</strong>
+                      <p>No real money is charged. Do not enter card or bank details.</p>
+                    </div>
+                    <button
+                      className="button primary wide"
+                      disabled={
+                        !!busy ||
+                        unavailable ||
+                        !!config.error ||
+                        !config.data?.checkout_enabled ||
+                        config.data?.provider !== "mock"
+                      }
+                      onClick={pay}
+                    >
+                      {busy === "pay" ? "Confirming…" : "Confirm demo payment"}
+                    </button>
+                  </>
+                ) : (
+                  <p className="notice" role="status">
+                    {config.loading
+                      ? "Checking checkout availability…"
+                      : "Checkout is unavailable. Contact your host."}
+                  </p>
+                )}
                 <button
                   className="button secondary wide"
                   disabled={!!busy || unavailable}
