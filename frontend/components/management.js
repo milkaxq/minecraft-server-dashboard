@@ -604,10 +604,7 @@ function Files({ id, offline }) {
             Refresh
           </button>
         </div>
-        <p className="field-help">
-          Text editor: up to 1 MB. Upload: up to 64 MB. Existing files are never overwritten by
-          uploads.
-        </p>
+        <p className="field-help">Upload up to 64 MB · Edit text up to 1 MB</p>
         <div className="file-browser-tools">
           <label>
             Find in this folder
@@ -633,7 +630,7 @@ function Files({ id, offline }) {
         </div>
         <p className="field-help" aria-live="polite">
           {resource.data
-            ? `Showing ${entries.length} of ${resource.data.length} items in this folder. Folders stay above files.`
+            ? `${entries.length} of ${resource.data.length} items`
             : "Search checks this folder only."}
         </p>
         {resource.loading ? (
@@ -651,7 +648,7 @@ function Files({ id, offline }) {
           </p>
         ) : (
           <div className="table-scroll">
-            <Table className="management-table">
+            <Table className="management-table file-browser-table">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -682,7 +679,11 @@ function Files({ id, offline }) {
                     </td>
                     <td>{entry.is_file ? formatBytes(entry.size) : "Folder"}</td>
                     <td>
-                      <div className="row-actions">
+                      <div
+                        className="row-actions file-actions"
+                        role="group"
+                        aria-label={`Actions for ${entry.name}`}
+                      >
                         {entry.is_file && (
                           <button
                             disabled={entry.is_symlink || action.busy}

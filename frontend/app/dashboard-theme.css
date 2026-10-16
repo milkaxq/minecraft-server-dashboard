@@ -1078,3 +1078,52 @@ body:has(.public-player-page) {
   outline: 2px solid #b0ed77;
   outline-offset: 2px;
 }
+
+/* File rows keep the filename prominent and touch controls easy to reach. */
+.app-shell .file-browser-table .file-name {
+  min-height: 44px;
+  max-width: 100%;
+  width: 100%;
+  padding-block: 8px;
+}
+.app-shell .file-browser-table .file-name svg {
+  flex-shrink: 0;
+}
+.app-shell .file-browser-table .file-actions {
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .app-shell .file-browser-table tbody tr {
+    gap: 0;
+    padding: 12px;
+  }
+  .app-shell .file-browser-table tbody td {
+    padding: 4px;
+  }
+  .app-shell .file-browser-table tbody td:first-child::before,
+  .app-shell .file-browser-table tbody td:nth-child(2)::before,
+  .app-shell .file-browser-table tbody td:last-child::before {
+    display: none;
+  }
+  .app-shell .file-browser-table tbody td:nth-child(2) {
+    grid-column: 1 / -1;
+    padding-left: 33px;
+    color: #b0c5b7;
+    font-size: 12px;
+  }
+  .app-shell .file-browser-table .file-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 12px;
+  }
+  .app-shell .file-browser-table .file-actions button {
+    min-width: 0;
+    padding: 10px 6px;
+    font-size: 12px;
+  }
+}
+.app-shell .file-browser-table .file-actions .text-danger {
+  color: #ffbbb3;
+  border-color: #805156;
+  background: #422b2e;
+}

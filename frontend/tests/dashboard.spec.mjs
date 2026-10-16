@@ -8248,3 +8248,39 @@ test("file upload shows honest progress and cancel preserves the exact retry", a
   expect(uploads).toHaveLength(2);
   expect(uploads[1]).toEqual(uploads[0]);
 });
+
+for (const width of [320, 390, 1366])
+  test(`file cards keep long names and touch actions usable at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    const filename = "a-very-long-minecraft-configuration-filename-without-shortcuts.properties";
+    await page.route(`http://localhost:8080/servers/${serverID}/files?**`, (route) =>
+      route.fulfill({
+        json: [
+          { name: filename, is_file: true, size: 2048 },
+          { name: "world", is_file: false, size: 0 },
+        ],
+      }),
+    );
+    await login(page);
+    await page.goto(`/servers/${serverID}/files`);
+    const actions = page.getByRole("group", { name: `Actions for ${filename}`, exact: true });
+    await expect(actions.getByRole("button", { name: "Rename", exact: true })).toBeEnabled();
+    for (const button of await actions.getByRole("button").all()) {
+      const box = await button.boundingBox();
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    await expect(page.getByRole("button", { name: filename, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath(`file-cards-${width}.png`), fullPage: true });
+    await actions.getByRole("button", { name: "Rename", exact: true }).click();
+    await expect(
+      page.getByRole("dialog", { name: "Rename file or folder", exact: true }),
+    ).toBeVisible();
+  });
