@@ -7678,3 +7678,101 @@ test("file create validates a single name and blocks changes when the listing fa
   await expect(page.getByRole("button", { name: "Upload file", exact: true })).toBeDisabled();
   expect(calls.some((c) => c.path.endsWith("/files") && c.method === "POST")).toBe(false);
 });
+
+test("server directory searches versions and addresses and clears an empty search locally", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, {
+    servers: [
+      baseServer,
+      {
+        ...baseServer,
+        id: "30000000-0000-4000-8000-000000000002",
+        name: "Creative island",
+        server_type: "FABRIC",
+        minecraft_version: "1.20.1",
+        hostname: "island.example.com",
+        port: 25566,
+      },
+    ],
+  });
+  await login(page);
+  await page.goto("/servers");
+  const search = page.getByLabel("Search servers", { exact: true });
+  await search.fill("  FABRIC   1.20.1 ");
+  await expect(page.locator(".server-card")).toHaveCount(1);
+  await expect(page.locator(".server-card")).toContainText("Creative island");
+  await search.fill("island.example.com:25566");
+  await expect(page.locator(".server-card")).toHaveCount(1);
+  await search.fill("no-such-world");
+  await expect(
+    page.getByRole("heading", { name: "No matching servers", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Clear search", exact: true }).click();
+  await expect(page.locator(".server-card")).toHaveCount(2);
+  expect(calls.some((c) => c.method !== "GET" && c.path.startsWith("/servers"))).toBe(false);
+});
+
+test("cancelled-only accounts open server history instead of first-server onboarding", async ({
+  page,
+}) => {
+  await mockAPI(page, { servers: [{ ...baseServer, status: "CANCELLED" }] });
+  await login(page);
+  await expect(page.getByRole("heading", { name: "No active servers", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your next adventure starts here", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "View server history", exact: true }).click();
+  await expect(page.locator(".server-card")).toHaveCount(1);
+  await expect(page.getByLabel("Server view")).toHaveAttribute("data-value", "all");
+});
+
+test("server cards wait for a live reading before describing online status", async ({ page }) => {
+  await mockAPI(page);
+  let release;
+  await page.route(`http://localhost:8080/servers/${serverID}/usage`, async (route) => {
+    await new Promise((resolve) => {
+      release = resolve;
+    });
+    return route.fulfill({
+      json: { power_state: "running", players_available: true, players_online: 2 },
+    });
+  });
+  await login(page);
+  const card = page.locator(".server-card");
+  await expect(card.getByText("Checking…", { exact: true })).toBeVisible();
+  await expect(card.getByText("Online", { exact: true })).toHaveCount(0);
+  await expect.poll(() => !!release).toBe(true);
+  release();
+  await expect(card.getByText("Online", { exact: true })).toBeVisible();
+  await expect(card).toContainText("2 playing");
+});
+
+test("failed server-list polling does not present a stale empty account as new", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await mockAPI(page, { servers: [] });
+  let failed = false;
+  await page.route("http://localhost:8080/servers", async (route) => {
+    if (!failed) return route.fallback();
+    return route.fulfill({ status: 503, json: { error: "Server listing unavailable" } });
+  });
+  await login(page);
+  await expect(
+    page.getByRole("heading", { name: "Your next adventure starts here", exact: true }),
+  ).toBeVisible();
+  failed = true;
+  await page.clock.runFor(10001);
+  await expect(
+    page.getByRole("heading", { name: "Your next adventure starts here", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Server list unavailable. Try again to check your servers.", { exact: true }),
+  ).toBeVisible();
+  failed = false;
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your next adventure starts here", exact: true }),
+  ).toBeVisible();
+});

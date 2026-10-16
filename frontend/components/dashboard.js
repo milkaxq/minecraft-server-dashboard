@@ -9,7 +9,11 @@ import { useResource } from "./data";
 import { Badge, Empty, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
 import { formatBytes } from "../lib/api";
 export function ServerCard({ server }) {
-  const { data: usage, error } = useResource(
+  const {
+    data: usage,
+    error,
+    loading: checking,
+  } = useResource(
     server.status === "RUNNING" && !server.deletion_pending ? `/servers/${server.id}/usage` : null,
     10000,
   );
@@ -36,7 +40,9 @@ export function ServerCard({ server }) {
                 ? "DELETING"
                 : error
                   ? "UNKNOWN"
-                  : usage?.power_state || server.status
+                  : checking && server.status === "RUNNING"
+                    ? "CHECKING"
+                    : usage?.power_state || server.status
             }
           />
         </div>
@@ -64,11 +70,13 @@ export function ServerCard({ server }) {
               ? "Deleting…"
               : error
                 ? "Status unavailable"
-                : usage?.power_state === "running" &&
-                    usage.players_available &&
-                    usage.players_online != null
-                  ? `${usage.players_online} playing`
-                  : "Manage"}{" "}
+                : checking && server.status === "RUNNING"
+                  ? "Checking status…"
+                  : usage?.power_state === "running" &&
+                      usage.players_available &&
+                      usage.players_online != null
+                    ? `${usage.players_online} playing`
+                    : "Manage"}{" "}
             <span aria-hidden="true">↗</span>
           </span>
         </div>
@@ -84,13 +92,29 @@ export function Dashboard({ serversOnly = false }) {
   const beta = registration?.invite_required && billing?.provider === "disabled";
   const [query, setQuery] = useState("");
   const [view, setView] = useState("active");
+  const searchTerms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const historyOnly =
+    view === "active" &&
+    !!servers?.length &&
+    servers.every((server) => server.status === "CANCELLED" || server.deletion_pending);
   const visible = (servers || [])
     .filter(
       (server) => view === "all" || (server.status !== "CANCELLED" && !server.deletion_pending),
     )
-    .filter((server) =>
-      `${server.name} ${server.server_type}`.toLowerCase().includes(query.trim().toLowerCase()),
-    )
+    .filter((server) => {
+      const searchable = [
+        server.name,
+        server.server_type,
+        softwareName(server.server_type),
+        server.minecraft_version,
+        server.hostname,
+        server.port,
+        server.hostname && server.port ? `${server.hostname}:${server.port}` : "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return searchTerms.every((term) => searchable.includes(term));
+    })
     .sort((a, b) => Number(b.status === "RUNNING") - Number(a.status === "RUNNING"));
   const current =
     servers?.find((server) => server.status === "RUNNING" && !server.deletion_pending) ||
@@ -101,6 +125,7 @@ export function Dashboard({ serversOnly = false }) {
   );
   const activeWorld = currentDetails.data;
   const shortcuts =
+    !error &&
     !currentDetails.error &&
     activeWorld?.status === "RUNNING" &&
     activeWorld.management_available &&
@@ -187,8 +212,13 @@ export function Dashboard({ serversOnly = false }) {
         <div>
           <h2>{serversOnly ? "All servers" : "Your servers"}</h2>
           <span>
-            {visible.length} shown
-            {view === "active" ? " · current hosting" : " · including cancelled"}
+            {loading
+              ? "Loading servers…"
+              : error
+                ? "Server list unavailable"
+                : visible.length +
+                  (visible.length === 1 ? " server" : " servers") +
+                  (view === "all" ? " · including cancelled" : "")}
           </span>
         </div>
         {showTools && (
@@ -200,8 +230,9 @@ export function Dashboard({ serversOnly = false }) {
             <label className="search-box">
               <span aria-hidden="true">⌕</span>
               <input
+                type="search"
                 aria-label="Search servers"
-                placeholder="Search your servers…"
+                placeholder="Name, version or address…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -219,7 +250,11 @@ export function Dashboard({ serversOnly = false }) {
       )}
       <ErrorMessage error={error} />
       {error && (
-        <button className="button secondary" onClick={refresh}>
+        <button
+          className="button secondary"
+          disabled={loading || error.status === 429}
+          onClick={refresh}
+        >
           Try again
         </button>
       )}
@@ -233,30 +268,45 @@ export function Dashboard({ serversOnly = false }) {
               <ServerCard key={server.id} server={server} />
             ))}
           </div>
+        ) : error ? (
+          <p className="notice">Server list unavailable. Try again to check your servers.</p>
         ) : (
           <Empty
             title={
               query
                 ? "No matching servers"
-                : beta
-                  ? "Welcome to the private beta"
-                  : "Your next adventure starts here"
+                : historyOnly
+                  ? "No active servers"
+                  : beta
+                    ? "Welcome to the private beta"
+                    : "Your next adventure starts here"
             }
             action={
-              !query &&
-              !beta && (
-                <Link href="/servers/new" className="button primary">
-                  <Icon name="plus" size={17} />
-                  Create a server
-                </Link>
+              query ? (
+                <button className="button secondary" onClick={() => setQuery("")}>
+                  Clear search
+                </button>
+              ) : historyOnly ? (
+                <button className="button secondary" onClick={() => setView("all")}>
+                  View server history
+                </button>
+              ) : (
+                !beta && (
+                  <Link href="/servers/new" className="button primary">
+                    <Icon name="plus" size={17} />
+                    Create a server
+                  </Link>
+                )
               )
             }
           >
             {query
-              ? "Try another name or server type."
-              : beta
-                ? "Your host provides server access; payments are disabled for this beta."
-                : "Choose how to play and create your first world."}
+              ? "Try a name, Minecraft version or address."
+              : historyOnly
+                ? "Your previous servers are in history."
+                : beta
+                  ? "Your host provides server access; payments are disabled for this beta."
+                  : "Choose how to play and create your first world."}
           </Empty>
         ))
       )}

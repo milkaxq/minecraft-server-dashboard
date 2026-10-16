@@ -132,6 +132,8 @@ export function price(plan) {
   );
 }
 export const STATE_LABELS = {
+  CHECKING: "Checking…",
+  UNKNOWN: "Status unavailable",
   PENDING_PAYMENT: "Awaiting activation",
   PAYMENT_CONFIRMED: "Queued",
   PROVISIONING: "Installing",
