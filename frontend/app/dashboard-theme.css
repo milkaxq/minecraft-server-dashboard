@@ -1127,3 +1127,39 @@ body:has(.public-player-page) {
   border-color: #805156;
   background: #422b2e;
 }
+
+.app-shell .server-search input {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+}
+.app-shell .server-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.app-shell .server-search > button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #d8eac3;
+  cursor: pointer;
+}
+.app-shell .server-search > button:hover {
+  background: #294336;
+}
+.app-shell .server-search > button:focus-visible {
+  outline: 2px solid #b0ed77;
+  outline-offset: -2px;
+}
+.app-shell .server-search:focus-within {
+  outline: 2px solid #b0ed77;
+  outline-offset: 2px;
+}
+.app-shell .server-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

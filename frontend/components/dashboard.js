@@ -3,7 +3,7 @@ import { Notifications } from "./server-insights";
 import { Select } from "./select";
 import { softwareName, supportsMods, supportsPlugins } from "../lib/software";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAuth } from "./auth";
 import { useResource } from "./data";
 import { Badge, Empty, ErrorMessage, Icon, Loading, PageHeading, Shell } from "./ui";
@@ -17,8 +17,10 @@ export function ServerCard({ server }) {
     server.status === "RUNNING" && !server.deletion_pending ? `/servers/${server.id}/usage` : null,
     10000,
   );
-  const address =
-    server.hostname && server.port
+  const ended = server.status === "CANCELLED" || server.deletion_pending;
+  const address = ended
+    ? ""
+    : server.hostname && server.port
       ? `${server.hostname}:${server.port}`
       : "Address assigned on activation";
   const Card = server.deletion_pending ? "article" : Link;
@@ -64,20 +66,26 @@ export function ServerCard({ server }) {
           </span>
         </div>
         <div className="server-card-footer">
-          <span className="address-truncated">{address}</span>
+          {address && (
+            <span className="address-truncated" title={address}>
+              {address}
+            </span>
+          )}
           <span>
             {server.deletion_pending
               ? "Deleting…"
-              : error
-                ? "Status unavailable"
-                : checking && server.status === "RUNNING"
-                  ? "Checking status…"
-                  : usage?.power_state === "running" &&
-                      usage.players_available &&
-                      usage.players_online != null
-                    ? `${usage.players_online} playing`
-                    : "Manage"}{" "}
-            <span aria-hidden="true">↗</span>
+              : ended
+                ? "Server ended"
+                : error
+                  ? "Status unavailable"
+                  : checking && server.status === "RUNNING"
+                    ? "Checking status…"
+                    : usage?.power_state === "running" &&
+                        usage.players_available &&
+                        usage.players_online != null
+                      ? `${usage.players_online} playing`
+                      : "Manage"}{" "}
+            {!ended && <span aria-hidden="true">↗</span>}
           </span>
         </div>
       </div>
@@ -91,6 +99,11 @@ export function Dashboard({ serversOnly = false }) {
   const { data: billing } = useResource("/billing/config");
   const beta = registration?.invite_required && billing?.provider === "disabled";
   const [query, setQuery] = useState("");
+  const searchInput = useRef(null);
+  function clearSearch() {
+    setQuery("");
+    searchInput.current?.focus();
+  }
   const [view, setView] = useState("active");
   const searchTerms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const historyOnly =
@@ -211,7 +224,7 @@ export function Dashboard({ serversOnly = false }) {
       <div className="section-heading">
         <div>
           <h2>{serversOnly ? "All servers" : "Your servers"}</h2>
-          <span>
+          <span role="status" aria-live="polite">
             {loading
               ? "Loading servers…"
               : error
@@ -227,16 +240,29 @@ export function Dashboard({ serversOnly = false }) {
               <option value="active">Active servers</option>
               <option value="all">All servers</option>
             </Select>
-            <label className="search-box">
+            <div className="search-box server-search">
               <span aria-hidden="true">⌕</span>
               <input
+                ref={searchInput}
                 type="search"
                 aria-label="Search servers"
+                maxLength={200}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && query) {
+                    event.preventDefault();
+                    clearSearch();
+                  }
+                }}
                 placeholder="Name, version or address…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
-            </label>
+              {query && (
+                <button type="button" aria-label="Clear server search" onClick={clearSearch}>
+                  <Icon name="close" size={18} />
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -283,7 +309,7 @@ export function Dashboard({ serversOnly = false }) {
             }
             action={
               query ? (
-                <button className="button secondary" onClick={() => setQuery("")}>
+                <button className="button secondary" onClick={clearSearch}>
                   Clear search
                 </button>
               ) : historyOnly ? (

@@ -8284,3 +8284,68 @@ for (const width of [320, 390, 1366])
       page.getByRole("dialog", { name: "Rename file or folder", exact: true }),
     ).toBeVisible();
   });
+
+for (const width of [390, 1366])
+  test(`server search clears in place and keeps history selected at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const calls = await mockAPI(page, {
+      servers: [
+        baseServer,
+        {
+          ...baseServer,
+          id: "30000000-0000-4000-8000-000000000002",
+          name: "Old world",
+          status: "CANCELLED",
+        },
+      ],
+    });
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await page.goto("/servers");
+    await selectValue(page, page.getByLabel("Server view"), "all");
+    const search = page.getByRole("searchbox", { name: "Search servers", exact: true });
+    await search.fill("Old");
+    await expect(page.locator(".server-card")).toHaveCount(1);
+    await page.getByRole("button", { name: "Clear server search", exact: true }).click();
+    await expect(search).toHaveValue("");
+    await expect(search).toBeFocused();
+    await expect(page.getByLabel("Server view")).toHaveAttribute("data-value", "all");
+    await expect(page.locator(".server-card")).toHaveCount(2);
+    await search.fill("Lantern");
+    await page.screenshot({
+      path: testInfo.outputPath(`server-search-${width}.png`),
+      fullPage: true,
+    });
+    await search.press("Escape");
+    await expect(search).toHaveValue("");
+    await expect(search).toBeFocused();
+    await expect(
+      page.getByRole("button", { name: "Clear server search", exact: true }),
+    ).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(calls.some((c) => c.method !== "GET" && c.path.startsWith("/servers"))).toBe(false);
+  });
+
+test("ended server cards hide obsolete connection addresses and live status polling", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page, {
+    servers: [
+      { ...baseServer, status: "CANCELLED" },
+      { ...baseServer, id: "30000000-0000-4000-8000-000000000002", deletion_pending: true },
+    ],
+  });
+  await login(page);
+  await page.goto("/servers");
+  await selectValue(page, page.getByLabel("Server view"), "all");
+  await expect(page.locator(".server-card")).toHaveCount(2);
+  await expect(
+    page.locator(".server-card").getByText("Server ended", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".server-card .address-truncated")).toHaveCount(0);
+  await expect(page.locator("article.server-card")).toHaveCount(1);
+  expect(calls.some((c) => c.path.endsWith("/usage"))).toBe(false);
+});
