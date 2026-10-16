@@ -1159,6 +1159,9 @@ function Plugins({ id, server, offline, mods = false, usage }) {
     refreshClientSetup();
   }, [resource.data, refreshClientSetup]);
   const action = useAction(resource.refresh);
+  const filesReady = !resource.loading && !resource.error && !!resource.data;
+  const writable = offline && filesReady && !action.busy;
+  const removeAttempt = useRef(null);
   const input = useRef(null);
   const [installedQuery, setInstalledQuery] = useState("");
   const [guidedOnly, setGuidedOnly] = useState(false);
@@ -1177,7 +1180,7 @@ function Plugins({ id, server, offline, mods = false, usage }) {
   const [uploadSafety, setUploadSafety] = useState(null);
   const uploadAttempt = useRef(null);
   async function upload() {
-    if (!pendingUpload || !uploadSafety) return;
+    if (!writable || !pendingUpload || !uploadSafety) return;
     const file = pendingUpload;
     const params = new URLSearchParams({
       name: file.name,
@@ -1209,12 +1212,15 @@ function Plugins({ id, server, offline, mods = false, usage }) {
     }
   }
   async function erase() {
+    if (!writable || !resource.data.some((file) => file.name === remove)) return;
+    if (removeAttempt.current?.name !== remove)
+      removeAttempt.current = { name: remove, key: crypto.randomUUID() };
     if (
       await action.run(
         () =>
           api(`/servers/${id}/${collection}`, {
             method: "DELETE",
-            key: crypto.randomUUID(),
+            key: removeAttempt.current.key,
             body: { name: remove, confirmation: remove },
           }),
         `${mods ? "Mod" : "Plugin"} deleted. Start your server to apply the change.`,
@@ -1222,6 +1228,7 @@ function Plugins({ id, server, offline, mods = false, usage }) {
     ) {
       setAddonChange({ message: `${remove} removed` });
       setRemove(null);
+      removeAttempt.current = null;
     }
   }
   return (
@@ -1281,13 +1288,23 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                 : "Compatible plugins installed in your server folder"}
             </span>
           </div>
-          <button
-            className="button primary"
-            disabled={!offline || action.busy}
-            onClick={() => input.current.click()}
-          >
-            Upload {label} .jar
-          </button>
+          <div className="file-actions">
+            <button
+              type="button"
+              className="button secondary"
+              disabled={resource.loading || action.busy || resource.error?.status === 429}
+              onClick={resource.refresh}
+            >
+              Refresh installed {collection}
+            </button>
+            <button
+              className="button primary"
+              disabled={!writable}
+              onClick={() => input.current.click()}
+            >
+              Upload {label} .jar
+            </button>
+          </div>
           <input
             hidden
             ref={input}
@@ -1346,9 +1363,15 @@ function Plugins({ id, server, offline, mods = false, usage }) {
             </p>
           </div>
         )}
+        {resource.error && (
+          <p className="notice" role="status">
+            Couldn’t check installed {collection}. Refresh to try again.
+            {!!resource.data?.length && " Showing the last checked files; changes are paused."}
+          </p>
+        )}
         {resource.loading ? (
           <Loading />
-        ) : !resource.data?.length ? (
+        ) : resource.error && !resource.data?.length ? null : !resource.data?.length ? (
           <p className="management-empty">No {collection} installed yet.</p>
         ) : !installedFiles.length ? (
           <p className="management-empty" role="status">
@@ -1421,7 +1444,7 @@ function Plugins({ id, server, offline, mods = false, usage }) {
                     )}
                   <button
                     className="button danger-outline"
-                    disabled={!offline || action.busy}
+                    disabled={!writable}
                     onClick={() => setRemove(v.name)}
                   >
                     Delete {label}
@@ -1454,7 +1477,7 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           label={`Upload ${label}`}
           confirmVariant="primary"
           busy={action.busy}
-          confirmDisabled={!offline || !uploadSafety}
+          confirmDisabled={!writable || !uploadSafety}
           onCancel={() => setPendingUpload(null)}
           onConfirm={upload}
         >
@@ -1477,10 +1500,12 @@ function Plugins({ id, server, offline, mods = false, usage }) {
           title={`Delete this ${label}?`}
           label={`Delete ${label}`}
           busy={action.busy}
+          confirmDisabled={!writable || !resource.data?.some((file) => file.name === remove)}
           onCancel={() => setRemove(null)}
           onConfirm={erase}
         >
           <p>{remove} will be removed. Its configuration folders will stay in your files.</p>
+          {!filesReady && <p role="status">Refresh the installed list before deleting.</p>}
           <ErrorMessage error={action.error} />
         </Confirm>
       )}

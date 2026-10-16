@@ -8502,3 +8502,70 @@ for (const width of [390, 1366])
       page.getByRole("dialog").getByRole("button", { name: "Restore backup", exact: true }),
     ).toBeDisabled();
   });
+
+test("installed addon read failure never claims an empty list and refresh restores controls", async ({
+  page,
+}) => {
+  const calls = await mockAPI(page);
+  let failed = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return failed
+      ? route.fulfill({ status: 503, json: { error: "Installed list unavailable" } })
+      : route.fulfill({ json: [] });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await expect(page.getByText(/Couldn’t check installed plugins/)).toBeVisible();
+  await expect(page.getByText("No plugins installed yet.", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Upload plugin .jar", exact: true }),
+  ).toBeDisabled();
+  failed = false;
+  await page.getByRole("button", { name: "Refresh installed plugins", exact: true }).click();
+  await expect(page.getByText("No plugins installed yet.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload plugin .jar", exact: true })).toBeEnabled();
+  expect(calls.some((c) => c.path.endsWith("/plugins") && c.method !== "GET")).toBe(false);
+});
+
+test("addon delete retry keeps its request key and rechecks the installed selection", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  let failed = false;
+  const deletes = [];
+  await page.route(`http://localhost:8080/servers/${serverID}/plugins`, (route) => {
+    if (route.request().method() === "DELETE") {
+      deletes.push({
+        key: route.request().headers()["idempotency-key"],
+        body: route.request().postDataJSON(),
+      });
+      if (deletes.length === 1)
+        return route.fulfill({ status: 502, json: { error: "Delete response lost" } });
+      return route.fallback();
+    }
+    return failed
+      ? route.fulfill({ status: 503, json: { error: "Installed list unavailable" } })
+      : route.fulfill({ json: [{ name: "example.jar", size: 1024 }] });
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/plugins`);
+  await page.getByRole("button", { name: "Delete plugin", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete this plugin?", exact: true });
+  await dialog.getByRole("button", { name: "Delete plugin", exact: true }).click();
+  await expect(dialog.getByText(/Delete response lost/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  failed = true;
+  await page.getByRole("button", { name: "Refresh installed plugins", exact: true }).click();
+  await expect(page.getByText(/Couldn’t check installed plugins/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Upload plugin .jar", exact: true }),
+  ).toBeDisabled();
+  failed = false;
+  await page.getByRole("button", { name: "Refresh installed plugins", exact: true }).click();
+  await page.getByRole("button", { name: "Delete plugin", exact: true }).click();
+  await dialog.getByRole("button", { name: "Delete plugin", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(deletes).toHaveLength(2);
+  expect(deletes[1]).toEqual(deletes[0]);
+});
