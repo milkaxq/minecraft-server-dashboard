@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ClientRequirementsNotice, clientCompatibility } from "./client-compatibility";
 import { Select } from "./select";
 import { useResource } from "./data";
@@ -75,39 +75,44 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
   const verified = saved?.online_mode;
   const whitelist = saved?.whitelist;
   const details = useRef(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState("");
+  const copyInFlight = useRef(false);
+  const fallbackInput = useRef(null);
   const [copying, setCopying] = useState(false);
   const [fallback, setFallback] = useState("");
   const [problem, setProblem] = useState("session");
+  const instructions = joinInstructions(
+    server,
+    address,
+    powerState,
+    saved,
+    setup.error ? null : setup.data,
+  );
+  const visibleFallback = fallback === instructions ? fallback : "";
+  useEffect(() => {
+    if (!visibleFallback) return;
+    fallbackInput.current?.focus();
+    fallbackInput.current?.select();
+  }, [visibleFallback]);
   async function share() {
+    if (!address || copyInFlight.current) return;
+    copyInFlight.current = true;
     setCopying(true);
-    setCopied(false);
+    setCopied("");
     setFallback("");
-    const text = joinInstructions(
-      server,
-      address,
-      powerState,
-      saved,
-      setup.error ? null : setup.data,
-    );
+    const text = instructions;
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(true);
+      setCopied(text);
     } catch {
       setFallback(text);
     } finally {
+      copyInFlight.current = false;
       setCopying(false);
     }
   }
   function downloadSetup() {
-    const text = joinInstructions(
-      server,
-      address,
-      powerState,
-      saved,
-      setup.error ? null : setup.data,
-    );
-    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([instructions], { type: "text/plain;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = "minecraft-player-setup.txt";
@@ -166,7 +171,12 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
         <button className="button secondary" onClick={onCopy} disabled={!address}>
           Copy address
         </button>
-        <button className="button primary" onClick={share} disabled={!address || copying}>
+        <button
+          className="button primary"
+          onClick={share}
+          disabled={!address || copying}
+          aria-busy={copying}
+        >
           {copying ? "Copying…" : "Copy join instructions"}
         </button>
       </div>
@@ -177,14 +187,17 @@ export function JoinServer({ server, ready, powerState, address, onCopy }) {
       >
         Download player setup checklist
       </button>
-      {copied && <p role="status">Join instructions copied. Send them to your friends.</p>}
-      {fallback && (
+      {copied === instructions && (
+        <p role="status">Join instructions copied. Send them to your friends.</p>
+      )}
+      {visibleFallback && (
         <label className="clipboard-fallback">
           Clipboard unavailable. Select and copy these instructions.
           <textarea
+            ref={fallbackInput}
             aria-label="Join instructions to copy"
             readOnly
-            value={fallback}
+            value={visibleFallback}
             rows={9}
             onFocus={(event) => event.target.select()}
           />

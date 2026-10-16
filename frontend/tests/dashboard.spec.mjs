@@ -8349,3 +8349,85 @@ test("ended server cards hide obsolete connection addresses and live status poll
   await expect(page.locator("article.server-card")).toHaveCount(1);
   expect(calls.some((c) => c.path.endsWith("/usage"))).toBe(false);
 });
+
+test("join copy selects fallback instructions and removes stale feedback after settings change", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Denied");
+        },
+      },
+    }),
+  );
+  await mockAPI(page, { initiallyRunning: true });
+  let verified = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/settings`, (route) =>
+    route.fulfill({ json: { online_mode: verified, whitelist: false } }),
+  );
+  await openServer(page);
+  await page.getByRole("button", { name: "Join", exact: true }).click();
+  const card = page.getByRole("region", { name: "How to join" });
+  await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Copy join instructions", exact: true }).click();
+  const fallback = card.getByLabel("Join instructions to copy");
+  await expect(fallback).toBeFocused();
+  expect(await fallback.evaluate((input) => input.selectionEnd - input.selectionStart)).toBe(
+    (await fallback.inputValue()).length,
+  );
+  verified = false;
+  await page.clock.runFor(10001);
+  await expect(
+    card.getByText("Check the server’s login instructions", { exact: true }),
+  ).toBeVisible();
+  await expect(fallback).toHaveCount(0);
+  await card.getByRole("button", { name: "Copy join instructions", exact: true }).click();
+  await expect(fallback).toContainText("Microsoft account verification is off");
+  await expect(fallback).toBeFocused();
+});
+
+test("join copy locks while pending and ignores obsolete clipboard success", async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text) => {
+          window.joinCopyCount = (window.joinCopyCount || 0) + 1;
+          window.copiedJoinText = text;
+          return new Promise((resolve) => {
+            window.resolveJoinCopy = resolve;
+          });
+        },
+      },
+    }),
+  );
+  await mockAPI(page, { initiallyRunning: true });
+  let verified = true;
+  await page.route(`http://localhost:8080/servers/${serverID}/settings`, (route) =>
+    route.fulfill({ json: { online_mode: verified, whitelist: false } }),
+  );
+  await openServer(page);
+  await page.getByRole("button", { name: "Join", exact: true }).click();
+  const card = page.getByRole("region", { name: "How to join" });
+  await expect(card.getByText("Sign in with Microsoft", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Copy join instructions", exact: true }).click();
+  await expect(card.getByRole("button", { name: "Copying…", exact: true })).toBeDisabled();
+  verified = false;
+  await page.clock.runFor(10001);
+  await expect(
+    card.getByText("Check the server’s login instructions", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.resolveJoinCopy());
+  await expect(
+    card.getByRole("button", { name: "Copy join instructions", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    card.getByText("Join instructions copied. Send them to your friends.", { exact: true }),
+  ).toHaveCount(0);
+  expect(await page.evaluate(() => window.joinCopyCount)).toBe(1);
+});
