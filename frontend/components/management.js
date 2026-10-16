@@ -1981,6 +1981,9 @@ function Backups({ id, offline, limit }) {
   const resource = useResource(`/servers/${id}/backups`, 10000);
   const action = useAction(resource.refresh);
   const [name, setName] = useState("");
+  const createAttempt = useRef(null);
+  const createInFlight = useRef(false);
+  const [creating, setCreating] = useState(false);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60000);
@@ -2008,19 +2011,42 @@ function Backups({ id, offline, limit }) {
 
   async function create(e) {
     e.preventDefault();
-    if (!historyAvailable || resource.data.length >= limit || !name.trim()) return;
     if (
-      await action.run(
-        () =>
-          api(`/servers/${id}/backups`, {
-            method: "POST",
-            key: crypto.randomUUID(),
-            body: { name: name.trim() },
-          }),
-        "Backup started. This page will update when it finishes.",
-      )
+      action.busy ||
+      createInFlight.current ||
+      !historyAvailable ||
+      resource.data.length >= limit ||
+      !name.trim()
     )
-      setName("");
+      return;
+    const value = name.trim();
+    if (createAttempt.current?.name !== value)
+      createAttempt.current = { name: value, key: crypto.randomUUID() };
+    const attempt = createAttempt.current;
+    createInFlight.current = true;
+    setCreating(true);
+    try {
+      if (
+        await action.run(
+          () =>
+            api(`/servers/${id}/backups`, {
+              method: "POST",
+              key: attempt.key,
+              body: { name: attempt.name },
+            }).catch((error) => {
+              if ([400, 403, 404, 409, 422].includes(error.status)) createAttempt.current = null;
+              throw error;
+            }),
+          "Backup started. This page will update when it finishes.",
+        )
+      ) {
+        createAttempt.current = null;
+        setName("");
+      }
+    } finally {
+      createInFlight.current = false;
+      setCreating(false);
+    }
   }
   async function change() {
     if (!selectedAvailable) return;
@@ -2131,6 +2157,7 @@ function Backups({ id, offline, limit }) {
           <label className="field">
             Backup name
             <input
+              disabled={action.busy || creating}
               value={name}
               maxLength={100}
               required
@@ -2144,7 +2171,7 @@ function Backups({ id, offline, limit }) {
               action.busy || !name.trim() || !historyAvailable || resource.data.length >= limit
             }
           >
-            Create backup
+            {creating ? "Creating backup…" : "Create backup"}
           </button>
         </form>
         {limit > 0 && resource.data && resource.data.length >= limit && (
@@ -2168,7 +2195,7 @@ function Backups({ id, offline, limit }) {
           </p>
         ) : (
           <div className="table-scroll">
-            <Table className="management-table">
+            <Table className="management-table backup-history-table">
               <thead>
                 <tr>
                   <th>Backup</th>
@@ -2191,7 +2218,11 @@ function Backups({ id, offline, limit }) {
                     <td>{!b.completed_at ? "Creating…" : b.is_successful ? "Ready" : "Failed"}</td>
                     <td>{b.completed_at ? formatBytes(b.bytes) : "—"}</td>
                     <td>
-                      <div className="row-actions">
+                      <div
+                        className="row-actions file-actions"
+                        role="group"
+                        aria-label={`Actions for backup ${b.name}`}
+                      >
                         <button
                           disabled={
                             !historyAvailable || action.busy || !b.is_successful || !b.completed_at

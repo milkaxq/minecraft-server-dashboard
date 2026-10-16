@@ -8431,3 +8431,74 @@ test("join copy locks while pending and ignores obsolete clipboard success", asy
   ).toHaveCount(0);
   expect(await page.evaluate(() => window.joinCopyCount)).toBe(1);
 });
+
+test("backup creation locks its draft and retries uncertain replies with the same key", async ({
+  page,
+}) => {
+  await mockAPI(page);
+  const writes = [];
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.route(`http://localhost:8080/servers/${serverID}/backups`, async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    writes.push({
+      key: route.request().headers()["idempotency-key"],
+      body: route.request().postDataJSON(),
+    });
+    if (writes.length === 1) {
+      await held;
+      return route.fulfill({ status: 502, json: { error: "Backup response lost" } });
+    }
+    return route.fallback();
+  });
+  await login(page);
+  await page.goto(`/servers/${serverID}/backups`);
+  const name = page.getByLabel("Backup name", { exact: true });
+  await name.fill("Before exploring");
+  await page.getByRole("button", { name: "Create backup", exact: true }).click();
+  await expect(name).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Creating backup…", exact: true })).toBeDisabled();
+  release();
+  await expect(page.getByText("Backup response lost", { exact: false })).toBeVisible();
+  await expect(name).toBeEnabled();
+  await expect(name).toHaveValue("Before exploring");
+  await page.getByRole("button", { name: "Create backup", exact: true }).click();
+  await expect(name).toHaveValue("");
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+});
+
+for (const width of [390, 1366])
+  test(`backup history keeps clear touch actions at ${width}px`, async ({ page }, testInfo) => {
+    await mockAPI(page);
+    await page.setViewportSize({ width, height: 900 });
+    await login(page);
+    await page.goto(`/servers/${serverID}/backups`);
+    const actions = page.getByRole("group", {
+      name: "Actions for backup Before changes",
+      exact: true,
+    });
+    await expect(actions.getByRole("button", { name: "Restore", exact: true })).toBeEnabled();
+    await expect(actions.getByRole("button", { name: "Delete", exact: true })).toHaveCSS(
+      "background-color",
+      "rgb(66, 43, 46)",
+    );
+    for (const button of await actions.getByRole("button").all()) {
+      const box = await button.boundingBox();
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`backup-history-${width}.png`),
+      fullPage: true,
+    });
+    await actions.getByRole("button", { name: "Restore", exact: true }).click();
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: "Restore backup", exact: true }),
+    ).toBeDisabled();
+  });

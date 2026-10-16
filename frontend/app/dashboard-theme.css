@@ -1163,3 +1163,23 @@ body:has(.public-player-page) {
   outline: none;
   box-shadow: none;
 }
+
+.app-shell .backup-history-table .file-actions {
+  gap: 8px;
+}
+.app-shell .backup-history-table .file-actions .text-danger {
+  color: #ffbbb3;
+  background: #422b2e;
+  border-color: #805156;
+}
+@media (max-width: 640px) {
+  .app-shell .backup-history-table .file-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .app-shell .backup-history-table .file-actions button {
+    min-width: 0;
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+}
