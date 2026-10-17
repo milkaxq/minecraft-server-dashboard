@@ -8781,3 +8781,61 @@ test("world download saves one archive and returns controls to ready", async ({ 
   await expect(page.getByRole("button", { name: "Cancel download", exact: true })).toHaveCount(0);
   expect(calls.filter((c) => c.path.endsWith("/world/download"))).toHaveLength(1);
 });
+
+for (const width of [390, 1366])
+  test(`group pricing distinguishes friends and game night from database plans at ${width}px`, async ({
+    page,
+  }) => {
+    await mockAPI(page);
+    const offers = [
+      { ...plan, name: "Starter", price_cents: 600, player_recommendation: 4 },
+      {
+        ...plan,
+        id: "10000000-0000-4000-8000-000000000004",
+        name: "Game Night",
+        price_cents: 900,
+        player_recommendation: 8,
+        ram_mb: 3072,
+      },
+      {
+        ...plan,
+        id: "10000000-0000-4000-8000-000000000002",
+        name: "Survival",
+        price_cents: 1200,
+        player_recommendation: 16,
+        ram_mb: 4096,
+      },
+      {
+        ...plan,
+        id: "10000000-0000-4000-8000-000000000003",
+        name: "Pro",
+        price_cents: 2400,
+        player_recommendation: 60,
+        ram_mb: 8192,
+      },
+    ];
+    await page.route("http://localhost:8080/plans", (route) => route.fulfill({ json: offers }));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    for (const [title, amount] of [
+      ["Close friends", "$6.00"],
+      ["Game night", "$9.00"],
+      ["Growing group", "$12.00"],
+      ["Community", "$24.00"],
+    ]) {
+      const card = page
+        .locator(".landing-plan")
+        .filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+      await expect(card.locator(".landing-plan-price")).toContainText(amount);
+    }
+    await login(page);
+    await page.goto("/servers/new");
+    await page.getByRole("button", { name: "2 Group size", exact: true }).click();
+    await expect(page.locator(".group-card").filter({ hasText: "Close friends" })).toContainText(
+      "$6.00",
+    );
+    const night = page.locator(".group-card").filter({ hasText: "Game night" });
+    await expect(night).toContainText("$9.00");
+    await night.click();
+    await expect(night).toHaveAttribute("aria-pressed", "true");
+  });

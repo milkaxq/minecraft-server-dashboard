@@ -38,11 +38,11 @@ func TestAdminPlanChangesAndSensitiveDataExclusion(t *testing.T) {
 		t.Fatal(err)
 	}
 	plans, err := s.Plans(ctx, actor)
-	if err != nil || len(plans) != 4 {
+	if err != nil || len(plans) != 5 {
 		t.Fatal(plans, err)
 	}
 	enabled, err := (plan.Service{DB: db}).List(ctx)
-	if err != nil || len(enabled) != 3 {
+	if err != nil || len(enabled) != 4 {
 		t.Fatal("disabled plan offered", enabled, err)
 	}
 	users, err := s.Users(ctx, actor, 0)
